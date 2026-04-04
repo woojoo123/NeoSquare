@@ -2,7 +2,7 @@ package com.neosquare.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
-@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)  // null 인 필드는 JSON에서 빼기
 public record ApiResponse<T>(
         boolean success,
         String message,
