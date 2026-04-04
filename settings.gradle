@@ -1,1 +1,3 @@
-rootProject.name = 'neosquare'
+rootProject.name = 'NeoSquare'
+
+include 'backend'
