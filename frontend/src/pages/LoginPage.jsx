@@ -6,13 +6,19 @@ import { useAuthStore } from '../store/authStore';
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const login = useAuthStore((state) => state.login);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const setAccessToken = useAuthStore((state) => state.setAccessToken);
+  const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
 
   const redirectTo = location.state?.from || '/lobby';
 
   const handleLogin = () => {
-    login();
+    setAccessToken('temp-access-token');
+    setCurrentUser({
+      email: 'demo@neosquare.local',
+      nickname: 'Demo User',
+    });
     navigate(redirectTo, { replace: true });
   };
 
@@ -30,9 +36,9 @@ export default function LoginPage() {
           Create account
         </Link>
       </div>
-      {isAuthenticated ? (
+      {accessToken ? (
         <p className="app-note">
-          You are already signed in. Going to the lobby is available now.
+          You are already signed in as {currentUser?.nickname || 'a user'}.
         </p>
       ) : (
         <p className="app-note">

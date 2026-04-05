@@ -4,18 +4,19 @@ import { getStoredAccessToken, setStoredAccessToken } from '../api/axiosInstance
 
 export const useAuthStore = create((set) => ({
   accessToken: getStoredAccessToken(),
-  isAuthenticated: Boolean(getStoredAccessToken()),
-  login: (accessToken) => {
-    const nextAccessToken = accessToken || getStoredAccessToken();
-
-    setStoredAccessToken(nextAccessToken);
-    set({
-      accessToken: nextAccessToken,
-      isAuthenticated: Boolean(nextAccessToken),
-    });
+  currentUser: null,
+  setAccessToken: (accessToken) => {
+    setStoredAccessToken(accessToken);
+    set({ accessToken: accessToken || null });
   },
-  logout: () => {
+  setCurrentUser: (currentUser) => {
+    set({ currentUser });
+  },
+  clearAuth: () => {
     setStoredAccessToken(null);
-    set({ accessToken: null, isAuthenticated: false });
+    set({
+      accessToken: null,
+      currentUser: null,
+    });
   },
 }));

@@ -5,10 +5,15 @@ import { useAuthStore } from '../store/authStore';
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const login = useAuthStore((state) => state.login);
+  const setAccessToken = useAuthStore((state) => state.setAccessToken);
+  const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
 
   const handleSignup = () => {
-    login();
+    setAccessToken('temp-access-token');
+    setCurrentUser({
+      email: 'new-user@neosquare.local',
+      nickname: 'New User',
+    });
     navigate('/lobby', { replace: true });
   };
 

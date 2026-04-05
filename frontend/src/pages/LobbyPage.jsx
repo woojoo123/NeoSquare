@@ -5,10 +5,11 @@ import { useAuthStore } from '../store/authStore';
 
 export default function LobbyPage() {
   const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
 
   const handleLogout = () => {
-    logout();
+    clearAuth();
     navigate('/login', { replace: true });
   };
 
@@ -23,6 +24,11 @@ export default function LobbyPage() {
           Sign out
         </button>
       </div>
+      {currentUser ? (
+        <p className="app-note">
+          Signed in as {currentUser.nickname} ({currentUser.email})
+        </p>
+      ) : null}
     </AppLayout>
   );
 }
