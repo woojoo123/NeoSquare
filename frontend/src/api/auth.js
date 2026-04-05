@@ -1,4 +1,4 @@
-import { axiosInstance, setStoredAccessToken } from './axiosInstance';
+import { axiosInstance } from './axiosInstance';
 
 export async function signup(payload) {
   const response = await axiosInstance.post('/auth/signup', payload);
@@ -7,14 +7,7 @@ export async function signup(payload) {
 
 export async function login(payload) {
   const response = await axiosInstance.post('/auth/login', payload);
-  const result = response.data;
-  const accessToken = result?.data?.accessToken;
-
-  if (accessToken) {
-    setStoredAccessToken(accessToken);
-  }
-
-  return result;
+  return response.data;
 }
 
 export async function getMe() {

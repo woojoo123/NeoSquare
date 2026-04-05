@@ -65,6 +65,32 @@ select {
   gap: 12px;
   align-items: center;
   margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.app-form {
+  margin-top: 24px;
+}
+
+.app-field {
+  display: block;
+  margin-top: 16px;
+}
+
+.app-field span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.app-input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
 }
 
 .primary-button {
@@ -76,6 +102,11 @@ select {
   cursor: pointer;
 }
 
+.primary-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .text-link {
   color: #2563eb;
   font-weight: 600;
@@ -85,4 +116,56 @@ select {
 .app-note {
   margin-top: 16px;
   font-size: 0.95rem;
+}
+
+.app-error {
+  margin-top: 16px;
+  color: #b91c1c;
+  font-size: 0.95rem;
+}
+
+.app-success {
+  margin-top: 16px;
+  color: #047857;
+  font-size: 0.95rem;
+}
+
+.app-section {
+  margin-top: 28px;
+}
+
+.app-section h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.space-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.space-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px;
+  background: #f9fafb;
+}
+
+.space-card strong,
+.space-card span,
+.space-card p {
+  display: block;
+}
+
+.space-card span {
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 0.9rem;
+}
+
+.space-card p {
+  margin-top: 10px;
 }
