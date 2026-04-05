@@ -27,6 +27,10 @@ logging:
     root: INFO
     com.neosquare: INFO
 
+jwt:
+  secret: ${JWT_SECRET:neosquare-access-token-secret-key-needs-at-least-32-bytes}
+  access-token-expiration-millis: ${JWT_ACCESS_TOKEN_EXPIRATION_MILLIS:3600000}
+
 # Future MariaDB configuration
 # spring:
 #   datasource:
