@@ -214,6 +214,18 @@ select {
   color: #4b5563;
 }
 
+.lobby-realtime-message {
+  margin: 16px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #e5e7eb;
+  color: #111827;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .lobby-stage {
   padding: 18px;
 }

@@ -5,6 +5,7 @@ import { getMe } from '../api/auth';
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
+import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
 
 export default function LobbyPage() {
@@ -15,6 +16,13 @@ export default function LobbyPage() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const primarySpace = spaces[0] || null;
+  const { connectionStatus, lastMessage, lastError } = useLobbyRealtime({
+    enabled: !isLoading && !errorMessage && Boolean(currentUser),
+    userId: currentUser?.id,
+    nickname: currentUser?.nickname,
+    spaceId: primarySpace?.id ?? null,
+  });
 
   const handleLogout = () => {
     clearAuth();
@@ -105,6 +113,23 @@ export default function LobbyPage() {
             <p className="app-note">
               Available spaces: {isLoading ? 'Loading...' : spaces.length}
             </p>
+            <p className="app-note">
+              Active space for realtime: {primarySpace ? primarySpace.name : 'No space selected'}
+            </p>
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Realtime connection</h2>
+            <p className="app-note">Status: {connectionStatus}</p>
+            <p className="app-note">
+              Last event: {lastMessage?.type || 'Waiting for server response...'}
+            </p>
+            {lastError ? <p className="app-error">{lastError}</p> : null}
+            {lastMessage ? (
+              <pre className="lobby-realtime-message">
+                {JSON.stringify(lastMessage, null, 2)}
+              </pre>
+            ) : null}
           </div>
 
           <section className="app-section">
