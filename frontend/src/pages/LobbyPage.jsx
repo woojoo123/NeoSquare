@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getMe } from '../api/auth';
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
-import { useLobbyRealtime } from '../lib/useLobbyRealtime';
+import LobbyGame from '../components/LobbyGame';
 import { useAuthStore } from '../store/authStore';
 
 export default function LobbyPage() {
@@ -15,8 +15,6 @@ export default function LobbyPage() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
-
-  useLobbyRealtime();
 
   const handleLogout = () => {
     clearAuth();
@@ -40,8 +38,8 @@ export default function LobbyPage() {
           return;
         }
 
-        setCurrentUser(meResponse.data);
-        setSpaces(spacesResponse.data || []);
+        setCurrentUser(meResponse);
+        setSpaces(spacesResponse || []);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -77,38 +75,73 @@ export default function LobbyPage() {
       eyebrow="Lobby"
       title="NeoSquare lobby"
       description="Authenticated users can load their profile and the current public spaces from the backend."
+      panelClassName="app-panel--wide"
     >
       <div className="app-actions">
         <button type="button" className="primary-button" onClick={handleLogout}>
           Sign out
         </button>
       </div>
-      {currentUser ? (
-        <p className="app-note">
-          Signed in as {currentUser.nickname} ({currentUser.email})
-        </p>
-      ) : null}
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
-      <section className="app-section">
-        <h2>Available spaces</h2>
-        {isLoading ? <p className="app-note">Loading spaces...</p> : null}
-        {!isLoading && spaces.length === 0 ? (
-          <p className="app-note">No spaces are available yet.</p>
-        ) : null}
-        {!isLoading && spaces.length > 0 ? (
-          <ul className="space-list">
-            {spaces.map((space) => (
-              <li key={space.id} className="space-card">
-                <strong>{space.name}</strong>
-                <span>
-                  {space.type} · capacity {space.maxCapacity}
-                </span>
-                <p>{space.description}</p>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+      <div className="lobby-layout">
+        <section className="lobby-sidebar">
+          <div className="lobby-info-card">
+            <h2>Current user</h2>
+            {currentUser ? (
+              <>
+                <strong>{currentUser.nickname}</strong>
+                <span>{currentUser.email}</span>
+              </>
+            ) : (
+              <p className="app-note">Loading user...</p>
+            )}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Lobby status</h2>
+            <p className="app-note">
+              Phaser canvas and local player movement are active only on this page.
+            </p>
+            <p className="app-note">
+              Available spaces: {isLoading ? 'Loading...' : spaces.length}
+            </p>
+          </div>
+
+          <section className="app-section">
+            <h2>Available spaces</h2>
+            {isLoading ? <p className="app-note">Loading spaces...</p> : null}
+            {!isLoading && spaces.length === 0 ? (
+              <p className="app-note">No spaces are available yet.</p>
+            ) : null}
+            {!isLoading && spaces.length > 0 ? (
+              <ul className="space-list">
+                {spaces.map((space) => (
+                  <li key={space.id} className="space-card">
+                    <strong>{space.name}</strong>
+                    <span>
+                      {space.type} · capacity {space.maxCapacity}
+                    </span>
+                    <p>{space.description}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        </section>
+
+        <section className="lobby-stage">
+          <div className="lobby-stage-header">
+            <div>
+              <h2>Metaverse lobby</h2>
+              <p className="app-note">
+                This is the minimum NeoSquare lobby scene. Use the arrow keys to move
+                your character.
+              </p>
+            </div>
+          </div>
+          <LobbyGame playerLabel={currentUser?.nickname || 'You'} />
+        </section>
+      </div>
     </AppLayout>
   );
 }

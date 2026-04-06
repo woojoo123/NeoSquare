@@ -41,6 +41,10 @@ select {
   box-shadow: 0 20px 45px rgba(17, 24, 39, 0.08);
 }
 
+.app-panel--wide {
+  width: min(1180px, 100%);
+}
+
 .app-eyebrow {
   margin: 0 0 8px;
   font-size: 0.875rem;
@@ -168,4 +172,85 @@ select {
 
 .space-card p {
   margin-top: 10px;
+}
+
+.lobby-layout {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.lobby-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+.lobby-info-card,
+.lobby-stage {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f9fafb;
+}
+
+.lobby-info-card {
+  padding: 18px;
+}
+
+.lobby-info-card h2,
+.lobby-stage-header h2 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+
+.lobby-info-card strong,
+.lobby-info-card span {
+  display: block;
+}
+
+.lobby-info-card span {
+  margin-top: 4px;
+  color: #4b5563;
+}
+
+.lobby-stage {
+  padding: 18px;
+}
+
+.lobby-stage-header {
+  margin-bottom: 16px;
+}
+
+.lobby-game-shell {
+  overflow: hidden;
+  border-radius: 18px;
+  background: #020617;
+  min-height: 540px;
+}
+
+.lobby-game-container {
+  width: 100%;
+  min-height: 540px;
+}
+
+.lobby-game-container canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 960px) {
+  .app-panel--wide {
+    width: min(100%, 100%);
+  }
+
+  .lobby-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-game-shell,
+  .lobby-game-container {
+    min-height: 360px;
+  }
 }
