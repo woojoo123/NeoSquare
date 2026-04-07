@@ -3,9 +3,29 @@ import { useEffect, useRef } from 'react';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 540;
 
-export default function LobbyGame({ playerLabel }) {
+export default function LobbyGame({ playerLabel, onPlayerMove, remoteEvent }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  const sceneRef = useRef(null);
+  const onPlayerMoveRef = useRef(onPlayerMove);
+  const pendingRemoteEventsRef = useRef([]);
+
+  useEffect(() => {
+    onPlayerMoveRef.current = onPlayerMove;
+  }, [onPlayerMove]);
+
+  useEffect(() => {
+    if (!remoteEvent) {
+      return;
+    }
+
+    if (!sceneRef.current) {
+      pendingRemoteEventsRef.current.push(remoteEvent);
+      return;
+    }
+
+    sceneRef.current.applyRemoteEvent(remoteEvent);
+  }, [remoteEvent]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -25,12 +45,27 @@ export default function LobbyGame({ playerLabel }) {
         return;
       }
 
+      const lobbyScene = new LobbyScene({
+        playerLabel,
+        onPlayerMove: (position) => {
+          onPlayerMoveRef.current?.(position);
+        },
+        onSceneReady: (scene) => {
+          sceneRef.current = scene;
+
+          pendingRemoteEventsRef.current.forEach((queuedEvent) => {
+            scene.applyRemoteEvent(queuedEvent);
+          });
+          pendingRemoteEventsRef.current = [];
+        },
+      });
+
       nextGame = new Phaser.Game({
         type: Phaser.AUTO,
         parent: containerRef.current,
         width: GAME_WIDTH,
         height: GAME_HEIGHT,
-        scene: [new LobbyScene({ playerLabel })],
+        scene: [lobbyScene],
         backgroundColor: '#0f172a',
         scale: {
           mode: Phaser.Scale.FIT,
@@ -51,6 +86,8 @@ export default function LobbyGame({ playerLabel }) {
 
     return () => {
       isDisposed = true;
+      sceneRef.current = null;
+      pendingRemoteEventsRef.current = [];
       if (gameRef.current) {
         gameRef.current.destroy(true);
       } else {

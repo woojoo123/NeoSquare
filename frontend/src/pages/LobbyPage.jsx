@@ -17,12 +17,13 @@ export default function LobbyPage() {
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const primarySpace = spaces[0] || null;
-  const { connectionStatus, lastMessage, lastError } = useLobbyRealtime({
-    enabled: !isLoading && !errorMessage && Boolean(currentUser),
-    userId: currentUser?.id,
-    nickname: currentUser?.nickname,
-    spaceId: primarySpace?.id ?? null,
-  });
+  const { connectionStatus, lastMessage, lastError, remoteEvent, sendUserMove } =
+    useLobbyRealtime({
+      enabled: !isLoading && !errorMessage && Boolean(currentUser),
+      userId: currentUser?.id,
+      nickname: currentUser?.nickname,
+      spaceId: primarySpace?.id ?? null,
+    });
 
   const handleLogout = () => {
     clearAuth();
@@ -164,7 +165,11 @@ export default function LobbyPage() {
               </p>
             </div>
           </div>
-          <LobbyGame playerLabel={currentUser?.nickname || 'You'} />
+          <LobbyGame
+            playerLabel={currentUser?.nickname || 'You'}
+            onPlayerMove={sendUserMove}
+            remoteEvent={remoteEvent}
+          />
         </section>
       </div>
     </AppLayout>
