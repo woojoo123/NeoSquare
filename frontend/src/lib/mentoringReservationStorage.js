@@ -27,6 +27,42 @@ function writeReservationMap(reservationMap) {
   window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(reservationMap));
 }
 
+function sortReservations(reservations) {
+  return reservations.sort((leftReservation, rightReservation) => {
+    const leftTime = new Date(leftReservation.reservedAt || 0).getTime();
+    const rightTime = new Date(rightReservation.reservedAt || 0).getTime();
+    return leftTime - rightTime;
+  });
+}
+
+function updateStoredMentoringReservationStatus(reservationId, userId, nextStatus, roleKey) {
+  if (typeof window === 'undefined') {
+    throw new Error('Mentoring reservation storage is unavailable.');
+  }
+
+  const reservationMap = readReservationMap();
+  const existingReservation = reservationMap[reservationId];
+
+  if (!existingReservation) {
+    throw new Error('Reservation not found.');
+  }
+
+  if (String(existingReservation[roleKey]) !== String(userId)) {
+    throw new Error('You can only update reservations assigned to you.');
+  }
+
+  const updatedReservation = {
+    ...existingReservation,
+    status: nextStatus,
+    updatedAt: new Date().toISOString(),
+  };
+
+  reservationMap[reservationId] = updatedReservation;
+  writeReservationMap(reservationMap);
+
+  return updatedReservation;
+}
+
 export function getStoredMentoringReservations(userId) {
   if (!userId) {
     return [];
@@ -34,13 +70,25 @@ export function getStoredMentoringReservations(userId) {
 
   const reservationMap = readReservationMap();
 
-  return Object.values(reservationMap)
-    .filter((reservation) => String(reservation.requesterId) === String(userId))
-    .sort((leftReservation, rightReservation) => {
-      const leftTime = new Date(leftReservation.reservedAt || 0).getTime();
-      const rightTime = new Date(rightReservation.reservedAt || 0).getTime();
-      return leftTime - rightTime;
-    });
+  return sortReservations(
+    Object.values(reservationMap).filter(
+      (reservation) => String(reservation.requesterId) === String(userId)
+    )
+  );
+}
+
+export function getStoredReceivedMentoringReservations(userId) {
+  if (!userId) {
+    return [];
+  }
+
+  const reservationMap = readReservationMap();
+
+  return sortReservations(
+    Object.values(reservationMap).filter(
+      (reservation) => String(reservation.mentorId) === String(userId)
+    )
+  );
 }
 
 export function saveMentoringReservation(reservationInput) {
@@ -76,29 +124,28 @@ export function saveMentoringReservation(reservationInput) {
 }
 
 export function cancelStoredMentoringReservation(reservationId, requesterId) {
-  if (typeof window === 'undefined') {
-    throw new Error('Mentoring reservation storage is unavailable.');
-  }
+  return updateStoredMentoringReservationStatus(
+    reservationId,
+    requesterId,
+    'CANCELED',
+    'requesterId'
+  );
+}
 
-  const reservationMap = readReservationMap();
-  const existingReservation = reservationMap[reservationId];
+export function acceptStoredMentoringReservation(reservationId, mentorId) {
+  return updateStoredMentoringReservationStatus(
+    reservationId,
+    mentorId,
+    'ACCEPTED',
+    'mentorId'
+  );
+}
 
-  if (!existingReservation) {
-    throw new Error('Reservation not found.');
-  }
-
-  if (String(existingReservation.requesterId) !== String(requesterId)) {
-    throw new Error('You can only cancel your own reservations.');
-  }
-
-  const updatedReservation = {
-    ...existingReservation,
-    status: 'CANCELED',
-    canceledAt: new Date().toISOString(),
-  };
-
-  reservationMap[reservationId] = updatedReservation;
-  writeReservationMap(reservationMap);
-
-  return updatedReservation;
+export function rejectStoredMentoringReservation(reservationId, mentorId) {
+  return updateStoredMentoringReservationStatus(
+    reservationId,
+    mentorId,
+    'REJECTED',
+    'mentorId'
+  );
 }

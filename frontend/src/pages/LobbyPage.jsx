@@ -13,8 +13,11 @@ import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
 import {
+  acceptStoredMentoringReservation,
   cancelStoredMentoringReservation,
+  getStoredReceivedMentoringReservations,
   getStoredMentoringReservations,
+  rejectStoredMentoringReservation,
   saveMentoringReservation,
 } from '../lib/mentoringReservationStorage';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
@@ -162,6 +165,7 @@ export default function LobbyPage() {
   const [feedbackNotice, setFeedbackNotice] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
   const [reservations, setReservations] = useState([]);
+  const [receivedReservations, setReceivedReservations] = useState([]);
   const [selectedReservationMentorId, setSelectedReservationMentorId] = useState('');
   const [reservationDateTime, setReservationDateTime] = useState(getDefaultReservationDateTime);
   const [reservationMessage, setReservationMessage] = useState('');
@@ -169,6 +173,10 @@ export default function LobbyPage() {
   const [reservationError, setReservationError] = useState('');
   const [reservationStatus, setReservationStatus] = useState('idle');
   const [activeReservationActionId, setActiveReservationActionId] = useState(null);
+  const [receivedReservationNotice, setReceivedReservationNotice] = useState('');
+  const [receivedReservationError, setReceivedReservationError] = useState('');
+  const [activeReceivedReservationActionId, setActiveReceivedReservationActionId] =
+    useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
@@ -228,10 +236,12 @@ export default function LobbyPage() {
   const reloadReservations = (userId = currentUser?.id) => {
     if (!userId) {
       setReservations([]);
+      setReceivedReservations([]);
       return;
     }
 
     setReservations(getStoredMentoringReservations(userId));
+    setReceivedReservations(getStoredReceivedMentoringReservations(userId));
   };
 
   const handleMentoringSubmit = async (event) => {
@@ -322,6 +332,29 @@ export default function LobbyPage() {
       setReservationError(error.message || 'Failed to cancel reservation.');
     } finally {
       setActiveReservationActionId(null);
+    }
+  };
+
+  const handleReceivedReservationDecision = async (reservationId, decision) => {
+    setActiveReceivedReservationActionId(reservationId);
+    setReceivedReservationNotice('');
+    setReceivedReservationError('');
+
+    try {
+      if (decision === 'accept') {
+        acceptStoredMentoringReservation(reservationId, currentUser?.id);
+      } else {
+        rejectStoredMentoringReservation(reservationId, currentUser?.id);
+      }
+
+      reloadReservations(currentUser?.id);
+      setReceivedReservationNotice(
+        decision === 'accept' ? 'Reservation accepted.' : 'Reservation rejected.'
+      );
+    } catch (error) {
+      setReceivedReservationError(error.message || 'Failed to update received reservation.');
+    } finally {
+      setActiveReceivedReservationActionId(null);
     }
   };
 
@@ -425,6 +458,7 @@ export default function LobbyPage() {
         setSentRequests(normalizeSentRequests(sentRequestsResponse));
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
         setReservations(getStoredMentoringReservations(meResponse?.id));
+        setReceivedReservations(getStoredReceivedMentoringReservations(meResponse?.id));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -803,6 +837,55 @@ export default function LobbyPage() {
                             disabled={isProcessing}
                           >
                             {isProcessing ? 'Canceling...' : 'Cancel'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Received reservations</h2>
+            {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
+            {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
+            {receivedReservations.length === 0 ? (
+              <p className="app-note">No received reservations yet.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {receivedReservations.map((reservation) => {
+                  const isPending = reservation.status === 'PENDING';
+                  const isProcessing = activeReceivedReservationActionId === reservation.id;
+
+                  return (
+                    <li key={reservation.id} className="mentoring-request-card">
+                      <strong>{reservation.requesterLabel || 'Unknown requester'}</strong>
+                      <span>{reservation.status}</span>
+                      <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
+                      <p>{reservation.message || 'No reservation message provided.'}</p>
+                      {isPending ? (
+                        <div className="mentoring-request-actions">
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() =>
+                              handleReceivedReservationDecision(reservation.id, 'accept')
+                            }
+                            disabled={isProcessing}
+                          >
+                            {isProcessing ? 'Processing...' : 'Accept'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() =>
+                              handleReceivedReservationDecision(reservation.id, 'reject')
+                            }
+                            disabled={isProcessing}
+                          >
+                            Reject
                           </button>
                         </div>
                       ) : null}
