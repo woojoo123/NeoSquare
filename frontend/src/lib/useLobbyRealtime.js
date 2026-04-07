@@ -126,6 +126,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
   const [lastMessage, setLastMessage] = useState(null);
   const [lastError, setLastError] = useState('');
   const [remoteEvent, setRemoteEvent] = useState(null);
+  const [remoteUsers, setRemoteUsers] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const socketRef = useRef(null);
   const hasEnteredRef = useRef(false);
@@ -229,6 +230,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       setLastMessage(null);
       setLastError('');
       setRemoteEvent(null);
+      setRemoteUsers([]);
       setChatMessages([]);
       socketRef.current = null;
       hasEnteredRef.current = false;
@@ -263,6 +265,32 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
         if (nextRemoteEvent) {
           remoteEventSequenceRef.current = nextRemoteEvent.sequence;
           setRemoteEvent(nextRemoteEvent);
+          setRemoteUsers((previousUsers) => {
+            if (nextRemoteEvent.type === 'user_leave') {
+              return previousUsers.filter((user) => user.userId !== nextRemoteEvent.userId);
+            }
+
+            const nextUser = {
+              userId: nextRemoteEvent.userId,
+              label: nextRemoteEvent.label,
+              x: nextRemoteEvent.x,
+              y: nextRemoteEvent.y,
+            };
+            const existingUserIndex = previousUsers.findIndex(
+              (user) => user.userId === nextRemoteEvent.userId
+            );
+
+            if (existingUserIndex === -1) {
+              return [...previousUsers, nextUser];
+            }
+
+            const updatedUsers = [...previousUsers];
+            updatedUsers[existingUserIndex] = {
+              ...updatedUsers[existingUserIndex],
+              ...nextUser,
+            };
+            return updatedUsers;
+          });
         }
 
         const nextChatMessage = normalizeChatMessage(parsedMessage, userId, spaceId);
@@ -305,6 +333,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       setLastMessage(null);
       setLastError('');
       setRemoteEvent(null);
+      setRemoteUsers([]);
       setChatMessages([]);
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
@@ -368,6 +397,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
     lastMessage,
     lastError,
     remoteEvent,
+    remoteUsers,
     chatMessages,
     sendChatMessage,
     sendUserMove,

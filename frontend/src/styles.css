@@ -226,6 +226,48 @@ select {
   word-break: break-word;
 }
 
+.mentoring-form {
+  margin-top: 8px;
+}
+
+.mentoring-textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.mentoring-request-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.mentoring-request-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.mentoring-request-card strong,
+.mentoring-request-card span,
+.mentoring-request-card p {
+  display: block;
+}
+
+.mentoring-request-card span {
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.mentoring-request-card p {
+  margin-top: 10px;
+  color: #4b5563;
+}
+
 .lobby-stage {
   padding: 18px;
 }

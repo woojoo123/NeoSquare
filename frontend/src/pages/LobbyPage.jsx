@@ -2,18 +2,48 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
+import { createMentoringRequest, getSentMentoringRequests } from '../api/mentoring';
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
 
+function normalizeSentRequests(rawValue) {
+  const requestItems = Array.isArray(rawValue)
+    ? rawValue
+    : Array.isArray(rawValue?.items)
+      ? rawValue.items
+      : Array.isArray(rawValue?.requests)
+        ? rawValue.requests
+        : [];
+
+  return requestItems.map((request, index) => ({
+    id: request.id ?? `mentoring-request-${index}`,
+    mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
+    mentorLabel:
+      request.mentorNickname ||
+      request.mentorName ||
+      request.receiverNickname ||
+      request.targetNickname ||
+      `User ${request.mentorId ?? request.receiverId ?? request.targetUserId ?? '?'}`,
+    message: request.message || request.content || '',
+    status: request.status || 'PENDING',
+  }));
+}
+
 export default function LobbyPage() {
   const navigate = useNavigate();
   const [spaces, setSpaces] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
+  const [selectedMentorId, setSelectedMentorId] = useState('');
+  const [mentoringMessage, setMentoringMessage] = useState('');
+  const [mentoringFeedback, setMentoringFeedback] = useState('');
+  const [mentoringError, setMentoringError] = useState('');
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -24,6 +54,7 @@ export default function LobbyPage() {
     lastMessage,
     lastError,
     remoteEvent,
+    remoteUsers,
     chatMessages,
     sendChatMessage,
     sendUserMove,
@@ -38,6 +69,40 @@ export default function LobbyPage() {
   const handleLogout = () => {
     clearAuth();
     navigate('/login', { replace: true });
+  };
+
+  const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
+
+  const handleMentoringSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!selectedMentorId) {
+      setMentoringError('Select a mentor target first.');
+      setMentoringFeedback('');
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    setMentoringError('');
+    setMentoringFeedback('');
+
+    try {
+      await createMentoringRequest({
+        mentorId: Number(selectedMentorId),
+        message: mentoringMessage.trim(),
+      });
+
+      const sentRequestsResponse = await getSentMentoringRequests();
+      setSentRequests(normalizeSentRequests(sentRequestsResponse));
+      setMentoringMessage('');
+      setMentoringFeedback('Mentoring request sent.');
+    } catch (error) {
+      const message =
+        error?.response?.data?.message || error.message || 'Failed to send mentoring request.';
+      setMentoringError(message);
+    } finally {
+      setIsSubmittingRequest(false);
+    }
   };
 
   const handleChatSubmit = (event) => {
@@ -58,9 +123,10 @@ export default function LobbyPage() {
       setErrorMessage('');
 
       try {
-        const [meResponse, spacesResponse] = await Promise.all([
+        const [meResponse, spacesResponse, sentRequestsResponse] = await Promise.all([
           getMe(),
           getSpaces(),
+          getSentMentoringRequests(),
         ]);
 
         if (!isMounted) {
@@ -69,6 +135,7 @@ export default function LobbyPage() {
 
         setCurrentUser(meResponse);
         setSpaces(spacesResponse || []);
+        setSentRequests(normalizeSentRequests(sentRequestsResponse));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -102,6 +169,21 @@ export default function LobbyPage() {
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (!mentorOptions.length) {
+      setSelectedMentorId('');
+      return;
+    }
+
+    const hasSelectedMentor = mentorOptions.some(
+      (mentor) => String(mentor.userId) === String(selectedMentorId)
+    );
+
+    if (!selectedMentorId || !hasSelectedMentor) {
+      setSelectedMentorId(String(mentorOptions[0].userId));
+    }
+  }, [mentorOptions, selectedMentorId]);
 
   return (
     <AppLayout
@@ -155,6 +237,68 @@ export default function LobbyPage() {
                 {JSON.stringify(lastMessage, null, 2)}
               </pre>
             ) : null}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Mentoring request</h2>
+            <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
+              <label className="app-field">
+                <span>Mentor target</span>
+                <select
+                  className="app-input"
+                  value={selectedMentorId}
+                  onChange={(event) => setSelectedMentorId(event.target.value)}
+                  disabled={mentorOptions.length === 0 || isSubmittingRequest}
+                >
+                  {mentorOptions.length === 0 ? (
+                    <option value="">No mentor candidates in lobby</option>
+                  ) : null}
+                  {mentorOptions.map((mentor) => (
+                    <option key={mentor.userId} value={mentor.userId}>
+                      {mentor.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="app-field">
+                <span>Message</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  placeholder="Can you help me with a mentoring session?"
+                  value={mentoringMessage}
+                  onChange={(event) => setMentoringMessage(event.target.value)}
+                  rows={3}
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={mentorOptions.length === 0 || isSubmittingRequest}
+              >
+                {isSubmittingRequest ? 'Sending...' : 'Send request'}
+              </button>
+            </form>
+            {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
+            {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Sent mentoring requests</h2>
+            {sentRequests.length === 0 ? (
+              <p className="app-note">No mentoring requests sent yet.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {sentRequests.map((request) => (
+                  <li key={request.id} className="mentoring-request-card">
+                    <strong>{request.mentorLabel}</strong>
+                    <span>{request.status}</span>
+                    <p>{request.message || 'No message provided.'}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <section className="app-section">
