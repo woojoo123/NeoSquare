@@ -43,8 +43,15 @@ public record WebSocketMessage(
     }
 
     public static WebSocketMessage error(String message) {
+        return error(message, null);
+    }
+
+    public static WebSocketMessage error(String message, WebSocketEventType receivedType) {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("message", message);
+        if (receivedType != null) {
+            payload.put("receivedType", receivedType.getValue());
+        }
 
         return new WebSocketMessage(
                 WebSocketEventType.WS_ERROR,
@@ -52,5 +59,9 @@ public record WebSocketMessage(
                 null,
                 Instant.now()
         );
+    }
+
+    public static WebSocketMessage relay(WebSocketEventType type, JsonNode payload, Long senderId) {
+        return new WebSocketMessage(type, payload, senderId, Instant.now());
     }
 }

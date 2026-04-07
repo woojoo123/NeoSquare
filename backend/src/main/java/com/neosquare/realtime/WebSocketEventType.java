@@ -10,6 +10,9 @@ public enum WebSocketEventType {
     USER_LEAVE("user_leave"),
     USER_MOVE("user_move"),
     CHAT_SEND("chat_send"),
+    WEBRTC_OFFER("webrtc_offer"),
+    WEBRTC_ANSWER("webrtc_answer"),
+    WEBRTC_ICE_CANDIDATE("webrtc_ice_candidate"),
     WS_CONNECTED("ws_connected"),
     WS_ACK("ws_ack"),
     WS_ERROR("ws_error");

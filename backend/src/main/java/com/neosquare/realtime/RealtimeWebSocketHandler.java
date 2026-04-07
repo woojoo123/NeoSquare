@@ -17,9 +17,17 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(RealtimeWebSocketHandler.class);
 
     private final ObjectMapper objectMapper;
+    private final MentoringSessionSignalingService mentoringSessionSignalingService;
+    private final RealtimeSessionRegistry realtimeSessionRegistry;
 
-    public RealtimeWebSocketHandler(ObjectMapper objectMapper) {
+    public RealtimeWebSocketHandler(
+            ObjectMapper objectMapper,
+            MentoringSessionSignalingService mentoringSessionSignalingService,
+            RealtimeSessionRegistry realtimeSessionRegistry
+    ) {
         this.objectMapper = objectMapper;
+        this.mentoringSessionSignalingService = mentoringSessionSignalingService;
+        this.realtimeSessionRegistry = realtimeSessionRegistry;
     }
 
     @Override
@@ -30,6 +38,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        realtimeSessionRegistry.removeSession(session);
         log.info(
                 "WebSocket disconnected. sessionId={}, code={}, reason={}",
                 session.getId(),
@@ -45,11 +54,19 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        WebSocketEventType incomingType = null;
+
         try {
             WebSocketMessage incomingMessage = objectMapper.readValue(message.getPayload(), WebSocketMessage.class);
 
             if (incomingMessage.type() == null) {
                 throw new IllegalArgumentException("WebSocket message type is required.");
+            }
+
+            incomingType = incomingMessage.type();
+
+            if (incomingMessage.senderId() != null) {
+                realtimeSessionRegistry.bindSession(session, incomingMessage.senderId());
             }
 
             log.info(
@@ -59,10 +76,25 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     incomingMessage.senderId()
             );
 
+            if (mentoringSessionSignalingService.supports(incomingMessage.type())) {
+                SignalRouteResult routeResult = mentoringSessionSignalingService.routeSignal(incomingMessage);
+
+                for (WebSocketSession targetSession : routeResult.targetSessions()) {
+                    sendMessage(targetSession, routeResult.outboundMessage());
+                }
+            }
+
             sendMessage(session, WebSocketMessage.ack(incomingMessage.type(), session.getId()));
-        } catch (JsonProcessingException | IllegalArgumentException exception) {
+        } catch (JsonProcessingException exception) {
             log.warn("Invalid WebSocket message. sessionId={}", session.getId(), exception);
             sendMessage(session, WebSocketMessage.error("Invalid WebSocket message."));
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            log.warn("WebSocket message rejected. sessionId={}", session.getId(), exception);
+            if (incomingType == null) {
+                sendMessage(session, WebSocketMessage.error("Invalid WebSocket message."));
+            } else {
+                sendMessage(session, WebSocketMessage.error(exception.getMessage(), incomingType));
+            }
         }
     }
 
