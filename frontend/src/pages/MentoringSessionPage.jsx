@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getMe } from '../api/auth';
 import { getMentoringRequest } from '../api/mentoring';
 import AppLayout from '../components/AppLayout';
+import { getStoredMentoringReservationById } from '../lib/mentoringReservationStorage';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
 import { useSessionMedia } from '../lib/useSessionMedia';
 import { useSessionWebRTC } from '../lib/useSessionWebRTC';
@@ -34,26 +35,87 @@ function normalizeSessionRequest(rawValue) {
       request.receiverNickname ||
       request.targetNickname ||
       'Mentor',
+    reservedAt: null,
+    sessionSource: 'request',
     createdAt: request.createdAt || request.timestamp || null,
   };
+}
+
+function normalizeReservationSession(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const reservation = rawValue.item || rawValue.reservation || rawValue;
+
+  return {
+    id: reservation.id,
+    status: reservation.status || 'PENDING',
+    message: reservation.message || reservation.content || '',
+    requesterId: reservation.requesterId ?? reservation.senderId ?? reservation.userId ?? null,
+    requesterLabel:
+      reservation.requesterLabel ||
+      reservation.requesterNickname ||
+      reservation.requesterName ||
+      reservation.senderNickname ||
+      reservation.userNickname ||
+      'Requester',
+    mentorId: reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? null,
+    mentorLabel:
+      reservation.mentorLabel ||
+      reservation.mentorNickname ||
+      reservation.mentorName ||
+      reservation.receiverNickname ||
+      reservation.targetNickname ||
+      'Mentor',
+    reservedAt: reservation.reservedAt || reservation.scheduledAt || null,
+    sessionSource: 'reservation',
+    createdAt: reservation.createdAt || reservation.timestamp || null,
+  };
+}
+
+function normalizeSessionEntry(rawValue, sessionSource = 'request') {
+  if (sessionSource === 'reservation') {
+    return normalizeReservationSession(rawValue);
+  }
+
+  return normalizeSessionRequest(rawValue);
+}
+
+function formatSessionTimestamp(value) {
+  if (!value) {
+    return '';
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return parsedDate.toLocaleString();
 }
 
 export default function MentoringSessionPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { requestId } = useParams();
+  const initialSessionEntry = location.state?.reservation
+    ? normalizeSessionEntry(location.state.reservation, 'reservation')
+    : normalizeSessionEntry(location.state?.request, 'request');
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
-  const [sessionRequest, setSessionRequest] = useState(
-    normalizeSessionRequest(location.state?.request)
-  );
+  const [sessionRequest, setSessionRequest] = useState(initialSessionEntry);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(!location.state?.request);
+  const [isLoading, setIsLoading] = useState(!initialSessionEntry);
   const [chatInput, setChatInput] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [sessionExitStatus, setSessionExitStatus] = useState('idle');
   const chatMessagesEndRef = useRef(null);
   const endSessionTimeoutRef = useRef(null);
+  const isReservationSession = sessionRequest?.sessionSource === 'reservation';
+  const numericSessionId = Number(requestId);
+  const hasRealtimeSessionId = !isReservationSession && Number.isFinite(numericSessionId);
   const {
     localVideoRef,
     localStream,
@@ -78,8 +140,8 @@ export default function MentoringSessionPage() {
     startConnection,
     stopConnection,
   } = useSessionWebRTC({
-    enabled: Boolean(sessionRequest?.id && currentUser?.id),
-    requestId: Number(requestId),
+    enabled: Boolean(hasRealtimeSessionId && sessionRequest?.id && currentUser?.id),
+    requestId: hasRealtimeSessionId ? numericSessionId : null,
     userId: currentUser?.id,
     localStream,
     isInitiator: Boolean(
@@ -93,12 +155,13 @@ export default function MentoringSessionPage() {
     sendMessage,
   } = useMentoringSessionChat({
     enabled: Boolean(
+      !isReservationSession &&
       sessionRequest?.id &&
       sessionRequest?.status === 'ACCEPTED' &&
       currentUser?.id &&
       currentUser?.nickname
     ),
-    requestId: Number(requestId),
+    requestId: hasRealtimeSessionId ? numericSessionId : null,
     userId: currentUser?.id,
     nickname: currentUser?.nickname,
   });
@@ -136,7 +199,7 @@ export default function MentoringSessionPage() {
   }, [currentUser, setCurrentUser]);
 
   useEffect(() => {
-    if (location.state?.request) {
+    if (location.state?.request || location.state?.reservation) {
       return;
     }
 
@@ -147,13 +210,24 @@ export default function MentoringSessionPage() {
       setErrorMessage('');
 
       try {
+        const storedReservation = getStoredMentoringReservationById(requestId);
+
+        if (storedReservation) {
+          if (!isMounted) {
+            return;
+          }
+
+          setSessionRequest(normalizeSessionEntry(storedReservation, 'reservation'));
+          return;
+        }
+
         const response = await getMentoringRequest(requestId);
 
         if (!isMounted) {
           return;
         }
 
-        setSessionRequest(normalizeSessionRequest(response));
+        setSessionRequest(normalizeSessionEntry(response, 'request'));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -176,7 +250,7 @@ export default function MentoringSessionPage() {
     return () => {
       isMounted = false;
     };
-  }, [location.state?.request, requestId]);
+  }, [location.state?.request, location.state?.reservation, requestId]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
@@ -237,6 +311,17 @@ export default function MentoringSessionPage() {
     setSessionExitStatus('idle');
     const preparedStream = await startLocalPreview();
 
+    if (!preparedStream) {
+      return;
+    }
+
+    if (isReservationSession) {
+      setActionMessage(
+        'Local preview is ready. Reservation sessions can use this workspace now, and realtime signaling can be attached later.'
+      );
+      return;
+    }
+
     if (preparedStream) {
       await startConnection(preparedStream);
     }
@@ -258,7 +343,7 @@ export default function MentoringSessionPage() {
         refreshMentoring: true,
         sessionMessage: 'Mentoring session ended. You can leave quick feedback below.',
         feedbackPrompt: {
-          requestId: sessionRequest?.id ?? Number(requestId),
+          requestId: sessionRequest?.id ?? requestId,
           counterpartName: counterpartName || 'Session partner',
           role: myRole,
           requestMessage: sessionRequest?.message || '',
@@ -359,18 +444,32 @@ export default function MentoringSessionPage() {
         <section className="session-panel">
           <section className="session-hero">
             <div className="session-hero__main">
-              <p className="session-hero__eyebrow">Session ready</p>
+              <p className="session-hero__eyebrow">
+                {isReservationSession ? 'Reservation session' : 'Session ready'}
+              </p>
               <h2>{counterpartName || 'Unknown user'}</h2>
               <p className="session-hero__summary">
                 {sessionRequest.message || 'No mentoring request summary was provided.'}
               </p>
               <div className="session-meta-list">
+                <span className="session-meta-pill">
+                  Type: {isReservationSession ? 'Scheduled mentoring' : 'Request mentoring'}
+                </span>
                 <span className="session-meta-pill">Role: {myRole}</span>
                 <span className="session-meta-pill">Status: {sessionRequest.status}</span>
-                <span className="session-meta-pill">Request #{sessionRequest.id}</span>
+                <span className="session-meta-pill">
+                  {isReservationSession ? 'Reservation' : 'Request'} #{sessionRequest.id}
+                </span>
+                {sessionRequest.reservedAt ? (
+                  <span className="session-meta-pill">
+                    Reserved for: {formatSessionTimestamp(sessionRequest.reservedAt)}
+                  </span>
+                ) : null}
               </div>
               <p className="app-note">
-                You can continue the conversation here before moving into video mentoring.
+                {isReservationSession
+                  ? 'This session was opened from an accepted reservation. You can continue with the same mentoring workspace here.'
+                  : 'You can continue the conversation here before moving into video mentoring.'}
               </p>
               {sessionRequest.createdAt ? (
                 <p className="app-note">Request created at: {sessionRequest.createdAt}</p>
@@ -419,7 +518,9 @@ export default function MentoringSessionPage() {
                 <div>
                   <h2>Video mentoring area</h2>
                   <p className="app-note">
-                    Prepare signaling, peer connection, and remote video here.
+                    {isReservationSession
+                      ? 'Local preview is available here. Reservation sessions can attach realtime signaling later.'
+                      : 'Prepare signaling, peer connection, and remote video here.'}
                   </p>
                 </div>
                 <div className="session-video-status-list">
@@ -527,7 +628,9 @@ export default function MentoringSessionPage() {
                 <div>
                   <h2>Session chat</h2>
                   <p className="app-note">
-                    Status: {sessionChatStatus}. This chat is scoped to request #{sessionRequest.id}.
+                    {isReservationSession
+                      ? 'Reservation sessions currently reuse the page layout first. Session chat can be attached after reservation-backed realtime ids are added.'
+                      : `Status: ${sessionChatStatus}. This chat is scoped to request #${sessionRequest.id}.`}
                   </p>
                 </div>
               </div>
@@ -560,12 +663,20 @@ export default function MentoringSessionPage() {
                   placeholder="Type a mentoring session message"
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
-                  disabled={sessionRequest.status !== 'ACCEPTED' || sessionExitStatus === 'ending'}
+                  disabled={
+                    isReservationSession ||
+                    sessionRequest.status !== 'ACCEPTED' ||
+                    sessionExitStatus === 'ending'
+                  }
                 />
                 <button
                   type="submit"
                   className="primary-button"
-                  disabled={sessionRequest.status !== 'ACCEPTED' || sessionExitStatus === 'ending'}
+                  disabled={
+                    isReservationSession ||
+                    sessionRequest.status !== 'ACCEPTED' ||
+                    sessionExitStatus === 'ending'
+                  }
                 >
                   Send
                 </button>

@@ -91,6 +91,15 @@ export function getStoredReceivedMentoringReservations(userId) {
   );
 }
 
+export function getStoredMentoringReservationById(reservationId) {
+  if (!reservationId) {
+    return null;
+  }
+
+  const reservationMap = readReservationMap();
+  return reservationMap[reservationId] || null;
+}
+
 export function saveMentoringReservation(reservationInput) {
   if (typeof window === 'undefined') {
     throw new Error('Mentoring reservation storage is unavailable.');

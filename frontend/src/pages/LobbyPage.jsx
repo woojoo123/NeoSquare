@@ -221,6 +221,14 @@ export default function LobbyPage() {
     });
   };
 
+  const openReservationSession = (reservation) => {
+    navigate(`/mentoring/session/${reservation.id}`, {
+      state: {
+        reservation,
+      },
+    });
+  };
+
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
 
   const refreshMentoringRequests = async () => {
@@ -828,8 +836,17 @@ export default function LobbyPage() {
                       <span>{reservation.status}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
                       <p>{reservation.message || 'No reservation message provided.'}</p>
-                      {isCancelable ? (
+                      {isCancelable || reservation.status === 'ACCEPTED' ? (
                         <div className="mentoring-request-actions">
+                          {reservation.status === 'ACCEPTED' ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => openReservationSession(reservation)}
+                            >
+                              Enter session
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="secondary-button"
@@ -865,28 +882,41 @@ export default function LobbyPage() {
                       <span>{reservation.status}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
                       <p>{reservation.message || 'No reservation message provided.'}</p>
-                      {isPending ? (
+                      {isPending || reservation.status === 'ACCEPTED' ? (
                         <div className="mentoring-request-actions">
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() =>
-                              handleReceivedReservationDecision(reservation.id, 'accept')
-                            }
-                            disabled={isProcessing}
-                          >
-                            {isProcessing ? 'Processing...' : 'Accept'}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() =>
-                              handleReceivedReservationDecision(reservation.id, 'reject')
-                            }
-                            disabled={isProcessing}
-                          >
-                            Reject
-                          </button>
+                          {reservation.status === 'ACCEPTED' ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => openReservationSession(reservation)}
+                            >
+                              Enter session
+                            </button>
+                          ) : null}
+                          {isPending ? (
+                            <>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() =>
+                                  handleReceivedReservationDecision(reservation.id, 'accept')
+                                }
+                                disabled={isProcessing}
+                              >
+                                {isProcessing ? 'Processing...' : 'Accept'}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() =>
+                                  handleReceivedReservationDecision(reservation.id, 'reject')
+                                }
+                                disabled={isProcessing}
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>
