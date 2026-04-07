@@ -5,6 +5,7 @@ import { getMe } from '../api/auth';
 import { getMentoringRequest } from '../api/mentoring';
 import AppLayout from '../components/AppLayout';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
+import { useSessionMedia } from '../lib/useSessionMedia';
 import { useAuthStore } from '../store/authStore';
 
 function normalizeSessionRequest(rawValue) {
@@ -49,10 +50,20 @@ export default function MentoringSessionPage() {
   const [isLoading, setIsLoading] = useState(!location.state?.request);
   const [chatInput, setChatInput] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [videoCallStatus, setVideoCallStatus] = useState('not_connected');
-  const [cameraOn, setCameraOn] = useState(false);
-  const [microphoneOn, setMicrophoneOn] = useState(false);
   const chatMessagesEndRef = useRef(null);
+  const {
+    localVideoRef,
+    hasLocalPreview,
+    connectionStatus: videoCallStatus,
+    cameraOn,
+    microphoneOn,
+    statusMessage: mediaStatusMessage,
+    errorMessage: mediaErrorMessage,
+    startLocalPreview,
+    toggleCamera,
+    toggleMicrophone,
+    stopLocalPreview,
+  } = useSessionMedia();
   const {
     messages: sessionMessages,
     connectionStatus: sessionChatStatus,
@@ -174,38 +185,26 @@ export default function MentoringSessionPage() {
     }
   };
 
-  const handleStartVideoCall = () => {
-    setVideoCallStatus((currentStatus) => {
-      if (currentStatus === 'not_connected') {
-        setActionMessage('Preparing video call UI. Media streams are not connected yet.');
-        return 'preparing';
-      }
-
-      setActionMessage('Video call layout is ready. Connect WebRTC on this step next.');
-      return 'ready';
-    });
+  const handleStartVideoCall = async () => {
+    setActionMessage('');
+    await startLocalPreview();
   };
 
   const handleEndSession = () => {
-    setActionMessage('Session end flow is not connected yet. Use Back to lobby to leave this screen for now.');
+    stopLocalPreview();
+    setActionMessage(
+      'Local media was stopped. Session end flow is not connected yet. Use Back to lobby to leave this screen for now.'
+    );
   };
 
   const handleToggleCamera = () => {
-    setCameraOn((currentValue) => {
-      const nextValue = !currentValue;
-      setActionMessage(nextValue ? 'Camera placeholder turned on.' : 'Camera placeholder turned off.');
-      return nextValue;
-    });
+    setActionMessage('');
+    toggleCamera();
   };
 
   const handleToggleMicrophone = () => {
-    setMicrophoneOn((currentValue) => {
-      const nextValue = !currentValue;
-      setActionMessage(
-        nextValue ? 'Microphone placeholder turned on.' : 'Microphone placeholder muted.'
-      );
-      return nextValue;
-    });
+    setActionMessage('');
+    toggleMicrophone();
   };
 
   const videoStatusLabel =
@@ -218,14 +217,12 @@ export default function MentoringSessionPage() {
   const localVideoStatus =
     videoCallStatus === 'ready'
       ? cameraOn
-        ? 'Local preview slot is ready for stream.'
+        ? 'Local preview ready.'
         : 'Camera is off. Turn it on before preview.'
       : videoCallStatus === 'preparing'
-        ? cameraOn
-          ? 'Camera placeholder is active while preparing.'
-          : 'Camera off while preparing.'
-        : cameraOn
-          ? 'Camera on. Start the call to prepare local preview.'
+        ? 'Preparing local camera and microphone.'
+        : videoCallStatus === 'error'
+          ? 'Local preview could not be prepared.'
           : 'Camera off';
 
   const remoteVideoStatus =
@@ -279,13 +276,20 @@ export default function MentoringSessionPage() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => navigate('/lobby')}
+                onClick={() => {
+                  stopLocalPreview();
+                  navigate('/lobby');
+                }}
               >
                 Back to lobby
               </button>
             </div>
           </section>
 
+          {mediaErrorMessage ? <p className="app-error">{mediaErrorMessage}</p> : null}
+          {!mediaErrorMessage && mediaStatusMessage ? (
+            <p className="app-note">{mediaStatusMessage}</p>
+          ) : null}
           {actionMessage ? <p className="app-note">{actionMessage}</p> : null}
 
           <section className="session-workspace">
@@ -312,6 +316,21 @@ export default function MentoringSessionPage() {
                 >
                   <span className="session-video-slot__label">Local video</span>
                   <strong>{currentUser?.nickname || 'You'}</strong>
+                  <div className="session-video-stage">
+                    {hasLocalPreview ? (
+                      <video
+                        ref={localVideoRef}
+                        className="session-video-element"
+                        autoPlay
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="session-video-placeholder">
+                        <span>Local preview unavailable</span>
+                      </div>
+                    )}
+                  </div>
                   <p className="session-video-slot__state">{localVideoStatus}</p>
                 </article>
 
@@ -320,6 +339,11 @@ export default function MentoringSessionPage() {
                 >
                   <span className="session-video-slot__label">Remote video</span>
                   <strong>{counterpartName || 'Session partner'}</strong>
+                  <div className="session-video-stage">
+                    <div className="session-video-placeholder">
+                      <span>Remote preview will appear here</span>
+                    </div>
+                  </div>
                   <p className="session-video-slot__state">{remoteVideoStatus}</p>
                 </article>
               </div>
@@ -329,13 +353,19 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="primary-button"
                   onClick={handleStartVideoCall}
+                  disabled={videoCallStatus === 'preparing'}
                 >
-                  {videoCallStatus === 'not_connected' ? 'Start video call' : 'Prepare video panel'}
+                  {videoCallStatus === 'ready'
+                    ? 'Local preview ready'
+                    : videoCallStatus === 'error'
+                      ? 'Try video call again'
+                      : 'Start video call'}
                 </button>
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleCamera}
+                  disabled={!hasLocalPreview}
                 >
                   {cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 </button>
@@ -343,6 +373,7 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleMicrophone}
+                  disabled={!hasLocalPreview}
                 >
                   {microphoneOn ? 'Mute microphone' : 'Turn microphone on'}
                 </button>
