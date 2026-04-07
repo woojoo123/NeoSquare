@@ -243,6 +243,8 @@ export default function MentoringSessionPage() {
             ? 'Video call ready'
             : videoCallStatus === 'error'
               ? 'Error'
+              : videoCallStatus === 'disconnected'
+                ? 'Disconnected'
               : videoCallStatus === 'preparing'
                 ? 'Preparing'
                 : 'Not connected';
@@ -280,6 +282,10 @@ export default function MentoringSessionPage() {
         ? 'Connecting remote stream...'
         : videoCallStatus === 'signaling'
           ? 'Waiting for offer/answer exchange.'
+          : videoCallStatus === 'disconnected'
+            ? 'Remote participant is offline or the call was interrupted.'
+            : videoCallStatus === 'error'
+              ? 'Remote connection failed. Retry the session call.'
           : videoCallStatus === 'preparing'
             ? 'Preparing peer connection.'
             : 'Remote not connected';
@@ -423,16 +429,18 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="primary-button"
                   onClick={handleStartVideoCall}
-                  disabled={videoCallStatus === 'preparing'}
+                  disabled={videoCallStatus === 'preparing' || videoCallStatus === 'connecting'}
                 >
-                  {videoCallStatus === 'ready'
-                    ? 'Start signaling'
-                    : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
-                      ? 'Signaling active'
-                      : videoCallStatus === 'connected'
-                        ? 'Video connected'
+                  {videoCallStatus === 'connected'
+                    ? 'Video connected'
+                    : videoCallStatus === 'error' || videoCallStatus === 'disconnected'
+                      ? 'Retry connection'
+                      : videoCallStatus === 'ready'
+                        ? 'Start signaling'
+                        : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
+                          ? 'Connecting...'
                     : videoCallStatus === 'error'
-                      ? 'Try video call again'
+                      ? 'Retry connection'
                       : 'Start video call'}
                 </button>
                 <button

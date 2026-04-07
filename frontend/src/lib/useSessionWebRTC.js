@@ -4,6 +4,8 @@ const RTC_CONFIGURATION = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
+const SIGNAL_EVENT_TYPES = ['webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate'];
+
 function getSessionWebSocketUrl() {
   const configuredUrl = import.meta.env.VITE_WS_URL;
 
@@ -36,9 +38,7 @@ function toNumber(value) {
 }
 
 function normalizeSignalMessage(message, requestId) {
-  const supportedTypes = ['webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate'];
-
-  if (!supportedTypes.includes(message?.type)) {
+  if (!SIGNAL_EVENT_TYPES.includes(message?.type)) {
     return null;
   }
 
@@ -61,6 +61,25 @@ function normalizeSignalMessage(message, requestId) {
   };
 }
 
+function normalizeSignalControlMessage(message) {
+  if (message?.type !== 'ws_ack' && message?.type !== 'ws_error') {
+    return null;
+  }
+
+  const payload = message?.payload || {};
+  const receivedType = payload.receivedType;
+
+  if (!SIGNAL_EVENT_TYPES.includes(receivedType)) {
+    return null;
+  }
+
+  return {
+    type: message.type,
+    receivedType,
+    message: payload.message || '',
+  };
+}
+
 function getConnectionErrorMessage(error) {
   return error?.message || 'Failed to prepare WebRTC connection.';
 }
@@ -80,6 +99,7 @@ export function useSessionWebRTC({
   const localStreamRef = useRef(localStream);
   const remoteStreamRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);
+  const socketClosingRef = useRef(false);
   const [connectionStatus, setConnectionStatus] = useState('not_connected');
   const [statusMessage, setStatusMessage] = useState(
     'Start the call after local media is ready.'
@@ -87,19 +107,22 @@ export function useSessionWebRTC({
   const [errorMessage, setErrorMessage] = useState('');
   const [lastSignalType, setLastSignalType] = useState('');
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
+  const [canRetry, setCanRetry] = useState(false);
 
   localStreamRef.current = localStream;
 
-  function resetRemoteStream() {
+  function setStatus(nextStatus, nextMessage, options = {}) {
+    setConnectionStatus(nextStatus);
+    setStatusMessage(nextMessage);
+    setCanRetry(Boolean(options.canRetry));
+  }
+
+  function clearRemoteStream() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
 
-    if (remoteStreamRef.current) {
-      remoteStreamRef.current.getTracks().forEach((track) => track.stop());
-      remoteStreamRef.current = null;
-    }
-
+    remoteStreamRef.current = null;
     setHasRemoteStream(false);
   }
 
@@ -110,14 +133,14 @@ export function useSessionWebRTC({
       peer.onicecandidate = null;
       peer.ontrack = null;
       peer.onconnectionstatechange = null;
+      peer.oniceconnectionstatechange = null;
       peer.close();
       peerRef.current = null;
     }
 
     pendingIceCandidatesRef.current = [];
-    resetRemoteStream();
-    setConnectionStatus(nextStatus);
-    setStatusMessage(nextMessage);
+    clearRemoteStream();
+    setStatus(nextStatus, nextMessage);
   }
 
   function sendSignal(type, payload) {
@@ -156,11 +179,44 @@ export function useSessionWebRTC({
     }
   }
 
+  function attachRemoteStream(nextRemoteStream) {
+    if (!nextRemoteStream) {
+      return;
+    }
+
+    if (remoteStreamRef.current !== nextRemoteStream) {
+      remoteStreamRef.current = nextRemoteStream;
+      nextRemoteStream.getTracks().forEach((track) => {
+        track.onended = () => {
+          const activeTracks = nextRemoteStream.getTracks().some(
+            (activeTrack) => activeTrack.readyState === 'live'
+          );
+
+          if (!activeTracks) {
+            clearRemoteStream();
+            setStatus('disconnected', 'Remote media stopped. Retry the connection if needed.', {
+              canRetry: true,
+            });
+          }
+        };
+      });
+    }
+
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = nextRemoteStream;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+
+    setHasRemoteStream(true);
+  }
+
   function ensurePeerConnection(streamOverride) {
     if (typeof RTCPeerConnection === 'undefined') {
       setConnectionStatus('error');
       setErrorMessage('This browser does not support RTCPeerConnection.');
-      setStatusMessage('WebRTC connection is unavailable in this environment.');
+      setStatus('error', 'WebRTC connection is unavailable in this environment.', {
+        canRetry: false,
+      });
       return null;
     }
 
@@ -203,36 +259,41 @@ export function useSessionWebRTC({
 
     peer.ontrack = (event) => {
       const [nextRemoteStream] = event.streams;
-
-      if (!nextRemoteStream) {
-        return;
-      }
-
-      remoteStreamRef.current = nextRemoteStream;
-      setHasRemoteStream(true);
-      setConnectionStatus('connected');
-      setStatusMessage('Remote stream connected.');
+      attachRemoteStream(nextRemoteStream);
+      setStatus('connected', 'Remote stream connected.');
     };
 
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
 
       if (state === 'connected') {
-        setConnectionStatus('connected');
-        setStatusMessage('WebRTC peer connection established.');
+        setStatus('connected', 'WebRTC peer connection established.');
+        setErrorMessage('');
       } else if (state === 'connecting') {
-        setConnectionStatus('connecting');
-        setStatusMessage('Connecting to the remote participant...');
-      } else if (state === 'failed') {
-        setConnectionStatus('error');
-        setErrorMessage('WebRTC peer connection failed.');
-        setStatusMessage('Peer connection failed.');
+        setStatus('connecting', 'Connecting to the remote participant...');
       } else if (state === 'disconnected') {
-        setConnectionStatus('connecting');
-        setStatusMessage('Peer connection disconnected. Waiting to recover...');
+        clearRemoteStream();
+        setStatus(
+          'disconnected',
+          'Peer connection disconnected. Retry after the other participant rejoins.',
+          { canRetry: true }
+        );
+      } else if (state === 'failed') {
+        clearRemoteStream();
+        setErrorMessage('WebRTC peer connection failed.');
+        setStatus('error', 'Peer connection failed.', { canRetry: true });
       } else if (state === 'closed') {
-        setConnectionStatus('not_connected');
-        setStatusMessage('Peer connection closed.');
+        clearRemoteStream();
+        setStatus('not_connected', 'Peer connection closed.');
+      }
+    };
+
+    peer.oniceconnectionstatechange = () => {
+      const state = peer.iceConnectionState;
+
+      if (state === 'failed') {
+        setErrorMessage('ICE connection failed.');
+        setStatus('error', 'ICE connection failed.', { canRetry: true });
       }
     };
 
@@ -240,34 +301,106 @@ export function useSessionWebRTC({
     return peer;
   }
 
-  async function createOfferIfNeeded(streamOverride) {
-    if (!startRequestedRef.current || !isInitiator) {
-      return;
-    }
-
+  async function createOffer(streamOverride) {
     const peer = ensurePeerConnection(streamOverride);
 
-    if (!peer || peer.localDescription) {
-      return;
+    if (!peer) {
+      return false;
+    }
+
+    if (peer.localDescription) {
+      return true;
     }
 
     if (!isSocketReadyRef.current) {
-      setConnectionStatus('signaling');
-      setStatusMessage('Waiting for signaling socket before creating offer...');
+      setStatus('signaling', 'Waiting for signaling socket before creating offer...');
+      return false;
+    }
+
+    try {
+      setStatus('signaling', 'Creating WebRTC offer...');
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      sendSignal('webrtc_offer', { sdp: offer });
+      setStatus('signaling', 'Offer sent. Waiting for answer...');
+      return true;
+    } catch (error) {
+      setErrorMessage(getConnectionErrorMessage(error));
+      setStatus('error', 'Failed to create WebRTC offer.', { canRetry: true });
+      return false;
+    }
+  }
+
+  async function createAnswer(signal) {
+    if (!localStreamRef.current) {
+      setErrorMessage('Prepare local media before answering the session call.');
+      setStatus('error', 'Incoming offer received, but local media is not ready.', {
+        canRetry: false,
+      });
+      return;
+    }
+
+    startRequestedRef.current = true;
+    const peer = ensurePeerConnection(localStreamRef.current);
+
+    if (!peer) {
       return;
     }
 
     try {
-      setConnectionStatus('signaling');
-      setStatusMessage('Creating WebRTC offer...');
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      sendSignal('webrtc_offer', { sdp: offer });
-      setStatusMessage('Offer sent. Waiting for answer...');
+      setStatus('signaling', 'Received offer. Creating answer...');
+      await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
+      await flushPendingIceCandidates(peer);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      sendSignal('webrtc_answer', { sdp: answer });
+      setStatus('connecting', 'Answer sent. Waiting for remote stream...');
+      setErrorMessage('');
     } catch (error) {
-      setConnectionStatus('error');
       setErrorMessage(getConnectionErrorMessage(error));
-      setStatusMessage('Failed to create WebRTC offer.');
+      setStatus('error', 'Failed to process incoming offer.', { canRetry: true });
+    }
+  }
+
+  async function applyAnswer(signal) {
+    const peer = peerRef.current;
+
+    if (!peer) {
+      setStatus('disconnected', 'Answer arrived before the local peer was ready. Retry the call.', {
+        canRetry: true,
+      });
+      return;
+    }
+
+    try {
+      await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
+      await flushPendingIceCandidates(peer);
+      setStatus('connecting', 'Answer received. Connecting to remote stream...');
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(getConnectionErrorMessage(error));
+      setStatus('error', 'Failed to apply remote answer.', { canRetry: true });
+    }
+  }
+
+  async function applyIceCandidate(signal) {
+    const candidate = signal.payload.candidate;
+
+    if (!candidate) {
+      return;
+    }
+
+    const peer = peerRef.current;
+
+    if (!peer || !peer.remoteDescription) {
+      pendingIceCandidatesRef.current.push(new RTCIceCandidate(candidate));
+      return;
+    }
+
+    try {
+      await peer.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (error) {
+      console.error('Failed to apply ICE candidate:', error);
     }
   }
 
@@ -277,27 +410,32 @@ export function useSessionWebRTC({
     setErrorMessage('');
 
     if (!activeStream) {
-      setConnectionStatus('error');
-      setStatusMessage('Prepare local media before starting the WebRTC connection.');
       setErrorMessage('Local media is required before signaling.');
+      setStatus('error', 'Prepare local media before starting the WebRTC connection.', {
+        canRetry: false,
+      });
       return false;
+    }
+
+    if (
+      peerRef.current &&
+      ['error', 'disconnected', 'not_connected'].includes(connectionStatus)
+    ) {
+      cleanupPeerConnection('not_connected', 'Resetting the previous WebRTC state...');
     }
 
     ensurePeerConnection(activeStream);
 
     if (!isSocketReadyRef.current) {
-      setConnectionStatus('preparing');
-      setStatusMessage('Opening signaling socket...');
+      setStatus('preparing', 'Opening signaling socket...');
       return true;
     }
 
     if (isInitiator) {
-      await createOfferIfNeeded(activeStream);
-    } else {
-      setConnectionStatus('signaling');
-      setStatusMessage('Waiting for the other participant offer...');
+      return createOffer(activeStream);
     }
 
+    setStatus('signaling', 'Waiting for the other participant offer...');
     return true;
   }
 
@@ -309,17 +447,10 @@ export function useSessionWebRTC({
   }
 
   useEffect(() => {
-    if (!remoteVideoRef.current || !remoteStreamRef.current) {
-      return;
-    }
-
-    remoteVideoRef.current.srcObject = remoteStreamRef.current;
-    remoteVideoRef.current.play().catch(() => {});
-  }, [hasRemoteStream]);
-
-  useEffect(() => {
     if (!enabled || !requestId || !userId) {
+      socketClosingRef.current = true;
       socketRef.current?.close();
+      socketClosingRef.current = false;
       startRequestedRef.current = false;
       cleanupPeerConnection('not_connected', 'WebRTC idle.');
       setErrorMessage('');
@@ -330,91 +461,11 @@ export function useSessionWebRTC({
     }
 
     let isDisposed = false;
-    let socket;
+    const socket = new WebSocket(getSessionWebSocketUrl());
+    socketRef.current = socket;
+    isSocketReadyRef.current = false;
 
-    async function handleSignalMessage(parsedMessage) {
-      const signal = normalizeSignalMessage(parsedMessage, requestId);
-
-      if (!signal || signal.senderId === userId) {
-        return;
-      }
-
-      setLastSignalType(signal.type);
-
-      if (signal.type === 'webrtc_offer') {
-        if (!localStreamRef.current) {
-          setConnectionStatus('error');
-          setErrorMessage('Prepare local media before answering the session call.');
-          setStatusMessage('Incoming offer received, but local media is not ready.');
-          return;
-        }
-
-        startRequestedRef.current = true;
-        const peer = ensurePeerConnection(localStreamRef.current);
-
-        if (!peer) {
-          return;
-        }
-
-        try {
-          setConnectionStatus('signaling');
-          setStatusMessage('Received offer. Creating answer...');
-          await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
-          await flushPendingIceCandidates(peer);
-          const answer = await peer.createAnswer();
-          await peer.setLocalDescription(answer);
-          sendSignal('webrtc_answer', { sdp: answer });
-          setConnectionStatus('connecting');
-          setStatusMessage('Answer sent. Waiting for remote stream...');
-        } catch (error) {
-          setConnectionStatus('error');
-          setErrorMessage(getConnectionErrorMessage(error));
-          setStatusMessage('Failed to process incoming offer.');
-        }
-      }
-
-      if (signal.type === 'webrtc_answer') {
-        const peer = peerRef.current;
-
-        if (!peer) {
-          return;
-        }
-
-        try {
-          await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
-          await flushPendingIceCandidates(peer);
-          setConnectionStatus('connecting');
-          setStatusMessage('Answer received. Connecting to remote stream...');
-        } catch (error) {
-          setConnectionStatus('error');
-          setErrorMessage(getConnectionErrorMessage(error));
-          setStatusMessage('Failed to apply remote answer.');
-        }
-      }
-
-      if (signal.type === 'webrtc_ice_candidate') {
-        const candidate = signal.payload.candidate;
-
-        if (!candidate) {
-          return;
-        }
-
-        const peer = peerRef.current;
-
-        if (!peer || !peer.remoteDescription) {
-          pendingIceCandidatesRef.current.push(new RTCIceCandidate(candidate));
-          return;
-        }
-
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (error) {
-          console.error('Failed to apply ICE candidate:', error);
-        }
-      }
-    }
-
-    function handleIncomingMessage(event) {
+    async function handleIncomingMessage(event) {
       try {
         const parsedMessage = JSON.parse(event.data);
 
@@ -426,43 +477,92 @@ export function useSessionWebRTC({
           isSocketReadyRef.current = true;
 
           if (startRequestedRef.current && localStreamRef.current) {
-            createOfferIfNeeded(localStreamRef.current);
+            if (isInitiator) {
+              await createOffer(localStreamRef.current);
+            } else {
+              setStatus('signaling', 'Waiting for the other participant offer...');
+            }
           }
 
           return;
         }
 
-        handleSignalMessage(parsedMessage);
+        const controlMessage = normalizeSignalControlMessage(parsedMessage);
+
+        if (controlMessage) {
+          setLastSignalType(controlMessage.receivedType);
+
+          if (controlMessage.type === 'ws_ack') {
+            if (controlMessage.receivedType === 'webrtc_offer') {
+              setStatus('signaling', 'Offer acknowledged. Waiting for answer...');
+            } else if (controlMessage.receivedType === 'webrtc_answer') {
+              setStatus('connecting', 'Answer acknowledged. Connecting to remote stream...');
+            }
+
+            return;
+          }
+
+          if (controlMessage.type === 'ws_error') {
+            setErrorMessage(controlMessage.message);
+
+            if (controlMessage.message.includes('not connected')) {
+              setStatus(
+                'disconnected',
+                'The other participant is not connected to this session yet.',
+                { canRetry: true }
+              );
+            } else {
+              setStatus('error', controlMessage.message || 'WebRTC signaling failed.', {
+                canRetry: true,
+              });
+            }
+
+            return;
+          }
+        }
+
+        const signal = normalizeSignalMessage(parsedMessage, requestId);
+
+        if (!signal || signal.senderId === userId) {
+          return;
+        }
+
+        setLastSignalType(signal.type);
+
+        if (signal.type === 'webrtc_offer') {
+          await createAnswer(signal);
+          return;
+        }
+
+        if (signal.type === 'webrtc_answer') {
+          await applyAnswer(signal);
+          return;
+        }
+
+        if (signal.type === 'webrtc_ice_candidate') {
+          await applyIceCandidate(signal);
+        }
       } catch (error) {
         if (isDisposed) {
           return;
         }
 
-        setConnectionStatus('error');
         setErrorMessage('Failed to parse signaling message.');
+        setStatus('error', 'Failed to parse signaling message.', { canRetry: true });
       }
     }
 
-    try {
-      socket = new WebSocket(getSessionWebSocketUrl());
-      socketRef.current = socket;
-      isSocketReadyRef.current = false;
-    } catch (error) {
-      setConnectionStatus('error');
-      setErrorMessage('Failed to create signaling socket.');
-      setStatusMessage('WebRTC signaling socket could not be created.');
-      return undefined;
-    }
+    socket.onmessage = (event) => {
+      handleIncomingMessage(event);
+    };
 
-    socket.onmessage = handleIncomingMessage;
     socket.onerror = () => {
       if (isDisposed) {
         return;
       }
 
-      setConnectionStatus('error');
       setErrorMessage('WebRTC signaling socket error.');
-      setStatusMessage('Signaling socket error.');
+      setStatus('error', 'Signaling socket error.', { canRetry: true });
     };
 
     socket.onclose = () => {
@@ -472,15 +572,28 @@ export function useSessionWebRTC({
 
       isSocketReadyRef.current = false;
       socketRef.current = null;
-      setConnectionStatus('not_connected');
-      setStatusMessage('Signaling socket closed.');
+
+      if (socketClosingRef.current) {
+        socketClosingRef.current = false;
+        return;
+      }
+
+      if (startRequestedRef.current) {
+        setStatus('disconnected', 'Signaling socket closed. Retry the call.', {
+          canRetry: true,
+        });
+      } else {
+        setStatus('not_connected', 'Signaling socket closed.');
+      }
     };
 
     return () => {
       isDisposed = true;
+      socketClosingRef.current = true;
       isSocketReadyRef.current = false;
       socketRef.current = null;
-      socket?.close();
+      socket.close();
+      socketClosingRef.current = false;
       startRequestedRef.current = false;
       cleanupPeerConnection('not_connected', 'WebRTC idle.');
       setLastSignalType('');
@@ -489,12 +602,20 @@ export function useSessionWebRTC({
   }, [enabled, isInitiator, requestId, userId]);
 
   useEffect(() => {
-    if (!peerRef.current || !localStream) {
+    if (!localStream || !startRequestedRef.current) {
       return;
     }
 
     ensurePeerConnection(localStream);
-  }, [localStream]);
+
+    if (isSocketReadyRef.current) {
+      if (isInitiator) {
+        createOffer(localStream);
+      } else if (!peerRef.current?.remoteDescription) {
+        setStatus('signaling', 'Waiting for the other participant offer...');
+      }
+    }
+  }, [isInitiator, localStream]);
 
   return {
     remoteVideoRef,
@@ -503,6 +624,7 @@ export function useSessionWebRTC({
     statusMessage,
     errorMessage,
     lastSignalType,
+    canRetry,
     startConnection,
     stopConnection,
   };
