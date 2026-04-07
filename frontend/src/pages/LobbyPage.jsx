@@ -2,21 +2,37 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
-import { createMentoringRequest, getSentMentoringRequests } from '../api/mentoring';
+import {
+  acceptMentoringRequest,
+  createMentoringRequest,
+  getReceivedMentoringRequests,
+  getSentMentoringRequests,
+  rejectMentoringRequest,
+} from '../api/mentoring';
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
 
+function getMentoringRequestItems(rawValue) {
+  if (Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (Array.isArray(rawValue?.items)) {
+    return rawValue.items;
+  }
+
+  if (Array.isArray(rawValue?.requests)) {
+    return rawValue.requests;
+  }
+
+  return [];
+}
+
 function normalizeSentRequests(rawValue) {
-  const requestItems = Array.isArray(rawValue)
-    ? rawValue
-    : Array.isArray(rawValue?.items)
-      ? rawValue.items
-      : Array.isArray(rawValue?.requests)
-        ? rawValue.requests
-        : [];
+  const requestItems = getMentoringRequestItems(rawValue);
 
   return requestItems.map((request, index) => ({
     id: request.id ?? `mentoring-request-${index}`,
@@ -32,10 +48,28 @@ function normalizeSentRequests(rawValue) {
   }));
 }
 
+function normalizeReceivedRequests(rawValue) {
+  const requestItems = getMentoringRequestItems(rawValue);
+
+  return requestItems.map((request, index) => ({
+    id: request.id ?? `mentoring-request-${index}`,
+    requesterId: request.requesterId ?? request.senderId ?? request.userId ?? null,
+    requesterLabel:
+      request.requesterNickname ||
+      request.requesterName ||
+      request.senderNickname ||
+      request.userNickname ||
+      `User ${request.requesterId ?? request.senderId ?? request.userId ?? '?'}`,
+    message: request.message || request.content || '',
+    status: request.status || 'PENDING',
+  }));
+}
+
 export default function LobbyPage() {
   const navigate = useNavigate();
   const [spaces, setSpaces] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
+  const [receivedRequests, setReceivedRequests] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
@@ -44,6 +78,8 @@ export default function LobbyPage() {
   const [mentoringFeedback, setMentoringFeedback] = useState('');
   const [mentoringError, setMentoringError] = useState('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [requestActionError, setRequestActionError] = useState('');
+  const [activeRequestActionId, setActiveRequestActionId] = useState(null);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -73,6 +109,16 @@ export default function LobbyPage() {
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
 
+  const refreshMentoringRequests = async () => {
+    const [sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
+      getSentMentoringRequests(),
+      getReceivedMentoringRequests(),
+    ]);
+
+    setSentRequests(normalizeSentRequests(sentRequestsResponse));
+    setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
+  };
+
   const handleMentoringSubmit = async (event) => {
     event.preventDefault();
 
@@ -92,8 +138,7 @@ export default function LobbyPage() {
         message: mentoringMessage.trim(),
       });
 
-      const sentRequestsResponse = await getSentMentoringRequests();
-      setSentRequests(normalizeSentRequests(sentRequestsResponse));
+      await refreshMentoringRequests();
       setMentoringMessage('');
       setMentoringFeedback('Mentoring request sent.');
     } catch (error) {
@@ -102,6 +147,29 @@ export default function LobbyPage() {
       setMentoringError(message);
     } finally {
       setIsSubmittingRequest(false);
+    }
+  };
+
+  const handleMentoringDecision = async (requestId, decision) => {
+    setActiveRequestActionId(requestId);
+    setRequestActionError('');
+
+    try {
+      if (decision === 'accept') {
+        await acceptMentoringRequest(requestId);
+      } else {
+        await rejectMentoringRequest(requestId);
+      }
+
+      await refreshMentoringRequests();
+    } catch (error) {
+      const message =
+        error?.response?.data?.message ||
+        error.message ||
+        'Failed to update mentoring request status.';
+      setRequestActionError(message);
+    } finally {
+      setActiveRequestActionId(null);
     }
   };
 
@@ -123,10 +191,12 @@ export default function LobbyPage() {
       setErrorMessage('');
 
       try {
-        const [meResponse, spacesResponse, sentRequestsResponse] = await Promise.all([
+        const [meResponse, spacesResponse, sentRequestsResponse, receivedRequestsResponse] =
+          await Promise.all([
           getMe(),
           getSpaces(),
           getSentMentoringRequests(),
+          getReceivedMentoringRequests(),
         ]);
 
         if (!isMounted) {
@@ -136,6 +206,7 @@ export default function LobbyPage() {
         setCurrentUser(meResponse);
         setSpaces(spacesResponse || []);
         setSentRequests(normalizeSentRequests(sentRequestsResponse));
+        setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -297,6 +368,49 @@ export default function LobbyPage() {
                     <p>{request.message || 'No message provided.'}</p>
                   </li>
                 ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Received mentoring requests</h2>
+            {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
+            {receivedRequests.length === 0 ? (
+              <p className="app-note">No mentoring requests received yet.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {receivedRequests.map((request) => {
+                  const isPending = request.status === 'PENDING';
+                  const isProcessing = activeRequestActionId === request.id;
+
+                  return (
+                    <li key={request.id} className="mentoring-request-card">
+                      <strong>{request.requesterLabel}</strong>
+                      <span>{request.status}</span>
+                      <p>{request.message || 'No message provided.'}</p>
+                      {isPending ? (
+                        <div className="mentoring-request-actions">
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => handleMentoringDecision(request.id, 'accept')}
+                            disabled={isProcessing}
+                          >
+                            {isProcessing ? 'Processing...' : 'Accept'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleMentoringDecision(request.id, 'reject')}
+                            disabled={isProcessing}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

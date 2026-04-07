@@ -106,7 +106,21 @@ select {
   cursor: pointer;
 }
 
+.secondary-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: #ffffff;
+  color: #1f2937;
+  cursor: pointer;
+}
+
 .primary-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.secondary-button:disabled {
   opacity: 0.7;
   cursor: wait;
 }
@@ -266,6 +280,13 @@ select {
 .mentoring-request-card p {
   margin-top: 10px;
   color: #4b5563;
+}
+
+.mentoring-request-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .lobby-stage {
