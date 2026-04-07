@@ -15,11 +15,16 @@ import LobbyGame from '../components/LobbyGame';
 import {
   acceptStoredMentoringReservation,
   cancelStoredMentoringReservation,
+  getMentoringReservationEntryState,
   getStoredReceivedMentoringReservations,
   getStoredMentoringReservations,
   rejectStoredMentoringReservation,
   saveMentoringReservation,
 } from '../lib/mentoringReservationStorage';
+import {
+  dismissLobbyNotification,
+  getDismissedLobbyNotificationIds,
+} from '../lib/lobbyNotificationStorage';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import {
   getStoredSessionFeedback,
@@ -158,6 +163,90 @@ function getDefaultReservationDateTime() {
   return localDate.toISOString().slice(0, 16);
 }
 
+function buildLobbyNotifications({
+  sentRequests,
+  reservations,
+  receivedReservations,
+  nowTimestamp,
+  dismissedNotificationIds,
+}) {
+  const notifications = [];
+  const notificationPriority = {
+    reservation_ready: 0,
+    request_accepted: 1,
+    reservation_accepted: 2,
+  };
+
+  sentRequests.forEach((request) => {
+    if (request.status !== 'ACCEPTED') {
+      return;
+    }
+
+    notifications.push({
+      id: `request-accepted-${request.id}`,
+      type: 'request_accepted',
+      title: 'Mentoring request accepted',
+      message: `${request.mentorLabel} accepted your mentoring request.`,
+      relatedId: request.id,
+      actionType: 'enter_request_session',
+      actionLabel: 'Enter session',
+      request,
+    });
+  });
+
+  reservations.forEach((reservation) => {
+    if (reservation.status !== 'ACCEPTED') {
+      return;
+    }
+
+    const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
+    const isReady = entryState.status === 'ready';
+
+    notifications.push({
+      id: `${isReady ? 'reservation-ready' : 'reservation-accepted'}-my-${reservation.id}`,
+      type: isReady ? 'reservation_ready' : 'reservation_accepted',
+      title: isReady ? 'Reservation ready' : 'Reservation accepted',
+      message: isReady
+        ? `${reservation.mentorLabel} reservation is ready to enter.`
+        : `${reservation.mentorLabel} reservation was accepted. ${entryState.label}`,
+      relatedId: reservation.id,
+      actionType: isReady ? 'enter_reservation_session' : 'view_my_reservations',
+      actionLabel: isReady ? 'Enter session' : 'View reservation',
+      reservation,
+    });
+  });
+
+  receivedReservations.forEach((reservation) => {
+    if (reservation.status !== 'ACCEPTED') {
+      return;
+    }
+
+    const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
+    const isReady = entryState.status === 'ready';
+
+    notifications.push({
+      id: `${isReady ? 'reservation-ready' : 'reservation-accepted'}-received-${reservation.id}`,
+      type: isReady ? 'reservation_ready' : 'reservation_accepted',
+      title: isReady ? 'Accepted reservation is ready' : 'Accepted reservation',
+      message: isReady
+        ? `Scheduled mentoring with ${reservation.requesterLabel} can start now.`
+        : `Accepted reservation with ${reservation.requesterLabel}. ${entryState.label}`,
+      relatedId: reservation.id,
+      actionType: isReady ? 'enter_reservation_session' : 'view_received_reservations',
+      actionLabel: isReady ? 'Enter session' : 'View reservation',
+      reservation,
+    });
+  });
+
+  return notifications
+    .filter((notification) => !dismissedNotificationIds.includes(notification.id))
+    .sort(
+      (leftNotification, rightNotification) =>
+        (notificationPriority[leftNotification.type] ?? 99) -
+        (notificationPriority[rightNotification.type] ?? 99)
+    );
+}
+
 export default function LobbyPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -189,6 +278,8 @@ export default function LobbyPage() {
   const [receivedReservationError, setReceivedReservationError] = useState('');
   const [activeReceivedReservationActionId, setActiveReceivedReservationActionId] =
     useState(null);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
+  const [reservationClock, setReservationClock] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
@@ -202,6 +293,9 @@ export default function LobbyPage() {
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const chatMessagesEndRef = useRef(null);
+  const sentRequestsSectionRef = useRef(null);
+  const myReservationsSectionRef = useRef(null);
+  const receivedReservationsSectionRef = useRef(null);
   const primarySpace = spaces[0] || null;
   const {
     connectionStatus,
@@ -225,12 +319,47 @@ export default function LobbyPage() {
     navigate('/login', { replace: true });
   };
 
+  const scrollToSection = (sectionRef) => {
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const openMentoringSession = (request) => {
     navigate(`/mentoring/session/${request.id}`, {
       state: {
         request,
       },
     });
+  };
+
+  const handleNotificationAction = (notification) => {
+    if (notification.actionType === 'enter_request_session' && notification.request) {
+      openMentoringSession(notification.request);
+      return;
+    }
+
+    if (notification.actionType === 'enter_reservation_session' && notification.reservation) {
+      openReservationSession(notification.reservation);
+      return;
+    }
+
+    if (notification.actionType === 'view_my_reservations') {
+      scrollToSection(myReservationsSectionRef);
+      return;
+    }
+
+    if (notification.actionType === 'view_received_reservations') {
+      scrollToSection(receivedReservationsSectionRef);
+      return;
+    }
+
+    if (notification.actionType === 'view_requests') {
+      scrollToSection(sentRequestsSectionRef);
+    }
+  };
+
+  const handleDismissNotification = (notificationId) => {
+    const nextDismissedIds = dismissLobbyNotification(currentUser?.id, notificationId);
+    setDismissedNotificationIds(nextDismissedIds);
   };
 
   const openReservationSession = (reservation) => {
@@ -242,6 +371,13 @@ export default function LobbyPage() {
   };
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
+  const lobbyNotifications = buildLobbyNotifications({
+    sentRequests,
+    reservations,
+    receivedReservations,
+    nowTimestamp: reservationClock,
+    dismissedNotificationIds,
+  });
 
   const refreshMentoringRequests = async () => {
     const [sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
@@ -523,6 +659,20 @@ export default function LobbyPage() {
   }, [currentUser?.id]);
 
   useEffect(() => {
+    setDismissedNotificationIds(getDismissedLobbyNotificationIds(currentUser?.id));
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setReservationClock(Date.now());
+    }, 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
     reloadFeedbackHistory(currentUser?.id);
   }, [currentUser?.id]);
 
@@ -641,6 +791,39 @@ export default function LobbyPage() {
             <p className="app-note">
               Active space for realtime: {primarySpace ? primarySpace.name : 'No space selected'}
             </p>
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Notifications</h2>
+            {lobbyNotifications.length === 0 ? (
+              <p className="app-note">No important notifications right now.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {lobbyNotifications.map((notification) => (
+                  <li key={notification.id} className="mentoring-request-card">
+                    <strong>{notification.title}</strong>
+                    <span>{notification.type}</span>
+                    <p>{notification.message}</p>
+                    <div className="mentoring-request-actions">
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => handleNotificationAction(notification)}
+                      >
+                        {notification.actionLabel}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => handleDismissNotification(notification.id)}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {feedbackPrompt ? (
@@ -872,15 +1055,23 @@ export default function LobbyPage() {
             {reservationError ? <p className="app-error">{reservationError}</p> : null}
           </div>
 
-          <div className="lobby-info-card">
+          <div className="lobby-info-card" ref={myReservationsSectionRef}>
             <h2>My reservations</h2>
             {reservations.length === 0 ? (
               <p className="app-note">No mentoring reservations yet.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {reservations.map((reservation) => {
+                  const reservationEntryState = getMentoringReservationEntryState(
+                    reservation.reservedAt,
+                    reservationClock
+                  );
+                  const canEnterReservation =
+                    reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
                   const isCancelable =
-                    reservation.status === 'PENDING' || reservation.status === 'ACCEPTED';
+                    reservation.status === 'PENDING' ||
+                    (reservation.status === 'ACCEPTED' &&
+                      reservationEntryState.status !== 'expired');
                   const isProcessing = activeReservationActionId === reservation.id;
 
                   return (
@@ -889,9 +1080,12 @@ export default function LobbyPage() {
                       <span>{reservation.status}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
                       <p>{reservation.message || 'No reservation message provided.'}</p>
-                      {isCancelable || reservation.status === 'ACCEPTED' ? (
+                      {reservation.status === 'ACCEPTED' ? (
+                        <p>{reservationEntryState.label}</p>
+                      ) : null}
+                      {isCancelable || canEnterReservation ? (
                         <div className="mentoring-request-actions">
-                          {reservation.status === 'ACCEPTED' ? (
+                          {canEnterReservation ? (
                             <button
                               type="button"
                               className="primary-button"
@@ -917,7 +1111,7 @@ export default function LobbyPage() {
             )}
           </div>
 
-          <div className="lobby-info-card">
+          <div className="lobby-info-card" ref={receivedReservationsSectionRef}>
             <h2>Received reservations</h2>
             {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
             {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
@@ -926,7 +1120,13 @@ export default function LobbyPage() {
             ) : (
               <ul className="mentoring-request-list">
                 {receivedReservations.map((reservation) => {
+                  const reservationEntryState = getMentoringReservationEntryState(
+                    reservation.reservedAt,
+                    reservationClock
+                  );
                   const isPending = reservation.status === 'PENDING';
+                  const canEnterReservation =
+                    reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
                   const isProcessing = activeReceivedReservationActionId === reservation.id;
 
                   return (
@@ -935,9 +1135,12 @@ export default function LobbyPage() {
                       <span>{reservation.status}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
                       <p>{reservation.message || 'No reservation message provided.'}</p>
-                      {isPending || reservation.status === 'ACCEPTED' ? (
+                      {reservation.status === 'ACCEPTED' ? (
+                        <p>{reservationEntryState.label}</p>
+                      ) : null}
+                      {isPending || canEnterReservation ? (
                         <div className="mentoring-request-actions">
-                          {reservation.status === 'ACCEPTED' ? (
+                          {canEnterReservation ? (
                             <button
                               type="button"
                               className="primary-button"
@@ -979,7 +1182,7 @@ export default function LobbyPage() {
             )}
           </div>
 
-          <div className="lobby-info-card">
+          <div className="lobby-info-card" ref={sentRequestsSectionRef}>
             <h2>Sent mentoring requests</h2>
             {sentRequests.length === 0 ? (
               <p className="app-note">No mentoring requests sent yet.</p>
