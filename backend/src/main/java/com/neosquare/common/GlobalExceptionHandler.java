@@ -6,14 +6,20 @@ import java.util.Map;
 import com.neosquare.auth.DuplicateEmailException;
 import com.neosquare.auth.InvalidCredentialsException;
 import com.neosquare.mentoring.InvalidMentoringRequestStateException;
+import com.neosquare.mentoring.InvalidMentoringReservationStateException;
+import com.neosquare.mentoring.InvalidReservationTimeException;
 import com.neosquare.mentoring.MentoringRequestAccessDeniedException;
 import com.neosquare.mentoring.MentoringRequestNotFoundException;
+import com.neosquare.mentoring.MentoringReservationAccessDeniedException;
+import com.neosquare.mentoring.MentoringReservationNotFoundException;
 import com.neosquare.mentoring.SelfMentoringRequestException;
+import com.neosquare.mentoring.SelfMentoringReservationException;
 import com.neosquare.mentoring.UserNotFoundException;
 import com.neosquare.space.SpaceNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -34,6 +40,18 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST,
                 "Validation failed.",
                 errors
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(
+            HttpMessageNotReadableException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                "Request body is invalid."
         );
 
         return ResponseEntity.badRequest().body(response);
@@ -103,9 +121,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    @ExceptionHandler(SelfMentoringReservationException.class)
+    public ResponseEntity<ErrorResponse> handleSelfMentoringReservationException(
+            SelfMentoringReservationException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
     @ExceptionHandler(MentoringRequestAccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleMentoringRequestAccessDeniedException(
             MentoringRequestAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(MentoringReservationAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringReservationAccessDeniedException(
+            MentoringReservationAccessDeniedException exception
     ) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.FORBIDDEN,
@@ -125,6 +167,42 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(MentoringReservationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringReservationNotFoundException(
+            MentoringReservationNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(InvalidMentoringReservationStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentoringReservationStateException(
+            InvalidMentoringReservationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidReservationTimeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidReservationTimeException(
+            InvalidReservationTimeException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
     }
 
     @ExceptionHandler(RuntimeException.class)

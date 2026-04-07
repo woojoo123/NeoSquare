@@ -9,18 +9,18 @@ import {
   getSentMentoringRequests,
   rejectMentoringRequest,
 } from '../api/mentoring';
+import {
+  acceptReservation,
+  cancelReservation,
+  createReservation,
+  getMyReservations,
+  getReceivedReservations,
+  rejectReservation,
+} from '../api/reservations';
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
-import {
-  acceptStoredMentoringReservation,
-  cancelStoredMentoringReservation,
-  getMentoringReservationEntryState,
-  getStoredReceivedMentoringReservations,
-  getStoredMentoringReservations,
-  rejectStoredMentoringReservation,
-  saveMentoringReservation,
-} from '../lib/mentoringReservationStorage';
+import { getMentoringReservationEntryState } from '../lib/mentoringReservationStorage';
 import {
   dismissLobbyNotification,
   getDismissedLobbyNotificationIds,
@@ -96,6 +96,50 @@ function normalizeReceivedRequests(rawValue) {
     message: request.message || request.content || '',
     status: request.status || 'PENDING',
     createdAt: request.createdAt || request.timestamp || null,
+  }));
+}
+
+function getReservationItems(rawValue) {
+  if (Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (Array.isArray(rawValue?.items)) {
+    return rawValue.items;
+  }
+
+  if (Array.isArray(rawValue?.reservations)) {
+    return rawValue.reservations;
+  }
+
+  return [];
+}
+
+function normalizeReservations(rawValue) {
+  const reservationItems = getReservationItems(rawValue);
+
+  return reservationItems.map((reservation, index) => ({
+    id: reservation.id ?? `mentoring-reservation-${index}`,
+    requesterId: reservation.requesterId ?? reservation.senderId ?? reservation.userId ?? null,
+    requesterLabel:
+      reservation.requesterLabel ||
+      reservation.requesterNickname ||
+      reservation.requesterName ||
+      reservation.senderNickname ||
+      reservation.userNickname ||
+      `User ${reservation.requesterId ?? reservation.senderId ?? reservation.userId ?? '?'}`,
+    mentorId: reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? null,
+    mentorLabel:
+      reservation.mentorLabel ||
+      reservation.mentorNickname ||
+      reservation.mentorName ||
+      reservation.receiverNickname ||
+      reservation.targetNickname ||
+      `User ${reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? '?'}`,
+    reservedAt: reservation.reservedAt || reservation.scheduledAt || null,
+    message: reservation.message || reservation.content || '',
+    status: reservation.status || 'PENDING',
+    createdAt: reservation.createdAt || reservation.timestamp || null,
   }));
 }
 
@@ -324,7 +368,7 @@ export default function LobbyPage() {
   };
 
   const openMentoringSession = (request) => {
-    navigate(`/mentoring/session/${request.id}`, {
+    navigate(`/mentoring/session/${request.id}?type=request`, {
       state: {
         request,
       },
@@ -363,7 +407,7 @@ export default function LobbyPage() {
   };
 
   const openReservationSession = (reservation) => {
-    navigate(`/mentoring/session/${reservation.id}`, {
+    navigate(`/mentoring/session/${reservation.id}?type=reservation`, {
       state: {
         reservation,
       },
@@ -389,15 +433,14 @@ export default function LobbyPage() {
     setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
   };
 
-  const reloadReservations = (userId = currentUser?.id) => {
-    if (!userId) {
-      setReservations([]);
-      setReceivedReservations([]);
-      return;
-    }
+  const refreshReservations = async () => {
+    const [myReservationsResponse, receivedReservationsResponse] = await Promise.all([
+      getMyReservations(),
+      getReceivedReservations(),
+    ]);
 
-    setReservations(getStoredMentoringReservations(userId));
-    setReceivedReservations(getStoredReceivedMentoringReservations(userId));
+    setReservations(normalizeReservations(myReservationsResponse));
+    setReceivedReservations(normalizeReservations(receivedReservationsResponse));
   };
 
   const reloadFeedbackHistory = (userId = currentUser?.id) => {
@@ -455,27 +498,22 @@ export default function LobbyPage() {
     setReservationNotice('');
 
     try {
-      const mentor = mentorOptions.find(
-        (user) => String(user.userId) === String(selectedReservationMentorId)
-      );
-
-      saveMentoringReservation({
-        requesterId: currentUser?.id,
-        requesterLabel: currentUser?.nickname || 'You',
+      await createReservation({
         mentorId: Number(selectedReservationMentorId),
-        mentorLabel: mentor?.label || `User ${selectedReservationMentorId}`,
-        reservedAt: reservationDateTime,
+        reservedAt: new Date(reservationDateTime).toISOString(),
         message: reservationMessage.trim(),
       });
 
-      reloadReservations(currentUser?.id);
+      await refreshReservations();
       setReservationMessage('');
       setReservationDateTime(getDefaultReservationDateTime());
       setReservationStatus('saved');
-      setReservationNotice('Reservation saved in this browser.');
+      setReservationNotice('Reservation created.');
     } catch (error) {
       setReservationStatus('error');
-      setReservationError(error.message || 'Failed to save mentoring reservation.');
+      setReservationError(
+        error?.response?.data?.message || error.message || 'Failed to create reservation.'
+      );
     }
   };
 
@@ -485,11 +523,13 @@ export default function LobbyPage() {
     setReservationNotice('');
 
     try {
-      cancelStoredMentoringReservation(reservationId, currentUser?.id);
-      reloadReservations(currentUser?.id);
+      await cancelReservation(reservationId);
+      await refreshReservations();
       setReservationNotice('Reservation canceled.');
     } catch (error) {
-      setReservationError(error.message || 'Failed to cancel reservation.');
+      setReservationError(
+        error?.response?.data?.message || error.message || 'Failed to cancel reservation.'
+      );
     } finally {
       setActiveReservationActionId(null);
     }
@@ -502,17 +542,21 @@ export default function LobbyPage() {
 
     try {
       if (decision === 'accept') {
-        acceptStoredMentoringReservation(reservationId, currentUser?.id);
+        await acceptReservation(reservationId);
       } else {
-        rejectStoredMentoringReservation(reservationId, currentUser?.id);
+        await rejectReservation(reservationId);
       }
 
-      reloadReservations(currentUser?.id);
+      await refreshReservations();
       setReceivedReservationNotice(
         decision === 'accept' ? 'Reservation accepted.' : 'Reservation rejected.'
       );
     } catch (error) {
-      setReceivedReservationError(error.message || 'Failed to update received reservation.');
+      setReceivedReservationError(
+        error?.response?.data?.message ||
+          error.message ||
+          'Failed to update received reservation.'
+      );
     } finally {
       setActiveReceivedReservationActionId(null);
     }
@@ -605,12 +649,21 @@ export default function LobbyPage() {
       setErrorMessage('');
 
       try {
-        const [meResponse, spacesResponse, sentRequestsResponse, receivedRequestsResponse] =
+        const [
+          meResponse,
+          spacesResponse,
+          sentRequestsResponse,
+          receivedRequestsResponse,
+          myReservationsResponse,
+          receivedReservationsResponse,
+        ] =
           await Promise.all([
             getMe(),
             getSpaces(),
             getSentMentoringRequests(),
             getReceivedMentoringRequests(),
+            getMyReservations(),
+            getReceivedReservations(),
           ]);
 
         if (!isMounted) {
@@ -621,8 +674,8 @@ export default function LobbyPage() {
         setSpaces(spacesResponse || []);
         setSentRequests(normalizeSentRequests(sentRequestsResponse));
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
-        setReservations(getStoredMentoringReservations(meResponse?.id));
-        setReceivedReservations(getStoredReceivedMentoringReservations(meResponse?.id));
+        setReservations(normalizeReservations(myReservationsResponse));
+        setReceivedReservations(normalizeReservations(receivedReservationsResponse));
         setFeedbackHistory(getStoredSessionFeedbacks(meResponse?.id));
       } catch (error) {
         if (!isMounted) {
@@ -653,10 +706,6 @@ export default function LobbyPage() {
       isMounted = false;
     };
   }, [clearAuth, navigate, setCurrentUser]);
-
-  useEffect(() => {
-    reloadReservations(currentUser?.id);
-  }, [currentUser?.id]);
 
   useEffect(() => {
     setDismissedNotificationIds(getDismissedLobbyNotificationIds(currentUser?.id));

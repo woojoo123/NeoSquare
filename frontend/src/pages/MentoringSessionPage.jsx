@@ -3,8 +3,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import { getMentoringRequest } from '../api/mentoring';
+import { getReservation } from '../api/reservations';
 import AppLayout from '../components/AppLayout';
-import { getStoredMentoringReservationById } from '../lib/mentoringReservationStorage';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
 import { useSessionMedia } from '../lib/useSessionMedia';
 import { useSessionWebRTC } from '../lib/useSessionWebRTC';
@@ -100,6 +100,7 @@ export default function MentoringSessionPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { requestId } = useParams();
+  const sessionTypeHint = new URLSearchParams(location.search).get('type');
   const initialSessionEntry = location.state?.reservation
     ? normalizeSessionEntry(location.state.reservation, 'reservation')
     : normalizeSessionEntry(location.state?.request, 'request');
@@ -210,24 +211,13 @@ export default function MentoringSessionPage() {
       setErrorMessage('');
 
       try {
-        const storedReservation = getStoredMentoringReservationById(requestId);
-
-        if (storedReservation) {
-          if (!isMounted) {
-            return;
-          }
-
-          setSessionRequest(normalizeSessionEntry(storedReservation, 'reservation'));
-          return;
-        }
-
-        const response = await getMentoringRequest(requestId);
+        const response = await loadSessionEntry(requestId, sessionTypeHint);
 
         if (!isMounted) {
           return;
         }
 
-        setSessionRequest(normalizeSessionEntry(response, 'request'));
+        setSessionRequest(normalizeSessionEntry(response.data, response.sessionSource));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -250,7 +240,7 @@ export default function MentoringSessionPage() {
     return () => {
       isMounted = false;
     };
-  }, [location.state?.request, location.state?.reservation, requestId]);
+  }, [location.state?.request, location.state?.reservation, requestId, sessionTypeHint]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
@@ -687,8 +677,40 @@ export default function MentoringSessionPage() {
           </section>
         </section>
       ) : (
-        <p className="app-note">No accepted mentoring request was found.</p>
+        <p className="app-note">No accepted mentoring session was found.</p>
       )}
     </AppLayout>
   );
+}
+
+async function loadSessionEntry(sessionId, sessionTypeHint) {
+  if (sessionTypeHint === 'reservation') {
+    return {
+      data: await getReservation(sessionId),
+      sessionSource: 'reservation',
+    };
+  }
+
+  if (sessionTypeHint === 'request') {
+    return {
+      data: await getMentoringRequest(sessionId),
+      sessionSource: 'request',
+    };
+  }
+
+  try {
+    return {
+      data: await getMentoringRequest(sessionId),
+      sessionSource: 'request',
+    };
+  } catch (requestError) {
+    if (requestError?.response?.status !== 404) {
+      throw requestError;
+    }
+  }
+
+  return {
+    data: await getReservation(sessionId),
+    sessionSource: 'reservation',
+  };
 }
