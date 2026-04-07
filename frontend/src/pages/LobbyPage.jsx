@@ -12,6 +12,11 @@ import {
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
+import {
+  cancelStoredMentoringReservation,
+  getStoredMentoringReservations,
+  saveMentoringReservation,
+} from '../lib/mentoringReservationStorage';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { getStoredSessionFeedback, saveSessionFeedback } from '../lib/sessionFeedbackStorage';
 import { useAuthStore } from '../store/authStore';
@@ -115,6 +120,30 @@ function formatFeedbackTimestamp(value) {
   return parsedDate.toLocaleString();
 }
 
+function formatReservationTimestamp(value) {
+  if (!value) {
+    return 'No reservation time';
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return parsedDate.toLocaleString();
+}
+
+function getDefaultReservationDateTime() {
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  now.setHours(now.getHours() + 1);
+
+  const localOffset = now.getTimezoneOffset();
+  const localDate = new Date(now.getTime() - localOffset * 60 * 1000);
+  return localDate.toISOString().slice(0, 16);
+}
+
 export default function LobbyPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -132,6 +161,14 @@ export default function LobbyPage() {
   const [feedbackStatus, setFeedbackStatus] = useState('idle');
   const [feedbackNotice, setFeedbackNotice] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
+  const [reservations, setReservations] = useState([]);
+  const [selectedReservationMentorId, setSelectedReservationMentorId] = useState('');
+  const [reservationDateTime, setReservationDateTime] = useState(getDefaultReservationDateTime);
+  const [reservationMessage, setReservationMessage] = useState('');
+  const [reservationNotice, setReservationNotice] = useState('');
+  const [reservationError, setReservationError] = useState('');
+  const [reservationStatus, setReservationStatus] = useState('idle');
+  const [activeReservationActionId, setActiveReservationActionId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
@@ -188,6 +225,15 @@ export default function LobbyPage() {
     setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
   };
 
+  const reloadReservations = (userId = currentUser?.id) => {
+    if (!userId) {
+      setReservations([]);
+      return;
+    }
+
+    setReservations(getStoredMentoringReservations(userId));
+  };
+
   const handleMentoringSubmit = async (event) => {
     event.preventDefault();
 
@@ -216,6 +262,66 @@ export default function LobbyPage() {
       setMentoringError(message);
     } finally {
       setIsSubmittingRequest(false);
+    }
+  };
+
+  const handleReservationSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!selectedReservationMentorId) {
+      setReservationError('Select a reservation target first.');
+      setReservationNotice('');
+      return;
+    }
+
+    if (!reservationDateTime) {
+      setReservationError('Choose a reservation date and time.');
+      setReservationNotice('');
+      return;
+    }
+
+    setReservationStatus('saving');
+    setReservationError('');
+    setReservationNotice('');
+
+    try {
+      const mentor = mentorOptions.find(
+        (user) => String(user.userId) === String(selectedReservationMentorId)
+      );
+
+      saveMentoringReservation({
+        requesterId: currentUser?.id,
+        requesterLabel: currentUser?.nickname || 'You',
+        mentorId: Number(selectedReservationMentorId),
+        mentorLabel: mentor?.label || `User ${selectedReservationMentorId}`,
+        reservedAt: reservationDateTime,
+        message: reservationMessage.trim(),
+      });
+
+      reloadReservations(currentUser?.id);
+      setReservationMessage('');
+      setReservationDateTime(getDefaultReservationDateTime());
+      setReservationStatus('saved');
+      setReservationNotice('Reservation saved in this browser.');
+    } catch (error) {
+      setReservationStatus('error');
+      setReservationError(error.message || 'Failed to save mentoring reservation.');
+    }
+  };
+
+  const handleReservationCancel = async (reservationId) => {
+    setActiveReservationActionId(reservationId);
+    setReservationError('');
+    setReservationNotice('');
+
+    try {
+      cancelStoredMentoringReservation(reservationId, currentUser?.id);
+      reloadReservations(currentUser?.id);
+      setReservationNotice('Reservation canceled.');
+    } catch (error) {
+      setReservationError(error.message || 'Failed to cancel reservation.');
+    } finally {
+      setActiveReservationActionId(null);
     }
   };
 
@@ -318,6 +424,7 @@ export default function LobbyPage() {
         setSpaces(spacesResponse || []);
         setSentRequests(normalizeSentRequests(sentRequestsResponse));
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
+        setReservations(getStoredMentoringReservations(meResponse?.id));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -347,6 +454,10 @@ export default function LobbyPage() {
       isMounted = false;
     };
   }, [clearAuth, navigate, setCurrentUser]);
+
+  useEffect(() => {
+    reloadReservations(currentUser?.id);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
@@ -404,17 +515,25 @@ export default function LobbyPage() {
   useEffect(() => {
     if (!mentorOptions.length) {
       setSelectedMentorId('');
+      setSelectedReservationMentorId('');
       return;
     }
 
     const hasSelectedMentor = mentorOptions.some(
       (mentor) => String(mentor.userId) === String(selectedMentorId)
     );
+    const hasSelectedReservationMentor = mentorOptions.some(
+      (mentor) => String(mentor.userId) === String(selectedReservationMentorId)
+    );
 
     if (!selectedMentorId || !hasSelectedMentor) {
       setSelectedMentorId(String(mentorOptions[0].userId));
     }
-  }, [mentorOptions, selectedMentorId]);
+
+    if (!selectedReservationMentorId || !hasSelectedReservationMentor) {
+      setSelectedReservationMentorId(String(mentorOptions[0].userId));
+    }
+  }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
 
   return (
     <AppLayout
@@ -596,6 +715,102 @@ export default function LobbyPage() {
             </form>
             {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
             {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>Mentoring reservation</h2>
+            <p className="app-note">
+              Use the current lobby participants as temporary reservation targets.
+            </p>
+            <form className="mentoring-form" onSubmit={handleReservationSubmit}>
+              <label className="app-field">
+                <span>Reservation target</span>
+                <select
+                  className="app-input"
+                  value={selectedReservationMentorId}
+                  onChange={(event) => setSelectedReservationMentorId(event.target.value)}
+                  disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+                >
+                  {mentorOptions.length === 0 ? (
+                    <option value="">No mentor candidates in lobby</option>
+                  ) : null}
+                  {mentorOptions.map((mentor) => (
+                    <option key={mentor.userId} value={mentor.userId}>
+                      {mentor.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="app-field">
+                <span>Reservation time</span>
+                <input
+                  type="datetime-local"
+                  className="app-input"
+                  value={reservationDateTime}
+                  onChange={(event) => setReservationDateTime(event.target.value)}
+                  disabled={reservationStatus === 'saving'}
+                />
+              </label>
+
+              <label className="app-field">
+                <span>Message</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  placeholder="I'd like to schedule a portfolio review for later."
+                  value={reservationMessage}
+                  onChange={(event) => setReservationMessage(event.target.value)}
+                  rows={3}
+                  disabled={reservationStatus === 'saving'}
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+              >
+                {reservationStatus === 'saving' ? 'Saving reservation...' : 'Create reservation'}
+              </button>
+            </form>
+            {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
+            {reservationError ? <p className="app-error">{reservationError}</p> : null}
+          </div>
+
+          <div className="lobby-info-card">
+            <h2>My reservations</h2>
+            {reservations.length === 0 ? (
+              <p className="app-note">No mentoring reservations yet.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {reservations.map((reservation) => {
+                  const isCancelable =
+                    reservation.status === 'PENDING' || reservation.status === 'ACCEPTED';
+                  const isProcessing = activeReservationActionId === reservation.id;
+
+                  return (
+                    <li key={reservation.id} className="mentoring-request-card">
+                      <strong>{reservation.mentorLabel}</strong>
+                      <span>{reservation.status}</span>
+                      <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
+                      <p>{reservation.message || 'No reservation message provided.'}</p>
+                      {isCancelable ? (
+                        <div className="mentoring-request-actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleReservationCancel(reservation.id)}
+                            disabled={isProcessing}
+                          >
+                            {isProcessing ? 'Canceling...' : 'Cancel'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           <div className="lobby-info-card">
