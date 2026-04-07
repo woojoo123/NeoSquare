@@ -48,6 +48,10 @@ export default function MentoringSessionPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(!location.state?.request);
   const [chatInput, setChatInput] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [videoCallStatus, setVideoCallStatus] = useState('not_connected');
+  const [cameraOn, setCameraOn] = useState(false);
+  const [microphoneOn, setMicrophoneOn] = useState(false);
   const chatMessagesEndRef = useRef(null);
   const {
     messages: sessionMessages,
@@ -170,6 +174,67 @@ export default function MentoringSessionPage() {
     }
   };
 
+  const handleStartVideoCall = () => {
+    setVideoCallStatus((currentStatus) => {
+      if (currentStatus === 'not_connected') {
+        setActionMessage('Preparing video call UI. Media streams are not connected yet.');
+        return 'preparing';
+      }
+
+      setActionMessage('Video call layout is ready. Connect WebRTC on this step next.');
+      return 'ready';
+    });
+  };
+
+  const handleEndSession = () => {
+    setActionMessage('Session end flow is not connected yet. Use Back to lobby to leave this screen for now.');
+  };
+
+  const handleToggleCamera = () => {
+    setCameraOn((currentValue) => {
+      const nextValue = !currentValue;
+      setActionMessage(nextValue ? 'Camera placeholder turned on.' : 'Camera placeholder turned off.');
+      return nextValue;
+    });
+  };
+
+  const handleToggleMicrophone = () => {
+    setMicrophoneOn((currentValue) => {
+      const nextValue = !currentValue;
+      setActionMessage(
+        nextValue ? 'Microphone placeholder turned on.' : 'Microphone placeholder muted.'
+      );
+      return nextValue;
+    });
+  };
+
+  const videoStatusLabel =
+    videoCallStatus === 'ready'
+      ? 'Video call ready'
+      : videoCallStatus === 'preparing'
+        ? 'Preparing video call'
+        : 'Not connected';
+
+  const localVideoStatus =
+    videoCallStatus === 'ready'
+      ? cameraOn
+        ? 'Local preview slot is ready for stream.'
+        : 'Camera is off. Turn it on before preview.'
+      : videoCallStatus === 'preparing'
+        ? cameraOn
+          ? 'Camera placeholder is active while preparing.'
+          : 'Camera off while preparing.'
+        : cameraOn
+          ? 'Camera on. Start the call to prepare local preview.'
+          : 'Camera off';
+
+  const remoteVideoStatus =
+    videoCallStatus === 'ready'
+      ? 'Remote slot is ready for the other participant.'
+      : videoCallStatus === 'preparing'
+        ? 'Waiting for remote connection.'
+        : 'Remote not connected';
+
   return (
     <AppLayout
       eyebrow="Mentoring"
@@ -177,100 +242,162 @@ export default function MentoringSessionPage() {
       description="This is the minimum session entry screen for an accepted mentoring request."
       panelClassName="app-panel--wide"
     >
-      <div className="app-actions">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => navigate('/lobby')}
-        >
-          Back to lobby
-        </button>
-      </div>
-
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
 
       {isLoading ? (
         <p className="app-note">Loading session...</p>
       ) : sessionRequest ? (
         <section className="session-panel">
-          <div className="session-card-grid">
-            <article className="session-card">
-              <h2>Session partner</h2>
-              <strong>{counterpartName || 'Unknown user'}</strong>
-              <p className="app-note">Role: {myRole}</p>
-            </article>
-
-            <article className="session-card">
-              <h2>Request status</h2>
-              <strong>{sessionRequest.status}</strong>
-              <p className="app-note">Request ID: {sessionRequest.id}</p>
-            </article>
-          </div>
-
-          <article className="session-card">
-            <h2>Request message</h2>
-            <p>{sessionRequest.message || 'No message provided.'}</p>
-          </article>
-
-          <article className="session-card">
-            <h2>Session guide</h2>
-            <p>
-              The mentoring session is ready. Session chat, scheduling, and video tools
-              can be attached here in the next step.
-            </p>
-            {sessionRequest.createdAt ? (
-              <p className="app-note">Request created at: {sessionRequest.createdAt}</p>
-            ) : null}
-          </article>
-
-          <section className="session-chat-panel">
-            <div className="session-chat-header">
-              <div>
-                <h2>Session chat</h2>
-                <p className="app-note">
-                  Status: {sessionChatStatus}. This chat is scoped to request #{sessionRequest.id}.
-                </p>
+          <section className="session-hero">
+            <div className="session-hero__main">
+              <p className="session-hero__eyebrow">Session ready</p>
+              <h2>{counterpartName || 'Unknown user'}</h2>
+              <p className="session-hero__summary">
+                {sessionRequest.message || 'No mentoring request summary was provided.'}
+              </p>
+              <div className="session-meta-list">
+                <span className="session-meta-pill">Role: {myRole}</span>
+                <span className="session-meta-pill">Status: {sessionRequest.status}</span>
+                <span className="session-meta-pill">Request #{sessionRequest.id}</span>
               </div>
+              <p className="app-note">
+                You can continue the conversation here before moving into video mentoring.
+              </p>
+              {sessionRequest.createdAt ? (
+                <p className="app-note">Request created at: {sessionRequest.createdAt}</p>
+              ) : null}
             </div>
 
-            {sessionChatError ? <p className="app-error">{sessionChatError}</p> : null}
-
-            <div className="session-chat-messages">
-              {sessionMessages.length === 0 ? (
-                <p className="app-note">No session messages yet.</p>
-              ) : (
-                sessionMessages.map((message) => (
-                  <article
-                    key={message.id}
-                    className={`session-chat-message ${message.isMine ? 'session-chat-message--mine' : ''}`}
-                  >
-                    <span className="session-chat-message__meta">
-                      {message.isMine ? 'You' : message.nickname}
-                    </span>
-                    <p>{message.content}</p>
-                  </article>
-                ))
-              )}
-              <div ref={chatMessagesEndRef} />
-            </div>
-
-            <form className="session-chat-form" onSubmit={handleSessionChatSubmit}>
-              <input
-                type="text"
-                className="app-input"
-                placeholder="Type a mentoring session message"
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                disabled={sessionRequest.status !== 'ACCEPTED'}
-              />
+            <div className="session-hero__actions">
               <button
-                type="submit"
-                className="primary-button"
-                disabled={sessionRequest.status !== 'ACCEPTED'}
+                type="button"
+                className="secondary-button"
+                onClick={handleEndSession}
               >
-                Send
+                End session
               </button>
-            </form>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => navigate('/lobby')}
+              >
+                Back to lobby
+              </button>
+            </div>
+          </section>
+
+          {actionMessage ? <p className="app-note">{actionMessage}</p> : null}
+
+          <section className="session-workspace">
+            <section
+              className={`session-video-panel ${videoCallStatus !== 'not_connected' ? 'session-video-panel--active' : ''}`}
+            >
+              <div className="session-video-header">
+                <div>
+                  <h2>Video mentoring area</h2>
+                  <p className="app-note">
+                    Prepare the local and remote video slots here before attaching WebRTC.
+                  </p>
+                </div>
+                <div className="session-video-status-list">
+                  <span className="session-meta-pill">Connection: {videoStatusLabel}</span>
+                  <span className="session-meta-pill">Camera: {cameraOn ? 'On' : 'Off'}</span>
+                  <span className="session-meta-pill">Microphone: {microphoneOn ? 'On' : 'Off'}</span>
+                </div>
+              </div>
+
+              <div className="session-video-grid">
+                <article
+                  className={`session-video-slot ${cameraOn ? 'session-video-slot--active' : ''}`}
+                >
+                  <span className="session-video-slot__label">Local video</span>
+                  <strong>{currentUser?.nickname || 'You'}</strong>
+                  <p className="session-video-slot__state">{localVideoStatus}</p>
+                </article>
+
+                <article
+                  className={`session-video-slot ${videoCallStatus !== 'not_connected' ? 'session-video-slot--active' : ''}`}
+                >
+                  <span className="session-video-slot__label">Remote video</span>
+                  <strong>{counterpartName || 'Session partner'}</strong>
+                  <p className="session-video-slot__state">{remoteVideoStatus}</p>
+                </article>
+              </div>
+
+              <div className="session-video-controls">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleStartVideoCall}
+                >
+                  {videoCallStatus === 'not_connected' ? 'Start video call' : 'Prepare video panel'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleToggleCamera}
+                >
+                  {cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleToggleMicrophone}
+                >
+                  {microphoneOn ? 'Mute microphone' : 'Turn microphone on'}
+                </button>
+              </div>
+            </section>
+
+            <section className="session-chat-panel">
+              <div className="session-chat-header">
+                <div>
+                  <h2>Session chat</h2>
+                  <p className="app-note">
+                    Status: {sessionChatStatus}. This chat is scoped to request #{sessionRequest.id}.
+                  </p>
+                </div>
+              </div>
+
+              {sessionChatError ? <p className="app-error">{sessionChatError}</p> : null}
+
+              <div className="session-chat-messages">
+                {sessionMessages.length === 0 ? (
+                  <p className="app-note">No session messages yet.</p>
+                ) : (
+                  sessionMessages.map((message) => (
+                    <article
+                      key={message.id}
+                      className={`session-chat-message ${message.isMine ? 'session-chat-message--mine' : ''}`}
+                    >
+                      <span className="session-chat-message__meta">
+                        {message.isMine ? 'You' : message.nickname}
+                      </span>
+                      <p>{message.content}</p>
+                    </article>
+                  ))
+                )}
+                <div ref={chatMessagesEndRef} />
+              </div>
+
+              <form className="session-chat-form" onSubmit={handleSessionChatSubmit}>
+                <input
+                  type="text"
+                  className="app-input"
+                  placeholder="Type a mentoring session message"
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  disabled={sessionRequest.status !== 'ACCEPTED'}
+                />
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={sessionRequest.status !== 'ACCEPTED'}
+                >
+                  Send
+                </button>
+              </form>
+            </section>
           </section>
         </section>
       ) : (
