@@ -59,7 +59,7 @@ export function useSessionMedia() {
       setConnectionStatus('ready');
       setErrorMessage('');
       setStatusMessage('Local preview is already ready.');
-      return true;
+      return streamRef.current;
     }
 
     setConnectionStatus('preparing');
@@ -83,7 +83,7 @@ export function useSessionMedia() {
       setMicrophoneOn(Boolean(audioTrack?.enabled));
       setConnectionStatus('ready');
       setStatusMessage('Local preview ready. Waiting for remote connection.');
-      return true;
+      return nextStream;
     } catch (error) {
       releaseCurrentStream();
       setLocalStream(null);
@@ -92,7 +92,7 @@ export function useSessionMedia() {
       setConnectionStatus('error');
       setErrorMessage(getMediaErrorMessage(error));
       setStatusMessage('Local media could not be prepared.');
-      return false;
+      return null;
     }
   }
 
@@ -159,6 +159,7 @@ export function useSessionMedia() {
 
   return {
     localVideoRef,
+    localStream,
     hasLocalPreview: Boolean(localStream),
     connectionStatus,
     cameraOn,

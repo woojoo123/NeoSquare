@@ -6,6 +6,7 @@ import { getMentoringRequest } from '../api/mentoring';
 import AppLayout from '../components/AppLayout';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
 import { useSessionMedia } from '../lib/useSessionMedia';
+import { useSessionWebRTC } from '../lib/useSessionWebRTC';
 import { useAuthStore } from '../store/authStore';
 
 function normalizeSessionRequest(rawValue) {
@@ -53,8 +54,9 @@ export default function MentoringSessionPage() {
   const chatMessagesEndRef = useRef(null);
   const {
     localVideoRef,
+    localStream,
     hasLocalPreview,
-    connectionStatus: videoCallStatus,
+    connectionStatus: localMediaStatus,
     cameraOn,
     microphoneOn,
     statusMessage: mediaStatusMessage,
@@ -64,6 +66,24 @@ export default function MentoringSessionPage() {
     toggleMicrophone,
     stopLocalPreview,
   } = useSessionMedia();
+  const {
+    remoteVideoRef,
+    hasRemoteStream,
+    connectionStatus: videoCallStatus,
+    statusMessage: webrtcStatusMessage,
+    errorMessage: webrtcErrorMessage,
+    lastSignalType,
+    startConnection,
+    stopConnection,
+  } = useSessionWebRTC({
+    enabled: Boolean(sessionRequest?.id && currentUser?.id),
+    requestId: Number(requestId),
+    userId: currentUser?.id,
+    localStream,
+    isInitiator: Boolean(
+      sessionRequest?.requesterId && currentUser?.id === sessionRequest.requesterId
+    ),
+  });
   const {
     messages: sessionMessages,
     connectionStatus: sessionChatStatus,
@@ -187,13 +207,18 @@ export default function MentoringSessionPage() {
 
   const handleStartVideoCall = async () => {
     setActionMessage('');
-    await startLocalPreview();
+    const preparedStream = await startLocalPreview();
+
+    if (preparedStream) {
+      await startConnection(preparedStream);
+    }
   };
 
   const handleEndSession = () => {
+    stopConnection();
     stopLocalPreview();
     setActionMessage(
-      'Local media was stopped. Session end flow is not connected yet. Use Back to lobby to leave this screen for now.'
+      'Session media and peer connection were stopped. Use Back to lobby to leave this screen for now.'
     );
   };
 
@@ -208,29 +233,56 @@ export default function MentoringSessionPage() {
   };
 
   const videoStatusLabel =
-    videoCallStatus === 'ready'
-      ? 'Video call ready'
-      : videoCallStatus === 'preparing'
-        ? 'Preparing video call'
-        : 'Not connected';
+    videoCallStatus === 'connected'
+      ? 'Connected'
+      : videoCallStatus === 'connecting'
+        ? 'Connecting'
+        : videoCallStatus === 'signaling'
+          ? 'Signaling'
+          : videoCallStatus === 'ready'
+            ? 'Video call ready'
+            : videoCallStatus === 'error'
+              ? 'Error'
+              : videoCallStatus === 'preparing'
+                ? 'Preparing'
+                : 'Not connected';
+
+  const localMediaStatusLabel =
+    localMediaStatus === 'ready'
+      ? 'Local media ready'
+      : localMediaStatus === 'preparing'
+        ? 'Preparing local media'
+        : localMediaStatus === 'error'
+          ? 'Local media error'
+          : 'Local media idle';
 
   const localVideoStatus =
-    videoCallStatus === 'ready'
+    videoCallStatus === 'connected'
+      ? 'Local preview is connected to the peer session.'
+      : videoCallStatus === 'connecting'
+        ? 'Local preview is attached. Waiting for remote stream.'
+        : videoCallStatus === 'signaling'
+          ? 'Offer/answer exchange is in progress.'
+          : localMediaStatus === 'ready'
       ? cameraOn
         ? 'Local preview ready.'
         : 'Camera is off. Turn it on before preview.'
-      : videoCallStatus === 'preparing'
+      : localMediaStatus === 'preparing'
         ? 'Preparing local camera and microphone.'
-        : videoCallStatus === 'error'
+        : localMediaStatus === 'error' || videoCallStatus === 'error'
           ? 'Local preview could not be prepared.'
           : 'Camera off';
 
   const remoteVideoStatus =
-    videoCallStatus === 'ready'
-      ? 'Remote slot is ready for the other participant.'
-      : videoCallStatus === 'preparing'
-        ? 'Waiting for remote connection.'
-        : 'Remote not connected';
+    hasRemoteStream
+      ? 'Remote stream connected.'
+      : videoCallStatus === 'connecting'
+        ? 'Connecting remote stream...'
+        : videoCallStatus === 'signaling'
+          ? 'Waiting for offer/answer exchange.'
+          : videoCallStatus === 'preparing'
+            ? 'Preparing peer connection.'
+            : 'Remote not connected';
 
   return (
     <AppLayout
@@ -277,6 +329,7 @@ export default function MentoringSessionPage() {
                 type="button"
                 className="secondary-button"
                 onClick={() => {
+                  stopConnection();
                   stopLocalPreview();
                   navigate('/lobby');
                 }}
@@ -287,26 +340,34 @@ export default function MentoringSessionPage() {
           </section>
 
           {mediaErrorMessage ? <p className="app-error">{mediaErrorMessage}</p> : null}
+          {webrtcErrorMessage ? <p className="app-error">{webrtcErrorMessage}</p> : null}
           {!mediaErrorMessage && mediaStatusMessage ? (
             <p className="app-note">{mediaStatusMessage}</p>
+          ) : null}
+          {!webrtcErrorMessage && webrtcStatusMessage ? (
+            <p className="app-note">{webrtcStatusMessage}</p>
           ) : null}
           {actionMessage ? <p className="app-note">{actionMessage}</p> : null}
 
           <section className="session-workspace">
             <section
-              className={`session-video-panel ${videoCallStatus !== 'not_connected' ? 'session-video-panel--active' : ''}`}
+              className={`session-video-panel ${videoCallStatus !== 'not_connected' || hasLocalPreview ? 'session-video-panel--active' : ''}`}
             >
               <div className="session-video-header">
                 <div>
                   <h2>Video mentoring area</h2>
                   <p className="app-note">
-                    Prepare the local and remote video slots here before attaching WebRTC.
+                    Prepare signaling, peer connection, and remote video here.
                   </p>
                 </div>
                 <div className="session-video-status-list">
                   <span className="session-meta-pill">Connection: {videoStatusLabel}</span>
+                  <span className="session-meta-pill">Local: {localMediaStatusLabel}</span>
                   <span className="session-meta-pill">Camera: {cameraOn ? 'On' : 'Off'}</span>
                   <span className="session-meta-pill">Microphone: {microphoneOn ? 'On' : 'Off'}</span>
+                  {lastSignalType ? (
+                    <span className="session-meta-pill">Last signal: {lastSignalType}</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -340,9 +401,18 @@ export default function MentoringSessionPage() {
                   <span className="session-video-slot__label">Remote video</span>
                   <strong>{counterpartName || 'Session partner'}</strong>
                   <div className="session-video-stage">
-                    <div className="session-video-placeholder">
-                      <span>Remote preview will appear here</span>
-                    </div>
+                    {hasRemoteStream ? (
+                      <video
+                        ref={remoteVideoRef}
+                        className="session-video-element"
+                        autoPlay
+                        playsInline
+                      />
+                    ) : (
+                      <div className="session-video-placeholder">
+                        <span>Remote preview will appear here</span>
+                      </div>
+                    )}
                   </div>
                   <p className="session-video-slot__state">{remoteVideoStatus}</p>
                 </article>
@@ -356,7 +426,11 @@ export default function MentoringSessionPage() {
                   disabled={videoCallStatus === 'preparing'}
                 >
                   {videoCallStatus === 'ready'
-                    ? 'Local preview ready'
+                    ? 'Start signaling'
+                    : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
+                      ? 'Signaling active'
+                      : videoCallStatus === 'connected'
+                        ? 'Video connected'
                     : videoCallStatus === 'error'
                       ? 'Try video call again'
                       : 'Start video call'}
