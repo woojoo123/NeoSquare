@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
@@ -13,11 +13,21 @@ export default function LobbyPage() {
   const [spaces, setSpaces] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [chatInput, setChatInput] = useState('');
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const chatMessagesEndRef = useRef(null);
   const primarySpace = spaces[0] || null;
-  const { connectionStatus, lastMessage, lastError, remoteEvent, sendUserMove } =
+  const {
+    connectionStatus,
+    lastMessage,
+    lastError,
+    remoteEvent,
+    chatMessages,
+    sendChatMessage,
+    sendUserMove,
+  } =
     useLobbyRealtime({
       enabled: !isLoading && !errorMessage && Boolean(currentUser),
       userId: currentUser?.id,
@@ -28,6 +38,16 @@ export default function LobbyPage() {
   const handleLogout = () => {
     clearAuth();
     navigate('/login', { replace: true });
+  };
+
+  const handleChatSubmit = (event) => {
+    event.preventDefault();
+
+    const didSend = sendChatMessage(chatInput);
+
+    if (didSend) {
+      setChatInput('');
+    }
   };
 
   useEffect(() => {
@@ -78,6 +98,10 @@ export default function LobbyPage() {
       isMounted = false;
     };
   }, [clearAuth, navigate, setCurrentUser]);
+
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [chatMessages]);
 
   return (
     <AppLayout
@@ -170,6 +194,48 @@ export default function LobbyPage() {
             onPlayerMove={sendUserMove}
             remoteEvent={remoteEvent}
           />
+          <section className="lobby-chat-panel">
+            <div className="lobby-chat-header">
+              <div>
+                <h3>Lobby chat</h3>
+                <p className="app-note">
+                  Messages are sent through the current lobby WebSocket connection.
+                </p>
+              </div>
+            </div>
+
+            <div className="lobby-chat-messages">
+              {chatMessages.length === 0 ? (
+                <p className="app-note">No chat messages yet.</p>
+              ) : (
+                chatMessages.map((message) => (
+                  <article
+                    key={message.id}
+                    className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
+                  >
+                    <span className="chat-message__meta">
+                      {message.isMine ? 'You' : message.nickname}
+                    </span>
+                    <p>{message.content}</p>
+                  </article>
+                ))
+              )}
+              <div ref={chatMessagesEndRef} />
+            </div>
+
+            <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
+              <input
+                type="text"
+                className="app-input"
+                placeholder="Type a message"
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+              />
+              <button type="submit" className="primary-button">
+                Send
+              </button>
+            </form>
+          </section>
         </section>
       </div>
     </AppLayout>

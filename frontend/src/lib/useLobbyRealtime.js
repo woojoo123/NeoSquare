@@ -4,6 +4,7 @@ const MOVE_THROTTLE_MS = 120;
 const MOVE_DISTANCE_THRESHOLD = 12;
 const MOVE_DISTANCE_THRESHOLD_SQUARED = MOVE_DISTANCE_THRESHOLD * MOVE_DISTANCE_THRESHOLD;
 const REMOTE_EVENT_TYPES = new Set(['user_enter', 'user_move', 'user_leave']);
+const CHAT_MESSAGE_LIMIT = 80;
 
 function toNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -53,6 +54,58 @@ function normalizeRemoteEvent(message, currentUserId, activeSpaceId, sequence) {
   };
 }
 
+function normalizeChatMessage(message, currentUserId, activeSpaceId) {
+  if (message?.type !== 'chat_send') {
+    return null;
+  }
+
+  const payload = message?.payload || {};
+  const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
+  const content = typeof payload.content === 'string' ? payload.content.trim() : '';
+  const messageSpaceId = toNumber(payload.spaceId);
+
+  if (!senderId || !content) {
+    return null;
+  }
+
+  if (activeSpaceId && messageSpaceId && messageSpaceId !== activeSpaceId) {
+    return null;
+  }
+
+  return {
+    id:
+      payload.clientMessageId ||
+      `${message.timestamp || Date.now()}-${senderId}-${content}`,
+    senderId,
+    nickname:
+      payload.nickname ||
+      payload.label ||
+      payload.userNickname ||
+      payload.userName ||
+      `User ${senderId}`,
+    content,
+    timestamp: message.timestamp || new Date().toISOString(),
+    isMine: senderId === currentUserId,
+    clientMessageId: payload.clientMessageId || null,
+  };
+}
+
+function appendChatMessage(previousMessages, nextMessage) {
+  const hasDuplicate = previousMessages.some((message) => {
+    if (nextMessage.clientMessageId && message.clientMessageId) {
+      return message.clientMessageId === nextMessage.clientMessageId;
+    }
+
+    return message.id === nextMessage.id;
+  });
+
+  if (hasDuplicate) {
+    return previousMessages;
+  }
+
+  return [...previousMessages, nextMessage].slice(-CHAT_MESSAGE_LIMIT);
+}
+
 function getLobbyWebSocketUrl() {
   const configuredUrl = import.meta.env.VITE_WS_URL;
 
@@ -73,6 +126,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
   const [lastMessage, setLastMessage] = useState(null);
   const [lastError, setLastError] = useState('');
   const [remoteEvent, setRemoteEvent] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
   const socketRef = useRef(null);
   const hasEnteredRef = useRef(false);
   const lastMoveSentAtRef = useRef(0);
@@ -126,12 +180,56 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
     lastMovePositionRef.current = nextPosition;
   }
 
+  function sendChatMessage(content) {
+    const trimmedContent = typeof content === 'string' ? content.trim() : '';
+
+    if (!trimmedContent || !userId || !spaceId || !nickname) {
+      return false;
+    }
+
+    const socket = socketRef.current;
+
+    if (!socket || socket.readyState !== WebSocket.OPEN || !hasEnteredRef.current) {
+      return false;
+    }
+
+    const clientMessageId = `chat-${userId}-${Date.now()}`;
+
+    socket.send(
+      JSON.stringify({
+        type: 'chat_send',
+        senderId: userId,
+        payload: {
+          spaceId,
+          content: trimmedContent,
+          nickname,
+          clientMessageId,
+        },
+      })
+    );
+
+    setChatMessages((previousMessages) =>
+      appendChatMessage(previousMessages, {
+        id: clientMessageId,
+        senderId: userId,
+        nickname,
+        content: trimmedContent,
+        timestamp: new Date().toISOString(),
+        isMine: true,
+        clientMessageId,
+      })
+    );
+
+    return true;
+  }
+
   useEffect(() => {
     if (!enabled || !userId || !nickname) {
       setConnectionStatus('idle');
       setLastMessage(null);
       setLastError('');
       setRemoteEvent(null);
+      setChatMessages([]);
       socketRef.current = null;
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
@@ -167,6 +265,14 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
           setRemoteEvent(nextRemoteEvent);
         }
 
+        const nextChatMessage = normalizeChatMessage(parsedMessage, userId, spaceId);
+
+        if (nextChatMessage) {
+          setChatMessages((previousMessages) =>
+            appendChatMessage(previousMessages, nextChatMessage)
+          );
+        }
+
         if (
           parsedMessage.type === 'ws_connected' &&
           !hasEnteredRef.current &&
@@ -199,6 +305,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       setLastMessage(null);
       setLastError('');
       setRemoteEvent(null);
+      setChatMessages([]);
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
@@ -261,6 +368,8 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
     lastMessage,
     lastError,
     remoteEvent,
+    chatMessages,
+    sendChatMessage,
     sendUserMove,
   };
 }

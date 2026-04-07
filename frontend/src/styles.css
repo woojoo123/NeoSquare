@@ -234,6 +234,61 @@ select {
   margin-bottom: 16px;
 }
 
+.lobby-chat-panel {
+  margin-top: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.lobby-chat-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.lobby-chat-messages {
+  margin-top: 16px;
+  height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.chat-message {
+  max-width: 82%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #e5e7eb;
+}
+
+.chat-message--mine {
+  margin-left: auto;
+  background: #dbeafe;
+}
+
+.chat-message__meta {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.chat-message p {
+  margin: 0;
+  color: #111827;
+}
+
+.lobby-chat-form {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
 .lobby-game-shell {
   overflow: hidden;
   border-radius: 18px;
@@ -264,5 +319,9 @@ select {
   .lobby-game-shell,
   .lobby-game-container {
     min-height: 360px;
+  }
+
+  .lobby-chat-form {
+    grid-template-columns: 1fr;
   }
 }
