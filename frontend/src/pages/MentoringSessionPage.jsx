@@ -51,7 +51,9 @@ export default function MentoringSessionPage() {
   const [isLoading, setIsLoading] = useState(!location.state?.request);
   const [chatInput, setChatInput] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [sessionExitStatus, setSessionExitStatus] = useState('idle');
   const chatMessagesEndRef = useRef(null);
+  const endSessionTimeoutRef = useRef(null);
   const {
     localVideoRef,
     localStream,
@@ -180,6 +182,14 @@ export default function MentoringSessionPage() {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [sessionMessages]);
 
+  useEffect(() => {
+    return () => {
+      if (endSessionTimeoutRef.current) {
+        window.clearTimeout(endSessionTimeoutRef.current);
+      }
+    };
+  }, []);
+
   let myRole = 'Participant';
 
   if (sessionRequest && currentUser?.id === sessionRequest.requesterId) {
@@ -205,8 +215,26 @@ export default function MentoringSessionPage() {
     }
   };
 
+  const cleanupSessionResources = () => {
+    stopConnection();
+    stopLocalPreview();
+  };
+
+  const navigateToLobby = (state) => {
+    if (endSessionTimeoutRef.current) {
+      window.clearTimeout(endSessionTimeoutRef.current);
+      endSessionTimeoutRef.current = null;
+    }
+
+    navigate('/lobby', {
+      replace: true,
+      state,
+    });
+  };
+
   const handleStartVideoCall = async () => {
     setActionMessage('');
+    setSessionExitStatus('idle');
     const preparedStream = await startLocalPreview();
 
     if (preparedStream) {
@@ -215,21 +243,41 @@ export default function MentoringSessionPage() {
   };
 
   const handleEndSession = () => {
-    stopConnection();
-    stopLocalPreview();
-    setActionMessage(
-      'Session media and peer connection were stopped. Use Back to lobby to leave this screen for now.'
-    );
+    if (sessionExitStatus === 'ending' || sessionExitStatus === 'ended') {
+      return;
+    }
+
+    setSessionExitStatus('ending');
+    setActionMessage('Ending session...');
+    cleanupSessionResources();
+    setSessionExitStatus('ended');
+    setActionMessage('Session ended. Returning to lobby...');
+
+    endSessionTimeoutRef.current = window.setTimeout(() => {
+      navigateToLobby({
+        refreshMentoring: true,
+        sessionMessage: 'Mentoring session ended.',
+      });
+    }, 900);
   };
 
   const handleToggleCamera = () => {
     setActionMessage('');
+    setSessionExitStatus('idle');
     toggleCamera();
   };
 
   const handleToggleMicrophone = () => {
     setActionMessage('');
+    setSessionExitStatus('idle');
     toggleMicrophone();
+  };
+
+  const handleBackToLobby = () => {
+    cleanupSessionResources();
+    navigateToLobby({
+      refreshMentoring: true,
+    });
   };
 
   const videoStatusLabel =
@@ -328,17 +376,15 @@ export default function MentoringSessionPage() {
                 type="button"
                 className="secondary-button"
                 onClick={handleEndSession}
+                disabled={sessionExitStatus === 'ending' || sessionExitStatus === 'ended'}
               >
-                End session
+                {sessionExitStatus === 'ending' ? 'Ending session...' : 'End session'}
               </button>
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => {
-                  stopConnection();
-                  stopLocalPreview();
-                  navigate('/lobby');
-                }}
+                onClick={handleBackToLobby}
+                disabled={sessionExitStatus === 'ending'}
               >
                 Back to lobby
               </button>
@@ -353,7 +399,11 @@ export default function MentoringSessionPage() {
           {!webrtcErrorMessage && webrtcStatusMessage ? (
             <p className="app-note">{webrtcStatusMessage}</p>
           ) : null}
-          {actionMessage ? <p className="app-note">{actionMessage}</p> : null}
+          {actionMessage ? (
+            <p className={sessionExitStatus === 'ended' ? 'app-success' : 'app-note'}>
+              {actionMessage}
+            </p>
+          ) : null}
 
           <section className="session-workspace">
             <section
@@ -429,7 +479,11 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="primary-button"
                   onClick={handleStartVideoCall}
-                  disabled={videoCallStatus === 'preparing' || videoCallStatus === 'connecting'}
+                  disabled={
+                    sessionExitStatus === 'ending' ||
+                    videoCallStatus === 'preparing' ||
+                    videoCallStatus === 'connecting'
+                  }
                 >
                   {videoCallStatus === 'connected'
                     ? 'Video connected'
@@ -447,7 +501,7 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleCamera}
-                  disabled={!hasLocalPreview}
+                  disabled={!hasLocalPreview || sessionExitStatus === 'ending'}
                 >
                   {cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 </button>
@@ -455,7 +509,7 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleMicrophone}
-                  disabled={!hasLocalPreview}
+                  disabled={!hasLocalPreview || sessionExitStatus === 'ending'}
                 >
                   {microphoneOn ? 'Mute microphone' : 'Turn microphone on'}
                 </button>
@@ -500,12 +554,12 @@ export default function MentoringSessionPage() {
                   placeholder="Type a mentoring session message"
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
-                  disabled={sessionRequest.status !== 'ACCEPTED'}
+                  disabled={sessionRequest.status !== 'ACCEPTED' || sessionExitStatus === 'ending'}
                 />
                 <button
                   type="submit"
                   className="primary-button"
-                  disabled={sessionRequest.status !== 'ACCEPTED'}
+                  disabled={sessionRequest.status !== 'ACCEPTED' || sessionExitStatus === 'ending'}
                 >
                   Send
                 </button>

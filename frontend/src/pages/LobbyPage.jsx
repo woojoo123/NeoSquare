@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import {
@@ -82,11 +82,13 @@ function normalizeReceivedRequests(rawValue) {
 }
 
 export default function LobbyPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [spaces, setSpaces] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [receivedRequests, setReceivedRequests] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [lobbyNotice, setLobbyNotice] = useState(location.state?.sessionMessage || '');
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
@@ -266,6 +268,18 @@ export default function LobbyPage() {
   }, [chatMessages]);
 
   useEffect(() => {
+    if (!location.state?.sessionMessage) {
+      return;
+    }
+
+    setLobbyNotice(location.state.sessionMessage);
+    navigate('/lobby', {
+      replace: true,
+      state: null,
+    });
+  }, [location.state, navigate]);
+
+  useEffect(() => {
     if (!mentorOptions.length) {
       setSelectedMentorId('');
       return;
@@ -292,6 +306,7 @@ export default function LobbyPage() {
           Sign out
         </button>
       </div>
+      {lobbyNotice ? <p className="app-success">{lobbyNotice}</p> : null}
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
       <div className="lobby-layout">
         <section className="lobby-sidebar">
