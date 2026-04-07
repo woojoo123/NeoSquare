@@ -323,6 +323,61 @@ select {
   color: #4b5563;
 }
 
+.session-chat-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.session-chat-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.session-chat-messages {
+  margin-top: 16px;
+  min-height: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.session-chat-message {
+  max-width: 82%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #e5e7eb;
+}
+
+.session-chat-message--mine {
+  margin-left: auto;
+  background: #dbeafe;
+}
+
+.session-chat-message__meta {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.session-chat-message p {
+  margin: 0;
+  color: #111827;
+}
+
+.session-chat-form {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
 .lobby-stage {
   padding: 18px;
 }
@@ -423,6 +478,10 @@ select {
   }
 
   .session-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-chat-form {
     grid-template-columns: 1fr;
   }
 }

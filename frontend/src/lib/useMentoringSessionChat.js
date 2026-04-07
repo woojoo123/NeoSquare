@@ -1,0 +1,245 @@
+import { useEffect, useRef, useState } from 'react';
+
+const SESSION_CHAT_LIMIT = 80;
+
+function getSessionWebSocketUrl() {
+  const configuredUrl = import.meta.env.VITE_WS_URL;
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:8080/ws';
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
+
+function toNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsedNumber = Number(value);
+
+    if (Number.isFinite(parsedNumber)) {
+      return parsedNumber;
+    }
+  }
+
+  return null;
+}
+
+function appendSessionMessage(previousMessages, nextMessage) {
+  const hasDuplicate = previousMessages.some((message) => {
+    if (nextMessage.clientMessageId && message.clientMessageId) {
+      return message.clientMessageId === nextMessage.clientMessageId;
+    }
+
+    return message.id === nextMessage.id;
+  });
+
+  if (hasDuplicate) {
+    return previousMessages;
+  }
+
+  return [...previousMessages, nextMessage].slice(-SESSION_CHAT_LIMIT);
+}
+
+function normalizeSessionChatMessage(message, currentUserId, requestId) {
+  if (message?.type !== 'chat_send') {
+    return null;
+  }
+
+  const payload = message?.payload || {};
+  const messageRequestId = toNumber(payload.requestId);
+  const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
+  const content = typeof payload.content === 'string' ? payload.content.trim() : '';
+  const scope = payload.scope;
+
+  if (!senderId || !content || messageRequestId !== requestId) {
+    return null;
+  }
+
+  if (scope && scope !== 'mentoring_session') {
+    return null;
+  }
+
+  return {
+    id:
+      payload.clientMessageId ||
+      `${message.timestamp || Date.now()}-${senderId}-${content}`,
+    senderId,
+    nickname:
+      payload.nickname ||
+      payload.label ||
+      payload.userNickname ||
+      payload.userName ||
+      `User ${senderId}`,
+    content,
+    timestamp: message.timestamp || new Date().toISOString(),
+    isMine: senderId === currentUserId,
+    clientMessageId: payload.clientMessageId || null,
+  };
+}
+
+export function useMentoringSessionChat({ enabled, requestId, userId, nickname }) {
+  const [messages, setMessages] = useState([]);
+  const [connectionStatus, setConnectionStatus] = useState('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const socketRef = useRef(null);
+  const isReadyRef = useRef(false);
+
+  function sendMessage(content) {
+    const trimmedContent = typeof content === 'string' ? content.trim() : '';
+
+    if (!trimmedContent || !requestId || !userId || !nickname) {
+      return false;
+    }
+
+    const socket = socketRef.current;
+
+    if (!socket || socket.readyState !== WebSocket.OPEN || !isReadyRef.current) {
+      return false;
+    }
+
+    const clientMessageId = `session-chat-${requestId}-${userId}-${Date.now()}`;
+
+    socket.send(
+      JSON.stringify({
+        type: 'chat_send',
+        senderId: userId,
+        payload: {
+          requestId,
+          scope: 'mentoring_session',
+          content: trimmedContent,
+          nickname,
+          clientMessageId,
+        },
+      })
+    );
+
+    setMessages((previousMessages) =>
+      appendSessionMessage(previousMessages, {
+        id: clientMessageId,
+        senderId: userId,
+        nickname,
+        content: trimmedContent,
+        timestamp: new Date().toISOString(),
+        isMine: true,
+        clientMessageId,
+      })
+    );
+
+    return true;
+  }
+
+  useEffect(() => {
+    if (!enabled || !requestId || !userId || !nickname) {
+      setMessages([]);
+      setConnectionStatus('idle');
+      setErrorMessage('');
+      socketRef.current = null;
+      isReadyRef.current = false;
+      return undefined;
+    }
+
+    let isDisposed = false;
+    let socket;
+
+    function handleIncomingMessage(event) {
+      try {
+        const parsedMessage = JSON.parse(event.data);
+
+        if (isDisposed) {
+          return;
+        }
+
+        if (parsedMessage.type === 'ws_connected') {
+          isReadyRef.current = true;
+          setConnectionStatus('connected');
+          return;
+        }
+
+        const nextMessage = normalizeSessionChatMessage(parsedMessage, userId, requestId);
+
+        if (nextMessage) {
+          setMessages((previousMessages) =>
+            appendSessionMessage(previousMessages, nextMessage)
+          );
+        }
+      } catch (error) {
+        if (isDisposed) {
+          return;
+        }
+
+        setErrorMessage('Failed to parse session chat message.');
+        console.error('Failed to parse session chat message:', error);
+      }
+    }
+
+    try {
+      setMessages([]);
+      setConnectionStatus('connecting');
+      setErrorMessage('');
+      isReadyRef.current = false;
+      socket = new WebSocket(getSessionWebSocketUrl());
+      socketRef.current = socket;
+    } catch (error) {
+      setConnectionStatus('error');
+      setErrorMessage('Failed to create session chat connection.');
+      console.error('Failed to create session chat connection:', error);
+      return undefined;
+    }
+
+    socket.onopen = () => {
+      if (isDisposed) {
+        return;
+      }
+
+      setConnectionStatus('connecting');
+    };
+
+    socket.onmessage = handleIncomingMessage;
+
+    socket.onerror = () => {
+      if (isDisposed) {
+        return;
+      }
+
+      setConnectionStatus('error');
+      setErrorMessage('Session chat connection error.');
+    };
+
+    socket.onclose = () => {
+      if (isDisposed) {
+        return;
+      }
+
+      setConnectionStatus('disconnected');
+      socketRef.current = null;
+      isReadyRef.current = false;
+    };
+
+    return () => {
+      isDisposed = true;
+      socketRef.current = null;
+      isReadyRef.current = false;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      } else {
+        socket?.close();
+      }
+    };
+  }, [enabled, nickname, requestId, userId]);
+
+  return {
+    messages,
+    connectionStatus,
+    errorMessage,
+    sendMessage,
+  };
+}
