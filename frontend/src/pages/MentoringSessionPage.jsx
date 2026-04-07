@@ -251,12 +251,18 @@ export default function MentoringSessionPage() {
     setActionMessage('Ending session...');
     cleanupSessionResources();
     setSessionExitStatus('ended');
-    setActionMessage('Session ended. Returning to lobby...');
+    setActionMessage('Session ended. Returning to lobby for quick feedback...');
 
     endSessionTimeoutRef.current = window.setTimeout(() => {
       navigateToLobby({
         refreshMentoring: true,
-        sessionMessage: 'Mentoring session ended.',
+        sessionMessage: 'Mentoring session ended. You can leave quick feedback below.',
+        feedbackPrompt: {
+          requestId: sessionRequest?.id ?? Number(requestId),
+          counterpartName: counterpartName || 'Session partner',
+          role: myRole,
+          requestMessage: sessionRequest?.message || '',
+        },
       });
     }, 900);
   };

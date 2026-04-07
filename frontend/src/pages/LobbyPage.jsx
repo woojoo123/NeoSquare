@@ -13,6 +13,7 @@ import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
+import { getStoredSessionFeedback, saveSessionFeedback } from '../lib/sessionFeedbackStorage';
 import { useAuthStore } from '../store/authStore';
 
 function getMentoringRequestItems(rawValue) {
@@ -81,6 +82,39 @@ function normalizeReceivedRequests(rawValue) {
   }));
 }
 
+function normalizeFeedbackPrompt(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const requestId = rawValue.requestId ?? rawValue.id ?? null;
+
+  if (!requestId) {
+    return null;
+  }
+
+  return {
+    requestId,
+    counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || 'Session partner',
+    role: rawValue.role || 'Participant',
+    requestMessage: rawValue.requestMessage || rawValue.message || '',
+  };
+}
+
+function formatFeedbackTimestamp(value) {
+  if (!value) {
+    return '';
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return parsedDate.toLocaleString();
+}
+
 export default function LobbyPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -89,6 +123,15 @@ export default function LobbyPage() {
   const [receivedRequests, setReceivedRequests] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [lobbyNotice, setLobbyNotice] = useState(location.state?.sessionMessage || '');
+  const [feedbackPrompt, setFeedbackPrompt] = useState(
+    normalizeFeedbackPrompt(location.state?.feedbackPrompt)
+  );
+  const [feedbackRating, setFeedbackRating] = useState('5');
+  const [feedbackSummary, setFeedbackSummary] = useState('');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('idle');
+  const [feedbackNotice, setFeedbackNotice] = useState('');
+  const [feedbackError, setFeedbackError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
@@ -209,6 +252,48 @@ export default function LobbyPage() {
     }
   };
 
+  const handleFeedbackSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!feedbackPrompt?.requestId) {
+      return;
+    }
+
+    setFeedbackStatus('saving');
+    setFeedbackNotice('');
+    setFeedbackError('');
+
+    try {
+      const savedFeedback = saveSessionFeedback({
+        requestId: feedbackPrompt.requestId,
+        counterpartName: feedbackPrompt.counterpartName,
+        role: feedbackPrompt.role,
+        rating: feedbackRating,
+        summary: feedbackSummary.trim(),
+        feedback: feedbackMessage.trim(),
+      });
+
+      setFeedbackRating(String(savedFeedback.rating || 5));
+      setFeedbackSummary(savedFeedback.summary || '');
+      setFeedbackMessage(savedFeedback.feedback || '');
+      setFeedbackStatus('saved');
+      setFeedbackNotice(
+        `Feedback saved in this browser at ${formatFeedbackTimestamp(savedFeedback.submittedAt)}.`
+      );
+      setLobbyNotice('Session feedback saved.');
+    } catch (error) {
+      setFeedbackStatus('error');
+      setFeedbackError(error.message || 'Failed to save session feedback.');
+    }
+  };
+
+  const handleDismissFeedback = () => {
+    setFeedbackPrompt(null);
+    setFeedbackNotice('');
+    setFeedbackError('');
+    setFeedbackStatus('idle');
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -268,16 +353,53 @@ export default function LobbyPage() {
   }, [chatMessages]);
 
   useEffect(() => {
-    if (!location.state?.sessionMessage) {
+    const nextSessionMessage = location.state?.sessionMessage;
+    const nextFeedbackPrompt = normalizeFeedbackPrompt(location.state?.feedbackPrompt);
+
+    if (!nextSessionMessage && !nextFeedbackPrompt) {
       return;
     }
 
-    setLobbyNotice(location.state.sessionMessage);
+    if (nextSessionMessage) {
+      setLobbyNotice(nextSessionMessage);
+    }
+
+    if (nextFeedbackPrompt) {
+      setFeedbackPrompt(nextFeedbackPrompt);
+    }
+
     navigate('/lobby', {
       replace: true,
       state: null,
     });
   }, [location.state, navigate]);
+
+  useEffect(() => {
+    if (!feedbackPrompt?.requestId) {
+      return;
+    }
+
+    const storedFeedback = getStoredSessionFeedback(feedbackPrompt.requestId);
+
+    if (storedFeedback) {
+      setFeedbackRating(String(storedFeedback.rating || 5));
+      setFeedbackSummary(storedFeedback.summary || '');
+      setFeedbackMessage(storedFeedback.feedback || '');
+      setFeedbackStatus('saved');
+      setFeedbackNotice(
+        `Feedback already saved in this browser at ${formatFeedbackTimestamp(storedFeedback.submittedAt)}.`
+      );
+      setFeedbackError('');
+      return;
+    }
+
+    setFeedbackRating('5');
+    setFeedbackSummary('');
+    setFeedbackMessage('');
+    setFeedbackStatus('idle');
+    setFeedbackNotice('');
+    setFeedbackError('');
+  }, [feedbackPrompt]);
 
   useEffect(() => {
     if (!mentorOptions.length) {
@@ -334,6 +456,88 @@ export default function LobbyPage() {
               Active space for realtime: {primarySpace ? primarySpace.name : 'No space selected'}
             </p>
           </div>
+
+          {feedbackPrompt ? (
+            <div className="lobby-info-card">
+              <h2>Leave feedback for this session</h2>
+              <p className="app-note">
+                Session #{feedbackPrompt.requestId} with {feedbackPrompt.counterpartName}
+              </p>
+              <p className="app-note">Your role: {feedbackPrompt.role}</p>
+              {feedbackPrompt.requestMessage ? (
+                <p className="app-note">
+                  Request summary: {feedbackPrompt.requestMessage}
+                </p>
+              ) : null}
+              <p className="app-note">
+                This fallback stores feedback in this browser until a dedicated review API is
+                added.
+              </p>
+
+              <form className="mentoring-form" onSubmit={handleFeedbackSubmit}>
+                <label className="app-field">
+                  <span>Rating</span>
+                  <select
+                    className="app-input"
+                    value={feedbackRating}
+                    onChange={(event) => setFeedbackRating(event.target.value)}
+                    disabled={feedbackStatus === 'saving'}
+                  >
+                    <option value="5">5 - Excellent</option>
+                    <option value="4">4 - Good</option>
+                    <option value="3">3 - Okay</option>
+                    <option value="2">2 - Needs work</option>
+                    <option value="1">1 - Poor</option>
+                  </select>
+                </label>
+
+                <label className="app-field">
+                  <span>Session summary</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    placeholder="Summarize what you covered in this mentoring session."
+                    value={feedbackSummary}
+                    onChange={(event) => setFeedbackSummary(event.target.value)}
+                    rows={2}
+                    disabled={feedbackStatus === 'saving'}
+                  />
+                </label>
+
+                <label className="app-field">
+                  <span>Feedback</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    placeholder="Leave a short note about how the session went."
+                    value={feedbackMessage}
+                    onChange={(event) => setFeedbackMessage(event.target.value)}
+                    rows={3}
+                    disabled={feedbackStatus === 'saving'}
+                  />
+                </label>
+
+                <div className="mentoring-request-actions">
+                  <button type="submit" className="primary-button" disabled={feedbackStatus === 'saving'}>
+                    {feedbackStatus === 'saving'
+                      ? 'Saving feedback...'
+                      : feedbackStatus === 'saved'
+                        ? 'Update feedback'
+                        : 'Save feedback'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleDismissFeedback}
+                    disabled={feedbackStatus === 'saving'}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </form>
+
+              {feedbackNotice ? <p className="app-success">{feedbackNotice}</p> : null}
+              {feedbackError ? <p className="app-error">{feedbackError}</p> : null}
+            </div>
+          ) : null}
 
           <div className="lobby-info-card">
             <h2>Realtime connection</h2>
