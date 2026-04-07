@@ -5,6 +5,11 @@ import java.util.Map;
 
 import com.neosquare.auth.DuplicateEmailException;
 import com.neosquare.auth.InvalidCredentialsException;
+import com.neosquare.mentoring.InvalidMentoringRequestStateException;
+import com.neosquare.mentoring.MentoringRequestAccessDeniedException;
+import com.neosquare.mentoring.MentoringRequestNotFoundException;
+import com.neosquare.mentoring.SelfMentoringRequestException;
+import com.neosquare.mentoring.UserNotFoundException;
 import com.neosquare.space.SpaceNotFoundException;
 
 import org.springframework.http.HttpStatus;
@@ -62,6 +67,64 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFoundException(UserNotFoundException exception) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(MentoringRequestNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringRequestNotFoundException(
+            MentoringRequestNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(SelfMentoringRequestException.class)
+    public ResponseEntity<ErrorResponse> handleSelfMentoringRequestException(
+            SelfMentoringRequestException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(MentoringRequestAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringRequestAccessDeniedException(
+            MentoringRequestAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(InvalidMentoringRequestStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentoringRequestStateException(
+            InvalidMentoringRequestStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(RuntimeException.class)

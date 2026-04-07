@@ -63,15 +63,21 @@ public class MentoringRequest {
     }
 
     public void accept() {
+        ensurePending("accepted");
         this.status = MentoringRequestStatus.ACCEPTED;
     }
 
     public void reject() {
+        ensurePending("rejected");
         this.status = MentoringRequestStatus.REJECTED;
     }
 
     public boolean isParticipant(Long userId) {
         return Objects.equals(requester.getId(), userId) || Objects.equals(mentor.getId(), userId);
+    }
+
+    public boolean isMentor(Long userId) {
+        return Objects.equals(mentor.getId(), userId);
     }
 
     public Long resolveCounterpartUserId(Long userId) {
@@ -124,5 +130,13 @@ public class MentoringRequest {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    private void ensurePending(String action) {
+        if (status != MentoringRequestStatus.PENDING) {
+            throw new InvalidMentoringRequestStateException(
+                    "Only pending mentoring requests can be " + action + "."
+            );
+        }
     }
 }

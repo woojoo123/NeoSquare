@@ -46,7 +46,7 @@ export default function LoginPage() {
       setAccessToken(nextAccessToken);
 
       const meResponse = await getMe();
-      setCurrentUser(meResponse.data);
+      setCurrentUser(meResponse);
       navigate(redirectTo, { replace: true });
     } catch (error) {
       clearAuth();

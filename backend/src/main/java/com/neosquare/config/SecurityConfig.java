@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/spaces").permitAll()
                         .requestMatchers("/api/spaces/*").permitAll()
+                        .requestMatchers("/api/mentoring/**").authenticated()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .anyRequest().permitAll()

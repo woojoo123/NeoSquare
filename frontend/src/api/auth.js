@@ -12,5 +12,5 @@ export async function login(payload) {
 
 export async function getMe() {
   const response = await axiosInstance.get('/auth/me');
-  return response.data;
+  return response.data?.data ?? response.data;
 }
