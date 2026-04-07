@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom'
 
 import LobbyPage from '../pages/LobbyPage';
 import LoginPage from '../pages/LoginPage';
+import MentoringSessionPage from '../pages/MentoringSessionPage';
 import SignupPage from '../pages/SignupPage';
 import RequireAuth from './RequireAuth';
 
@@ -24,6 +25,10 @@ const router = createBrowserRouter([
       {
         path: '/lobby',
         element: <LobbyPage />,
+      },
+      {
+        path: '/mentoring/session/:requestId',
+        element: <MentoringSessionPage />,
       },
     ],
   },

@@ -289,6 +289,40 @@ select {
   flex-wrap: wrap;
 }
 
+.session-panel {
+  margin-top: 28px;
+  display: grid;
+  gap: 18px;
+}
+
+.session-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.session-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f9fafb;
+  padding: 20px;
+}
+
+.session-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.session-card strong {
+  display: block;
+  font-size: 1.1rem;
+  color: #111827;
+}
+
+.session-card p {
+  color: #4b5563;
+}
+
 .lobby-stage {
   padding: 18px;
 }
@@ -385,6 +419,10 @@ select {
   }
 
   .lobby-chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .session-card-grid {
     grid-template-columns: 1fr;
   }
 }

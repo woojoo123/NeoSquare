@@ -24,3 +24,8 @@ export async function rejectMentoringRequest(requestId) {
   const response = await axiosInstance.patch(`/mentoring/requests/${requestId}/reject`);
   return response.data;
 }
+
+export async function getMentoringRequest(requestId) {
+  const response = await axiosInstance.get(`/mentoring/requests/${requestId}`);
+  return response.data;
+}

@@ -36,6 +36,13 @@ function normalizeSentRequests(rawValue) {
 
   return requestItems.map((request, index) => ({
     id: request.id ?? `mentoring-request-${index}`,
+    requesterId: request.requesterId ?? request.senderId ?? request.userId ?? null,
+    requesterLabel:
+      request.requesterNickname ||
+      request.requesterName ||
+      request.senderNickname ||
+      request.userNickname ||
+      'You',
     mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
     mentorLabel:
       request.mentorNickname ||
@@ -45,6 +52,7 @@ function normalizeSentRequests(rawValue) {
       `User ${request.mentorId ?? request.receiverId ?? request.targetUserId ?? '?'}`,
     message: request.message || request.content || '',
     status: request.status || 'PENDING',
+    createdAt: request.createdAt || request.timestamp || null,
   }));
 }
 
@@ -60,8 +68,16 @@ function normalizeReceivedRequests(rawValue) {
       request.senderNickname ||
       request.userNickname ||
       `User ${request.requesterId ?? request.senderId ?? request.userId ?? '?'}`,
+    mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
+    mentorLabel:
+      request.mentorNickname ||
+      request.mentorName ||
+      request.receiverNickname ||
+      request.targetNickname ||
+      'You',
     message: request.message || request.content || '',
     status: request.status || 'PENDING',
+    createdAt: request.createdAt || request.timestamp || null,
   }));
 }
 
@@ -105,6 +121,14 @@ export default function LobbyPage() {
   const handleLogout = () => {
     clearAuth();
     navigate('/login', { replace: true });
+  };
+
+  const openMentoringSession = (request) => {
+    navigate(`/mentoring/session/${request.id}`, {
+      state: {
+        request,
+      },
+    });
   };
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
@@ -193,11 +217,11 @@ export default function LobbyPage() {
       try {
         const [meResponse, spacesResponse, sentRequestsResponse, receivedRequestsResponse] =
           await Promise.all([
-          getMe(),
-          getSpaces(),
-          getSentMentoringRequests(),
-          getReceivedMentoringRequests(),
-        ]);
+            getMe(),
+            getSpaces(),
+            getSentMentoringRequests(),
+            getReceivedMentoringRequests(),
+          ]);
 
         if (!isMounted) {
           return;
@@ -366,6 +390,17 @@ export default function LobbyPage() {
                     <strong>{request.mentorLabel}</strong>
                     <span>{request.status}</span>
                     <p>{request.message || 'No message provided.'}</p>
+                    {request.status === 'ACCEPTED' ? (
+                      <div className="mentoring-request-actions">
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => openMentoringSession(request)}
+                        >
+                          Enter session
+                        </button>
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -388,24 +423,37 @@ export default function LobbyPage() {
                       <strong>{request.requesterLabel}</strong>
                       <span>{request.status}</span>
                       <p>{request.message || 'No message provided.'}</p>
-                      {isPending ? (
+                      {isPending || request.status === 'ACCEPTED' ? (
                         <div className="mentoring-request-actions">
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() => handleMentoringDecision(request.id, 'accept')}
-                            disabled={isProcessing}
-                          >
-                            {isProcessing ? 'Processing...' : 'Accept'}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => handleMentoringDecision(request.id, 'reject')}
-                            disabled={isProcessing}
-                          >
-                            Reject
-                          </button>
+                          {isPending ? (
+                            <>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() => handleMentoringDecision(request.id, 'accept')}
+                                disabled={isProcessing}
+                              >
+                                {isProcessing ? 'Processing...' : 'Accept'}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleMentoringDecision(request.id, 'reject')}
+                                disabled={isProcessing}
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
+                          {request.status === 'ACCEPTED' ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => openMentoringSession(request)}
+                            >
+                              Enter session
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>
