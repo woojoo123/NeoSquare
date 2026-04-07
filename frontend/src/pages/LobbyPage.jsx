@@ -21,7 +21,11 @@ import {
   saveMentoringReservation,
 } from '../lib/mentoringReservationStorage';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
-import { getStoredSessionFeedback, saveSessionFeedback } from '../lib/sessionFeedbackStorage';
+import {
+  getStoredSessionFeedback,
+  getStoredSessionFeedbacks,
+  saveSessionFeedback,
+} from '../lib/sessionFeedbackStorage';
 import { useAuthStore } from '../store/authStore';
 
 function getMentoringRequestItems(rawValue) {
@@ -105,6 +109,8 @@ function normalizeFeedbackPrompt(rawValue) {
     requestId,
     counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || 'Session partner',
     role: rawValue.role || 'Participant',
+    sessionSource: rawValue.sessionSource || 'request',
+    reservedAt: rawValue.reservedAt || null,
     requestMessage: rawValue.requestMessage || rawValue.message || '',
   };
 }
@@ -121,6 +127,11 @@ function formatFeedbackTimestamp(value) {
   }
 
   return parsedDate.toLocaleString();
+}
+
+function formatHistorySessionLabel(feedbackItem) {
+  const sessionType = feedbackItem.sessionSource === 'reservation' ? 'Reservation' : 'Request';
+  return `${sessionType} #${feedbackItem.requestId}`;
 }
 
 function formatReservationTimestamp(value) {
@@ -164,6 +175,7 @@ export default function LobbyPage() {
   const [feedbackStatus, setFeedbackStatus] = useState('idle');
   const [feedbackNotice, setFeedbackNotice] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
+  const [feedbackHistory, setFeedbackHistory] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [receivedReservations, setReceivedReservations] = useState([]);
   const [selectedReservationMentorId, setSelectedReservationMentorId] = useState('');
@@ -250,6 +262,10 @@ export default function LobbyPage() {
 
     setReservations(getStoredMentoringReservations(userId));
     setReceivedReservations(getStoredReceivedMentoringReservations(userId));
+  };
+
+  const reloadFeedbackHistory = (userId = currentUser?.id) => {
+    setFeedbackHistory(getStoredSessionFeedbacks(userId));
   };
 
   const handleMentoringSubmit = async (event) => {
@@ -415,6 +431,9 @@ export default function LobbyPage() {
         requestId: feedbackPrompt.requestId,
         counterpartName: feedbackPrompt.counterpartName,
         role: feedbackPrompt.role,
+        sessionSource: feedbackPrompt.sessionSource || 'request',
+        reservedAt: feedbackPrompt.reservedAt || null,
+        authorUserId: currentUser?.id,
         rating: feedbackRating,
         summary: feedbackSummary.trim(),
         feedback: feedbackMessage.trim(),
@@ -428,6 +447,7 @@ export default function LobbyPage() {
         `Feedback saved in this browser at ${formatFeedbackTimestamp(savedFeedback.submittedAt)}.`
       );
       setLobbyNotice('Session feedback saved.');
+      reloadFeedbackHistory(currentUser?.id);
     } catch (error) {
       setFeedbackStatus('error');
       setFeedbackError(error.message || 'Failed to save session feedback.');
@@ -467,6 +487,7 @@ export default function LobbyPage() {
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
         setReservations(getStoredMentoringReservations(meResponse?.id));
         setReceivedReservations(getStoredReceivedMentoringReservations(meResponse?.id));
+        setFeedbackHistory(getStoredSessionFeedbacks(meResponse?.id));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -499,6 +520,10 @@ export default function LobbyPage() {
 
   useEffect(() => {
     reloadReservations(currentUser?.id);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    reloadFeedbackHistory(currentUser?.id);
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -699,6 +724,34 @@ export default function LobbyPage() {
               {feedbackError ? <p className="app-error">{feedbackError}</p> : null}
             </div>
           ) : null}
+
+          <div className="lobby-info-card">
+            <h2>Recent session feedback</h2>
+            {feedbackHistory.length === 0 ? (
+              <p className="app-note">No feedback history yet.</p>
+            ) : (
+              <ul className="mentoring-request-list">
+                {feedbackHistory.map((feedbackItem) => (
+                  <li key={feedbackItem.requestId} className="mentoring-request-card">
+                    <strong>{feedbackItem.counterpartName || 'Session partner'}</strong>
+                    <span>
+                      {feedbackItem.sessionSource === 'reservation'
+                        ? 'Scheduled mentoring'
+                        : 'Request mentoring'}
+                    </span>
+                    <p>{formatHistorySessionLabel(feedbackItem)}</p>
+                    <p>Saved at: {formatFeedbackTimestamp(feedbackItem.submittedAt)}</p>
+                    {feedbackItem.reservedAt ? (
+                      <p>Reserved for: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
+                    ) : null}
+                    <p>Rating: {feedbackItem.rating || 0}/5</p>
+                    <p>{feedbackItem.summary || 'No session summary was saved.'}</p>
+                    <p>{feedbackItem.feedback || 'No feedback note was saved.'}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <div className="lobby-info-card">
             <h2>Realtime connection</h2>

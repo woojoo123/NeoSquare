@@ -346,6 +346,8 @@ export default function MentoringSessionPage() {
           requestId: sessionRequest?.id ?? requestId,
           counterpartName: counterpartName || 'Session partner',
           role: myRole,
+          sessionSource: sessionRequest?.sessionSource || 'request',
+          reservedAt: sessionRequest?.reservedAt || null,
           requestMessage: sessionRequest?.message || '',
         },
       });
