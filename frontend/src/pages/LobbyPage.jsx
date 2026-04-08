@@ -3,6 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import {
+  createSessionFeedback,
+  getMySessionFeedbacks,
+  getSessionFeedbackByRequestId,
+} from '../api/feedbacks';
+import {
   acceptMentoringRequest,
   createMentoringRequest,
   getReceivedMentoringRequests,
@@ -162,6 +167,62 @@ function normalizeFeedbackPrompt(rawValue) {
     reservedAt: rawValue.reservedAt || null,
     requestMessage: rawValue.requestMessage || rawValue.message || '',
   };
+}
+
+function getFeedbackItems(rawValue) {
+  if (Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (Array.isArray(rawValue?.items)) {
+    return rawValue.items;
+  }
+
+  if (Array.isArray(rawValue?.feedbacks)) {
+    return rawValue.feedbacks;
+  }
+
+  return [];
+}
+
+function normalizeServerFeedback(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const feedback = rawValue.item || rawValue.feedback || rawValue;
+
+  return {
+    id: feedback.id ?? null,
+    requestId: feedback.requestId ?? null,
+    sessionSource: feedback.sessionSource || 'request',
+    counterpartName:
+      feedback.targetUserLabel ||
+      feedback.counterpartName ||
+      feedback.targetNickname ||
+      'Session partner',
+    role: feedback.authorRole || feedback.role || 'Participant',
+    rating: Number(feedback.rating) || 0,
+    summary: feedback.summary || '',
+    feedback: feedback.feedback || '',
+    reservedAt: feedback.reservedAt || null,
+    authorUserId: feedback.authorId ?? feedback.authorUserId ?? null,
+    submittedAt: feedback.createdAt || feedback.submittedAt || null,
+  };
+}
+
+function normalizeFeedbackHistory(rawValue) {
+  return getFeedbackItems(rawValue)
+    .map(normalizeServerFeedback)
+    .filter(Boolean);
+}
+
+function sortFeedbackHistory(feedbackItems) {
+  return [...feedbackItems].sort((leftFeedback, rightFeedback) => {
+    const leftTime = new Date(leftFeedback.submittedAt || 0).getTime();
+    const rightTime = new Date(rightFeedback.submittedAt || 0).getTime();
+    return rightTime - leftTime;
+  });
 }
 
 function formatFeedbackTimestamp(value) {
@@ -443,8 +504,21 @@ export default function LobbyPage() {
     setReceivedReservations(normalizeReservations(receivedReservationsResponse));
   };
 
-  const reloadFeedbackHistory = (userId = currentUser?.id) => {
-    setFeedbackHistory(getStoredSessionFeedbacks(userId));
+  const refreshFeedbackHistory = async (userId = currentUser?.id) => {
+    if (!userId) {
+      setFeedbackHistory([]);
+      return;
+    }
+
+    const serverFeedbacks = normalizeFeedbackHistory(await getMySessionFeedbacks());
+    const reservationFallbackFeedbacks = getStoredSessionFeedbacks(userId).filter(
+      (feedbackItem) => feedbackItem.sessionSource === 'reservation'
+    );
+
+    setFeedbackHistory(sortFeedbackHistory([
+      ...serverFeedbacks,
+      ...reservationFallbackFeedbacks,
+    ]));
   };
 
   const handleMentoringSubmit = async (event) => {
@@ -607,30 +681,50 @@ export default function LobbyPage() {
     setFeedbackError('');
 
     try {
-      const savedFeedback = saveSessionFeedback({
-        requestId: feedbackPrompt.requestId,
-        counterpartName: feedbackPrompt.counterpartName,
-        role: feedbackPrompt.role,
-        sessionSource: feedbackPrompt.sessionSource || 'request',
-        reservedAt: feedbackPrompt.reservedAt || null,
-        authorUserId: currentUser?.id,
-        rating: feedbackRating,
-        summary: feedbackSummary.trim(),
-        feedback: feedbackMessage.trim(),
-      });
+      if (feedbackPrompt.sessionSource === 'reservation') {
+        const savedFeedback = saveSessionFeedback({
+          requestId: feedbackPrompt.requestId,
+          counterpartName: feedbackPrompt.counterpartName,
+          role: feedbackPrompt.role,
+          sessionSource: feedbackPrompt.sessionSource || 'request',
+          reservedAt: feedbackPrompt.reservedAt || null,
+          authorUserId: currentUser?.id,
+          rating: feedbackRating,
+          summary: feedbackSummary.trim(),
+          feedback: feedbackMessage.trim(),
+        });
 
-      setFeedbackRating(String(savedFeedback.rating || 5));
-      setFeedbackSummary(savedFeedback.summary || '');
-      setFeedbackMessage(savedFeedback.feedback || '');
-      setFeedbackStatus('saved');
-      setFeedbackNotice(
-        `Feedback saved in this browser at ${formatFeedbackTimestamp(savedFeedback.submittedAt)}.`
-      );
+        setFeedbackRating(String(savedFeedback.rating || 5));
+        setFeedbackSummary(savedFeedback.summary || '');
+        setFeedbackMessage(savedFeedback.feedback || '');
+        setFeedbackStatus('saved');
+        setFeedbackNotice(
+          `Feedback saved in this browser at ${formatFeedbackTimestamp(savedFeedback.submittedAt)}.`
+        );
+      } else {
+        const savedFeedback = normalizeServerFeedback(await createSessionFeedback({
+          requestId: Number(feedbackPrompt.requestId),
+          rating: Number(feedbackRating),
+          summary: feedbackSummary.trim(),
+          feedback: feedbackMessage.trim(),
+        }));
+
+        setFeedbackRating(String(savedFeedback?.rating || 5));
+        setFeedbackSummary(savedFeedback?.summary || '');
+        setFeedbackMessage(savedFeedback?.feedback || '');
+        setFeedbackStatus('saved');
+        setFeedbackNotice(
+          `Feedback saved on the server at ${formatFeedbackTimestamp(savedFeedback?.submittedAt)}.`
+        );
+      }
+
       setLobbyNotice('Session feedback saved.');
-      reloadFeedbackHistory(currentUser?.id);
+      await refreshFeedbackHistory(currentUser?.id);
     } catch (error) {
       setFeedbackStatus('error');
-      setFeedbackError(error.message || 'Failed to save session feedback.');
+      setFeedbackError(
+        error?.response?.data?.message || error.message || 'Failed to save session feedback.'
+      );
     }
   };
 
@@ -656,6 +750,7 @@ export default function LobbyPage() {
           receivedRequestsResponse,
           myReservationsResponse,
           receivedReservationsResponse,
+          myFeedbacksResponse,
         ] =
           await Promise.all([
             getMe(),
@@ -664,6 +759,7 @@ export default function LobbyPage() {
             getReceivedMentoringRequests(),
             getMyReservations(),
             getReceivedReservations(),
+            getMySessionFeedbacks(),
           ]);
 
         if (!isMounted) {
@@ -676,7 +772,12 @@ export default function LobbyPage() {
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
         setReservations(normalizeReservations(myReservationsResponse));
         setReceivedReservations(normalizeReservations(receivedReservationsResponse));
-        setFeedbackHistory(getStoredSessionFeedbacks(meResponse?.id));
+        setFeedbackHistory(sortFeedbackHistory([
+          ...normalizeFeedbackHistory(myFeedbacksResponse),
+          ...getStoredSessionFeedbacks(meResponse?.id).filter(
+            (feedbackItem) => feedbackItem.sessionSource === 'reservation'
+          ),
+        ]));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -722,7 +823,13 @@ export default function LobbyPage() {
   }, []);
 
   useEffect(() => {
-    reloadFeedbackHistory(currentUser?.id);
+    if (!currentUser?.id) {
+      return;
+    }
+
+    refreshFeedbackHistory(currentUser.id).catch(() => {
+      // Initial lobby loading already exposes the main error state.
+    });
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -756,26 +863,69 @@ export default function LobbyPage() {
       return;
     }
 
-    const storedFeedback = getStoredSessionFeedback(feedbackPrompt.requestId);
+    let isMounted = true;
 
-    if (storedFeedback) {
-      setFeedbackRating(String(storedFeedback.rating || 5));
-      setFeedbackSummary(storedFeedback.summary || '');
-      setFeedbackMessage(storedFeedback.feedback || '');
-      setFeedbackStatus('saved');
-      setFeedbackNotice(
-        `Feedback already saved in this browser at ${formatFeedbackTimestamp(storedFeedback.submittedAt)}.`
-      );
+    async function loadExistingFeedback() {
+      setFeedbackRating('5');
+      setFeedbackSummary('');
+      setFeedbackMessage('');
+      setFeedbackStatus('idle');
+      setFeedbackNotice('');
       setFeedbackError('');
-      return;
+
+      try {
+        if (feedbackPrompt.sessionSource === 'reservation') {
+          const storedFeedback = getStoredSessionFeedback(feedbackPrompt.requestId);
+
+          if (!storedFeedback || !isMounted) {
+            return;
+          }
+
+          setFeedbackRating(String(storedFeedback.rating || 5));
+          setFeedbackSummary(storedFeedback.summary || '');
+          setFeedbackMessage(storedFeedback.feedback || '');
+          setFeedbackStatus('saved');
+          setFeedbackNotice(
+            `Feedback already saved in this browser at ${formatFeedbackTimestamp(storedFeedback.submittedAt)}.`
+          );
+          return;
+        }
+
+        const existingFeedback = normalizeServerFeedback(
+          await getSessionFeedbackByRequestId(feedbackPrompt.requestId)
+        );
+
+        if (!existingFeedback || !isMounted) {
+          return;
+        }
+
+        setFeedbackRating(String(existingFeedback.rating || 5));
+        setFeedbackSummary(existingFeedback.summary || '');
+        setFeedbackMessage(existingFeedback.feedback || '');
+        setFeedbackStatus('saved');
+        setFeedbackNotice(
+          `Feedback already saved on the server at ${formatFeedbackTimestamp(existingFeedback.submittedAt)}.`
+        );
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        if (error?.response?.status !== 404) {
+          setFeedbackError(
+            error?.response?.data?.message ||
+              error.message ||
+              'Failed to load existing session feedback.'
+          );
+        }
+      }
     }
 
-    setFeedbackRating('5');
-    setFeedbackSummary('');
-    setFeedbackMessage('');
-    setFeedbackStatus('idle');
-    setFeedbackNotice('');
-    setFeedbackError('');
+    loadExistingFeedback();
+
+    return () => {
+      isMounted = false;
+    };
   }, [feedbackPrompt]);
 
   useEffect(() => {
@@ -800,6 +950,10 @@ export default function LobbyPage() {
       setSelectedReservationMentorId(String(mentorOptions[0].userId));
     }
   }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
+
+  const isRequestFeedbackPrompt = feedbackPrompt?.sessionSource !== 'reservation';
+  const isFeedbackLocked =
+    feedbackStatus === 'saving' || (Boolean(feedbackPrompt) && isRequestFeedbackPrompt && feedbackStatus === 'saved');
 
   return (
     <AppLayout
@@ -888,8 +1042,9 @@ export default function LobbyPage() {
                 </p>
               ) : null}
               <p className="app-note">
-                This fallback stores feedback in this browser until a dedicated review API is
-                added.
+                {feedbackPrompt.sessionSource === 'reservation'
+                  ? 'Reservation session feedback still uses this browser fallback for now.'
+                  : 'Request session feedback is stored on the server and shown again in your history.'}
               </p>
 
               <form className="mentoring-form" onSubmit={handleFeedbackSubmit}>
@@ -899,7 +1054,7 @@ export default function LobbyPage() {
                     className="app-input"
                     value={feedbackRating}
                     onChange={(event) => setFeedbackRating(event.target.value)}
-                    disabled={feedbackStatus === 'saving'}
+                    disabled={isFeedbackLocked}
                   >
                     <option value="5">5 - Excellent</option>
                     <option value="4">4 - Good</option>
@@ -917,7 +1072,7 @@ export default function LobbyPage() {
                     value={feedbackSummary}
                     onChange={(event) => setFeedbackSummary(event.target.value)}
                     rows={2}
-                    disabled={feedbackStatus === 'saving'}
+                    disabled={isFeedbackLocked}
                   />
                 </label>
 
@@ -929,16 +1084,18 @@ export default function LobbyPage() {
                     value={feedbackMessage}
                     onChange={(event) => setFeedbackMessage(event.target.value)}
                     rows={3}
-                    disabled={feedbackStatus === 'saving'}
+                    disabled={isFeedbackLocked}
                   />
                 </label>
 
                 <div className="mentoring-request-actions">
-                  <button type="submit" className="primary-button" disabled={feedbackStatus === 'saving'}>
+                  <button type="submit" className="primary-button" disabled={isFeedbackLocked}>
                     {feedbackStatus === 'saving'
                       ? 'Saving feedback...'
                       : feedbackStatus === 'saved'
-                        ? 'Update feedback'
+                        ? feedbackPrompt.sessionSource === 'reservation'
+                          ? 'Update feedback'
+                          : 'Feedback saved'
                         : 'Save feedback'}
                   </button>
                   <button
@@ -964,7 +1121,10 @@ export default function LobbyPage() {
             ) : (
               <ul className="mentoring-request-list">
                 {feedbackHistory.map((feedbackItem) => (
-                  <li key={feedbackItem.requestId} className="mentoring-request-card">
+                  <li
+                    key={feedbackItem.id ?? `${feedbackItem.sessionSource}-${feedbackItem.requestId}`}
+                    className="mentoring-request-card"
+                  >
                     <strong>{feedbackItem.counterpartName || 'Session partner'}</strong>
                     <span>
                       {feedbackItem.sessionSource === 'reservation'
