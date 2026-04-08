@@ -159,6 +159,22 @@ class MentoringRequestIntegrationTest {
     }
 
     @Test
+    void participantCanCompleteAcceptedRequest() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Please complete");
+        mentoringRequest.accept();
+
+        mockMvc.perform(patch("/api/mentoring/requests/{requestId}/complete", mentoringRequest.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Mentoring request completed."))
+                .andExpect(jsonPath("$.data.status").value(MentoringRequestStatus.COMPLETED.name()))
+                .andExpect(jsonPath("$.data.completedAt").exists());
+    }
+
+    @Test
     void requesterCannotAcceptOwnRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
         User mentor = saveUser("mentor@neo.square", "Mentor");
@@ -171,6 +187,64 @@ class MentoringRequestIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Only the mentor can accept this mentoring request."))
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void outsiderCannotCompleteRequest() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User outsider = saveUser("outsider@neo.square", "Outsider");
+        MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Need completion");
+        mentoringRequest.accept();
+
+        mockMvc.perform(patch("/api/mentoring/requests/{requestId}/complete", mentoringRequest.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Only session participants can complete this mentoring request."))
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void pendingRequestCannotBeCompleted() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Still pending");
+
+        mockMvc.perform(patch("/api/mentoring/requests/{requestId}/complete", mentoringRequest.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Only accepted mentoring requests can be completed."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void completedRequestCannotBeCompletedTwice() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Already done");
+        mentoringRequest.accept();
+        mentoringRequest.complete();
+
+        mockMvc.perform(patch("/api/mentoring/requests/{requestId}/complete", mentoringRequest.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("This mentoring request has already been completed."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void completeMissingRequestReturnsNotFound() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+
+        mockMvc.perform(patch("/api/mentoring/requests/{requestId}/complete", 9999L)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Mentoring request not found: 9999"))
+                .andExpect(jsonPath("$.status").value(404));
     }
 
     @Test

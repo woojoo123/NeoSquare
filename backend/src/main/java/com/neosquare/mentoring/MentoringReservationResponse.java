@@ -13,7 +13,8 @@ public record MentoringReservationResponse(
         Instant reservedAt,
         String message,
         MentoringReservationStatus status,
-        Instant createdAt
+        Instant createdAt,
+        Instant completedAt
 ) {
 
     public static MentoringReservationResponse from(MentoringReservation reservation) {
@@ -28,7 +29,8 @@ public record MentoringReservationResponse(
                 reservation.getReservedAt(),
                 reservation.getMessage(),
                 reservation.getStatus(),
-                reservation.getCreatedAt()
+                reservation.getCreatedAt(),
+                reservation.getCompletedAt()
         );
     }
 }

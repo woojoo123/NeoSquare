@@ -91,4 +91,15 @@ public class MentoringRequestController {
                 mentoringRequestService.rejectRequest(authUser, requestId)
         );
     }
+
+    @PatchMapping("/{requestId}/complete")
+    public ApiResponse<MentoringRequestResponse> completeRequest(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long requestId
+    ) {
+        return ApiResponse.success(
+                "Mentoring request completed.",
+                mentoringRequestService.completeRequest(authUser, requestId)
+        );
+    }
 }

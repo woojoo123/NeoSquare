@@ -48,6 +48,9 @@ public class MentoringRequest {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Column
+    private Instant completedAt;
+
     protected MentoringRequest() {
     }
 
@@ -70,6 +73,21 @@ public class MentoringRequest {
     public void reject() {
         ensurePending("rejected");
         this.status = MentoringRequestStatus.REJECTED;
+    }
+
+    public void complete() {
+        if (status == MentoringRequestStatus.COMPLETED) {
+            throw new InvalidMentoringRequestStateException("This mentoring request has already been completed.");
+        }
+
+        if (status != MentoringRequestStatus.ACCEPTED) {
+            throw new InvalidMentoringRequestStateException(
+                    "Only accepted mentoring requests can be completed."
+            );
+        }
+
+        this.status = MentoringRequestStatus.COMPLETED;
+        this.completedAt = Instant.now();
     }
 
     public boolean isParticipant(Long userId) {
@@ -130,6 +148,10 @@ public class MentoringRequest {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
     }
 
     private void ensurePending(String action) {

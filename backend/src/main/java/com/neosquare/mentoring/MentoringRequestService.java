@@ -108,6 +108,22 @@ public class MentoringRequestService {
         return MentoringRequestResponse.from(mentoringRequest);
     }
 
+    @Transactional
+    public MentoringRequestResponse completeRequest(AuthUserPrincipal authUser, Long requestId) {
+        Long currentUserId = extractCurrentUserId(authUser);
+        MentoringRequest mentoringRequest = getRequestOrThrow(requestId);
+
+        if (!mentoringRequest.isParticipant(currentUserId)) {
+            throw new MentoringRequestAccessDeniedException(
+                    "Only session participants can complete this mentoring request."
+            );
+        }
+
+        mentoringRequest.complete();
+
+        return MentoringRequestResponse.from(mentoringRequest);
+    }
+
     private Long extractCurrentUserId(AuthUserPrincipal authUser) {
         if (authUser == null || authUser.id() == null) {
             throw new MentoringRequestAccessDeniedException("Authentication is required.");

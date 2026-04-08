@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
-import { getMentoringRequest } from '../api/mentoring';
-import { getReservation } from '../api/reservations';
+import { completeMentoringRequest, getMentoringRequest } from '../api/mentoring';
+import { completeReservation, getReservation } from '../api/reservations';
 import AppLayout from '../components/AppLayout';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
 import { useSessionMedia } from '../lib/useSessionMedia';
@@ -38,6 +38,7 @@ function normalizeSessionRequest(rawValue) {
     reservedAt: null,
     sessionSource: 'request',
     createdAt: request.createdAt || request.timestamp || null,
+    completedAt: request.completedAt || null,
   };
 }
 
@@ -71,6 +72,7 @@ function normalizeReservationSession(rawValue) {
     reservedAt: reservation.reservedAt || reservation.scheduledAt || null,
     sessionSource: 'reservation',
     createdAt: reservation.createdAt || reservation.timestamp || null,
+    completedAt: reservation.completedAt || null,
   };
 }
 
@@ -317,31 +319,54 @@ export default function MentoringSessionPage() {
     }
   };
 
-  const handleEndSession = () => {
-    if (sessionExitStatus === 'ending' || sessionExitStatus === 'ended') {
+  const handleEndSession = async () => {
+    if (
+      sessionExitStatus === 'ending' ||
+      sessionExitStatus === 'ended' ||
+      !sessionRequest?.id ||
+      sessionRequest.status !== 'ACCEPTED'
+    ) {
       return;
     }
 
     setSessionExitStatus('ending');
     setActionMessage('Ending session...');
-    cleanupSessionResources();
-    setSessionExitStatus('ended');
-    setActionMessage('Session ended. Returning to lobby for quick feedback...');
+    setErrorMessage('');
 
-    endSessionTimeoutRef.current = window.setTimeout(() => {
-      navigateToLobby({
-        refreshMentoring: true,
-        sessionMessage: 'Mentoring session ended. You can leave quick feedback below.',
-        feedbackPrompt: {
-          requestId: sessionRequest?.id ?? requestId,
-          counterpartName: counterpartName || 'Session partner',
-          role: myRole,
-          sessionSource: sessionRequest?.sessionSource || 'request',
-          reservedAt: sessionRequest?.reservedAt || null,
-          requestMessage: sessionRequest?.message || '',
-        },
-      });
-    }, 900);
+    try {
+      const completedSession = normalizeSessionEntry(
+        isReservationSession
+          ? await completeReservation(sessionRequest.id)
+          : await completeMentoringRequest(sessionRequest.id),
+        sessionRequest.sessionSource
+      );
+
+      setSessionRequest(completedSession);
+      cleanupSessionResources();
+      setSessionExitStatus('ended');
+      setActionMessage('Session ended. Returning to lobby for quick feedback...');
+
+      endSessionTimeoutRef.current = window.setTimeout(() => {
+        navigateToLobby({
+          refreshMentoring: true,
+          sessionMessage: 'Mentoring session ended. You can leave quick feedback below.',
+          feedbackPrompt: {
+            requestId: completedSession?.id ?? sessionRequest?.id ?? requestId,
+            counterpartName: counterpartName || 'Session partner',
+            role: myRole,
+            sessionSource: completedSession?.sessionSource || sessionRequest?.sessionSource || 'request',
+            reservedAt: completedSession?.reservedAt || sessionRequest?.reservedAt || null,
+            requestMessage: completedSession?.message || sessionRequest?.message || '',
+          },
+        });
+      }, 900);
+    } catch (error) {
+      setSessionExitStatus('idle');
+      setActionMessage('');
+      setErrorMessage(
+        error?.response?.data?.message || error.message || 'Failed to end this mentoring session.'
+      );
+    }
   };
 
   const handleToggleCamera = () => {
@@ -473,9 +498,17 @@ export default function MentoringSessionPage() {
                 type="button"
                 className="secondary-button"
                 onClick={handleEndSession}
-                disabled={sessionExitStatus === 'ending' || sessionExitStatus === 'ended'}
+                disabled={
+                  sessionExitStatus === 'ending' ||
+                  sessionExitStatus === 'ended' ||
+                  sessionRequest.status !== 'ACCEPTED'
+                }
               >
-                {sessionExitStatus === 'ending' ? 'Ending session...' : 'End session'}
+                {sessionExitStatus === 'ending'
+                  ? 'Ending session...'
+                  : sessionRequest.status === 'COMPLETED'
+                    ? 'Session completed'
+                    : 'End session'}
               </button>
               <button
                 type="button"

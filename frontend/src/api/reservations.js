@@ -38,3 +38,8 @@ export async function cancelReservation(reservationId) {
   const response = await axiosInstance.patch(`/mentoring/reservations/${reservationId}/cancel`);
   return unwrapApiResponse(response);
 }
+
+export async function completeReservation(reservationId) {
+  const response = await axiosInstance.patch(`/mentoring/reservations/${reservationId}/complete`);
+  return unwrapApiResponse(response);
+}

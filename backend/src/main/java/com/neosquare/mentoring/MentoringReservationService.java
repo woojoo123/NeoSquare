@@ -132,6 +132,22 @@ public class MentoringReservationService {
         return MentoringReservationResponse.from(reservation);
     }
 
+    @Transactional
+    public MentoringReservationResponse completeReservation(AuthUserPrincipal authUser, Long reservationId) {
+        Long currentUserId = extractCurrentUserId(authUser);
+        MentoringReservation reservation = getReservationOrThrow(reservationId);
+
+        if (!reservation.isParticipant(currentUserId)) {
+            throw new MentoringReservationAccessDeniedException(
+                    "Only session participants can complete this reservation."
+            );
+        }
+
+        reservation.complete();
+
+        return MentoringReservationResponse.from(reservation);
+    }
+
     private Long extractCurrentUserId(AuthUserPrincipal authUser) {
         if (authUser == null || authUser.id() == null) {
             throw new MentoringReservationAccessDeniedException("Authentication is required.");

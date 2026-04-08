@@ -102,4 +102,15 @@ public class MentoringReservationController {
                 mentoringReservationService.cancelReservation(authUser, reservationId)
         );
     }
+
+    @PatchMapping("/{reservationId}/complete")
+    public ApiResponse<MentoringReservationResponse> completeReservation(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long reservationId
+    ) {
+        return ApiResponse.success(
+                "Reservation completed.",
+                mentoringReservationService.completeReservation(authUser, reservationId)
+        );
+    }
 }

@@ -12,7 +12,8 @@ public record MentoringRequestResponse(
         String mentorNickname,
         String message,
         MentoringRequestStatus status,
-        Instant createdAt
+        Instant createdAt,
+        Instant completedAt
 ) {
 
     public static MentoringRequestResponse from(MentoringRequest mentoringRequest) {
@@ -26,7 +27,8 @@ public record MentoringRequestResponse(
                 mentoringRequest.getMentor().getNickname(),
                 mentoringRequest.getMessage(),
                 mentoringRequest.getStatus(),
-                mentoringRequest.getCreatedAt()
+                mentoringRequest.getCreatedAt(),
+                mentoringRequest.getCompletedAt()
         );
     }
 }

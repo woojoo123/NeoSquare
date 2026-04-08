@@ -183,6 +183,27 @@ class MentoringReservationIntegrationTest {
     }
 
     @Test
+    void participantCanCompleteAcceptedReservation() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringReservation reservation = saveReservation(
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600),
+                "Please complete"
+        );
+        reservation.accept();
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/complete", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Reservation completed."))
+                .andExpect(jsonPath("$.data.status").value(MentoringReservationStatus.COMPLETED.name()))
+                .andExpect(jsonPath("$.data.completedAt").exists());
+    }
+
+    @Test
     void requesterCannotAcceptReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
         User mentor = saveUser("mentor@neo.square", "Mentor");
@@ -200,6 +221,79 @@ class MentoringReservationIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Only the mentor can accept this reservation."))
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void outsiderCannotCompleteReservation() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User outsider = saveUser("outsider@neo.square", "Outsider");
+        MentoringReservation reservation = saveReservation(
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600),
+                "Need completion"
+        );
+        reservation.accept();
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/complete", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Only session participants can complete this reservation."))
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void pendingReservationCannotBeCompleted() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringReservation reservation = saveReservation(
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600),
+                "Still pending"
+        );
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/complete", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Only accepted reservations can be completed."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void completedReservationCannotBeCompletedTwice() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveUser("mentor@neo.square", "Mentor");
+        MentoringReservation reservation = saveReservation(
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600),
+                "Already completed"
+        );
+        reservation.accept();
+        reservation.complete();
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/complete", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("This reservation has already been completed."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void completeMissingReservationReturnsNotFound() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/complete", 9999L)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Reservation not found: 9999"))
+                .andExpect(jsonPath("$.status").value(404));
     }
 
     @Test

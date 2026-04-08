@@ -51,6 +51,9 @@ public class MentoringReservation {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Column
+    private Instant completedAt;
+
     protected MentoringReservation() {
     }
 
@@ -79,6 +82,21 @@ public class MentoringReservation {
     public void cancel() {
         ensurePending("canceled");
         this.status = MentoringReservationStatus.CANCELED;
+    }
+
+    public void complete() {
+        if (status == MentoringReservationStatus.COMPLETED) {
+            throw new InvalidMentoringReservationStateException("This reservation has already been completed.");
+        }
+
+        if (status != MentoringReservationStatus.ACCEPTED) {
+            throw new InvalidMentoringReservationStateException(
+                    "Only accepted reservations can be completed."
+            );
+        }
+
+        this.status = MentoringReservationStatus.COMPLETED;
+        this.completedAt = Instant.now();
     }
 
     public boolean isParticipant(Long userId) {
@@ -135,6 +153,10 @@ public class MentoringReservation {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
     }
 
     private void ensurePending(String action) {

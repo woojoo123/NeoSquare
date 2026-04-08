@@ -29,6 +29,11 @@ export async function rejectMentoringRequest(requestId) {
   return unwrapApiResponse(response);
 }
 
+export async function completeMentoringRequest(requestId) {
+  const response = await axiosInstance.patch(`/mentoring/requests/${requestId}/complete`);
+  return unwrapApiResponse(response);
+}
+
 export async function getMentoringRequest(requestId) {
   const response = await axiosInstance.get(`/mentoring/requests/${requestId}`);
   return unwrapApiResponse(response);
