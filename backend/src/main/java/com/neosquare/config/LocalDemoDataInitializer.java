@@ -15,6 +15,8 @@ import com.neosquare.mentoring.MentoringFeedbackRepository;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringReservation;
+import com.neosquare.mentoring.MentoringReservationFeedback;
+import com.neosquare.mentoring.MentoringReservationFeedbackRepository;
 import com.neosquare.mentoring.MentoringReservationRepository;
 import com.neosquare.notification.Notification;
 import com.neosquare.notification.NotificationRepository;
@@ -33,6 +35,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     private final MentoringRequestRepository mentoringRequestRepository;
     private final MentoringReservationRepository mentoringReservationRepository;
     private final MentoringFeedbackRepository mentoringFeedbackRepository;
+    private final MentoringReservationFeedbackRepository mentoringReservationFeedbackRepository;
     private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -41,6 +44,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
             MentoringRequestRepository mentoringRequestRepository,
             MentoringReservationRepository mentoringReservationRepository,
             MentoringFeedbackRepository mentoringFeedbackRepository,
+            MentoringReservationFeedbackRepository mentoringReservationFeedbackRepository,
             NotificationRepository notificationRepository,
             PasswordEncoder passwordEncoder
     ) {
@@ -48,6 +52,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         this.mentoringRequestRepository = mentoringRequestRepository;
         this.mentoringReservationRepository = mentoringReservationRepository;
         this.mentoringFeedbackRepository = mentoringFeedbackRepository;
+        this.mentoringReservationFeedbackRepository = mentoringReservationFeedbackRepository;
         this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
     }
@@ -64,6 +69,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
                 mentoringRequestRepository.count() > 0 ||
                 mentoringReservationRepository.count() > 0 ||
                 mentoringFeedbackRepository.count() > 0 ||
+                mentoringReservationFeedbackRepository.count() > 0 ||
                 notificationRepository.count() > 0
         ) {
             return;
@@ -73,6 +79,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         ReservationSeedData reservationSeedData = seedReservations(mina, seoyeon);
 
         seedFeedbacks(requestSeedData.completedRequest(), jisu, seoyeon);
+        seedReservationFeedbacks(reservationSeedData.completedReservation(), mina, seoyeon);
         seedNotifications(requestSeedData.acceptedRequest(), hyunwoo, reservationSeedData.acceptedReservation(), mina);
     }
 
@@ -126,9 +133,22 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
                 "내일 저녁에 프론트 구조 리뷰 시간을 잡고 싶어요."
         );
 
-        mentoringReservationRepository.saveAll(List.of(acceptedReservation, pendingReservation));
+        MentoringReservation completedReservation = MentoringReservation.create(
+                mina,
+                seoyeon,
+                Instant.now().minus(2, ChronoUnit.DAYS),
+                "지난주에 포트폴리오 발표 흐름을 같이 점검했어요."
+        );
+        completedReservation.accept();
+        completedReservation.complete();
 
-        return new ReservationSeedData(acceptedReservation);
+        mentoringReservationRepository.saveAll(List.of(
+                acceptedReservation,
+                pendingReservation,
+                completedReservation
+        ));
+
+        return new ReservationSeedData(acceptedReservation, completedReservation);
     }
 
     private void seedFeedbacks(MentoringRequest completedRequest, User jisu, User seoyeon) {
@@ -151,6 +171,28 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         );
 
         mentoringFeedbackRepository.saveAll(List.of(requesterFeedback, mentorFeedback));
+    }
+
+    private void seedReservationFeedbacks(MentoringReservation completedReservation, User mina, User seoyeon) {
+        MentoringReservationFeedback requesterFeedback = MentoringReservationFeedback.create(
+                completedReservation,
+                mina,
+                seoyeon,
+                5,
+                "예약 멘토링 흐름을 자연스럽게 정리했다.",
+                "발표 전에 예약 세션으로 리허설할 수 있어서 큰 도움이 됐습니다."
+        );
+
+        MentoringReservationFeedback mentorFeedback = MentoringReservationFeedback.create(
+                completedReservation,
+                seoyeon,
+                mina,
+                4,
+                "목표가 분명해서 짧은 시간 안에 핵심을 짚을 수 있었다.",
+                "다음에는 발표 자료 초안을 함께 보면서 더 구체적으로 다듬어 보면 좋겠습니다."
+        );
+
+        mentoringReservationFeedbackRepository.saveAll(List.of(requesterFeedback, mentorFeedback));
     }
 
     private void seedNotifications(
@@ -198,7 +240,8 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     }
 
     private record ReservationSeedData(
-            MentoringReservation acceptedReservation
+            MentoringReservation acceptedReservation,
+            MentoringReservation completedReservation
     ) {
     }
 }

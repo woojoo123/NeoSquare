@@ -5,6 +5,7 @@ import { getMe } from '../api/auth';
 import {
   createSessionFeedback,
   getMySessionFeedbacks,
+  getSessionFeedbackByReservationId,
   getSessionFeedbackByRequestId,
 } from '../api/feedbacks';
 import {
@@ -240,7 +241,7 @@ function normalizeServerFeedback(rawValue) {
 
   return {
     id: feedback.id ?? null,
-    requestId: feedback.requestId ?? null,
+    requestId: feedback.requestId ?? feedback.reservationId ?? null,
     sessionSource: feedback.sessionSource || 'request',
     counterpartName:
       feedback.targetUserLabel ||
@@ -1076,26 +1077,29 @@ export default function LobbyPage() {
       return;
     }
 
-    if (feedbackPrompt.sessionSource === 'reservation') {
-      setFeedbackStatus('idle');
-      setFeedbackNotice('');
-      setFeedbackError(
-        '예약 세션 피드백은 아직 서버 API와 연결되지 않았습니다.'
-      );
-      return;
-    }
-
     setFeedbackStatus('saving');
     setFeedbackNotice('');
     setFeedbackError('');
 
     try {
-      const savedFeedback = normalizeServerFeedback(await createSessionFeedback({
-        requestId: Number(feedbackPrompt.requestId),
-        rating: Number(feedbackRating),
-        summary: feedbackSummary.trim(),
-        feedback: feedbackMessage.trim(),
-      }));
+      const savedFeedback = normalizeServerFeedback(
+        await createSessionFeedback(
+          feedbackPrompt.sessionSource === 'reservation'
+            ? {
+                sessionSource: 'reservation',
+                reservationId: Number(feedbackPrompt.requestId),
+                rating: Number(feedbackRating),
+                summary: feedbackSummary.trim(),
+                feedback: feedbackMessage.trim(),
+              }
+            : {
+                requestId: Number(feedbackPrompt.requestId),
+                rating: Number(feedbackRating),
+                summary: feedbackSummary.trim(),
+                feedback: feedbackMessage.trim(),
+              }
+        )
+      );
 
       setFeedbackRating(String(savedFeedback?.rating || 5));
       setFeedbackSummary(savedFeedback?.summary || '');
@@ -1262,20 +1266,10 @@ export default function LobbyPage() {
       setFeedbackError('');
 
       try {
-        if (feedbackPrompt.sessionSource === 'reservation') {
-          if (!isMounted) {
-            return;
-          }
-
-          setFeedbackStatus('idle');
-          setFeedbackNotice(
-            '예약 세션 피드백은 예약 피드백 API가 추가되면 활성화될 예정입니다.'
-          );
-          return;
-        }
-
         const existingFeedback = normalizeServerFeedback(
-          await getSessionFeedbackByRequestId(feedbackPrompt.requestId)
+          feedbackPrompt.sessionSource === 'reservation'
+            ? await getSessionFeedbackByReservationId(feedbackPrompt.requestId)
+            : await getSessionFeedbackByRequestId(feedbackPrompt.requestId)
         );
 
         if (!existingFeedback || !isMounted) {
@@ -1287,7 +1281,7 @@ export default function LobbyPage() {
         setFeedbackMessage(existingFeedback.feedback || '');
         setFeedbackStatus('saved');
         setFeedbackNotice(
-          `Feedback already saved on the server at ${formatFeedbackTimestamp(existingFeedback.submittedAt)}.`
+          `${formatFeedbackTimestamp(existingFeedback.submittedAt)}에 이미 저장된 피드백입니다.`
         );
       } catch (error) {
         if (!isMounted) {
@@ -1334,11 +1328,9 @@ export default function LobbyPage() {
     }
   }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
 
-  const isReservationFeedbackPrompt = feedbackPrompt?.sessionSource === 'reservation';
   const isFeedbackLocked =
     feedbackStatus === 'saving' ||
-    isReservationFeedbackPrompt ||
-    (Boolean(feedbackPrompt) && !isReservationFeedbackPrompt && feedbackStatus === 'saved');
+    (Boolean(feedbackPrompt) && feedbackStatus === 'saved');
 
   return (
     <AppLayout
@@ -1443,7 +1435,7 @@ export default function LobbyPage() {
               ) : null}
               <p className="app-note">
                 {feedbackPrompt.sessionSource === 'reservation'
-                  ? '예약 세션 피드백은 아직 준비 중입니다. 기능이 열리면 이 화면에서 바로 저장할 수 있습니다.'
+                  ? '예약 기반 세션 피드백도 서버에 저장되며, 아래 히스토리에서 다시 확인할 수 있습니다.'
                   : '요청 기반 세션 피드백은 서버에 저장되며, 아래 히스토리에서도 다시 확인할 수 있습니다.'}
               </p>
 
@@ -1494,9 +1486,7 @@ export default function LobbyPage() {
                       ? '저장 중...'
                       : feedbackStatus === 'saved'
                         ? '저장 완료'
-                        : feedbackPrompt.sessionSource === 'reservation'
-                          ? '예약 피드백 준비 중'
-                          : '피드백 저장'}
+                        : '피드백 저장'}
                   </button>
                   <button
                     type="button"

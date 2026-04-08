@@ -426,7 +426,7 @@ export default function MentoringSessionPage() {
         navigateToLobby({
           refreshMentoring: true,
           sessionMessage: isReservationSession
-            ? '멘토링 세션이 종료되었습니다. 예약 피드백 연동은 아직 준비 중입니다.'
+            ? '멘토링 세션이 종료되었습니다. 아래에서 예약 세션 피드백을 남길 수 있습니다.'
             : '멘토링 세션이 종료되었습니다. 아래에서 빠르게 피드백을 남길 수 있습니다.',
           feedbackPrompt: {
             requestId: completedSession?.id ?? sessionRequest?.id ?? requestId,

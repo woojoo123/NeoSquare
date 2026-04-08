@@ -6,6 +6,7 @@ import java.util.Map;
 import com.neosquare.auth.DuplicateEmailException;
 import com.neosquare.auth.InvalidCredentialsException;
 import com.neosquare.mentoring.DuplicateMentoringFeedbackException;
+import com.neosquare.mentoring.DuplicateMentoringReservationFeedbackException;
 import com.neosquare.mentoring.InvalidMentoringRequestStateException;
 import com.neosquare.mentoring.InvalidMentoringReservationStateException;
 import com.neosquare.mentoring.InvalidReservationTimeException;
@@ -14,6 +15,8 @@ import com.neosquare.mentoring.MentoringFeedbackNotFoundException;
 import com.neosquare.mentoring.MentoringRequestAccessDeniedException;
 import com.neosquare.mentoring.MentoringRequestNotFoundException;
 import com.neosquare.mentoring.MentoringReservationAccessDeniedException;
+import com.neosquare.mentoring.MentoringReservationFeedbackAccessDeniedException;
+import com.neosquare.mentoring.MentoringReservationFeedbackNotFoundException;
 import com.neosquare.mentoring.MentoringReservationNotFoundException;
 import com.neosquare.mentoring.SelfMentoringRequestException;
 import com.neosquare.mentoring.SelfMentoringReservationException;
@@ -141,6 +144,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
+    @ExceptionHandler(MentoringReservationFeedbackNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringReservationFeedbackNotFoundException(
+            MentoringReservationFeedbackNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
     @ExceptionHandler(MentoringRequestNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleMentoringRequestNotFoundException(
             MentoringRequestNotFoundException exception
@@ -189,9 +204,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
+    @ExceptionHandler(DuplicateMentoringReservationFeedbackException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateMentoringReservationFeedbackException(
+            DuplicateMentoringReservationFeedbackException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
     @ExceptionHandler(MentoringFeedbackAccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleMentoringFeedbackAccessDeniedException(
             MentoringFeedbackAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(MentoringReservationFeedbackAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringReservationFeedbackAccessDeniedException(
+            MentoringReservationFeedbackAccessDeniedException exception
     ) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.FORBIDDEN,
