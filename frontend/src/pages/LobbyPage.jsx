@@ -34,6 +34,12 @@ import {
   dismissLobbyNotification,
   getDismissedLobbyNotificationIds,
 } from '../lib/lobbyNotificationStorage';
+import {
+  formatLobbySpaceActionLabel,
+  formatLobbySpaceLabel,
+  getLobbyZoneDefinition,
+  getLobbyZoneForPosition,
+} from '../lib/lobbyZones';
 import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
@@ -404,6 +410,19 @@ function getDefaultReservationDateTime() {
   return localDate.toISOString().slice(0, 16);
 }
 
+function calculateDistance(leftPosition, rightPosition) {
+  if (
+    !Number.isFinite(leftPosition?.x) ||
+    !Number.isFinite(leftPosition?.y) ||
+    !Number.isFinite(rightPosition?.x) ||
+    !Number.isFinite(rightPosition?.y)
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.hypot(leftPosition.x - rightPosition.x, leftPosition.y - rightPosition.y);
+}
+
 function buildLobbyNotifications({
   serverNotifications,
   sentRequests,
@@ -588,6 +607,9 @@ export default function LobbyPage() {
   const [reservationClock, setReservationClock] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
+  const [currentZoneId, setCurrentZoneId] = useState('MAIN');
+  const [playerPosition, setPlayerPosition] = useState(null);
+  const [zoneMoveRequest, setZoneMoveRequest] = useState(null);
   const [selectedMentorId, setSelectedMentorId] = useState('');
   const [mentoringMessage, setMentoringMessage] = useState('');
   const [mentoringFeedback, setMentoringFeedback] = useState('');
@@ -599,6 +621,11 @@ export default function LobbyPage() {
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const chatMessagesEndRef = useRef(null);
+  const chatInputRef = useRef(null);
+  const lobbyStageRef = useRef(null);
+  const chatPanelRef = useRef(null);
+  const mentoringFormRef = useRef(null);
+  const reservationFormRef = useRef(null);
   const sentRequestsSectionRef = useRef(null);
   const myReservationsSectionRef = useRef(null);
   const receivedReservationsSectionRef = useRef(null);
@@ -629,10 +656,70 @@ export default function LobbyPage() {
     sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const focusZone = (zoneId) => {
+    setZoneMoveRequest({
+      zoneId,
+      requestedAt: Date.now(),
+    });
+    scrollToSection(lobbyStageRef);
+  };
+
+  const focusChatComposer = (nextMessage = '') => {
+    scrollToSection(chatPanelRef);
+
+    if (nextMessage && !chatInput.trim()) {
+      setChatInput(nextMessage);
+    }
+
+    window.requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
+  };
+
+  const prepareMentoringTarget = (user) => {
+    if (!user?.userId) {
+      return;
+    }
+
+    setSelectedMentorId(String(user.userId));
+
+    if (!mentoringMessage.trim()) {
+      setMentoringMessage(`${user.label}님, 잠깐 멘토링 가능하실까요?`);
+    }
+
+    scrollToSection(mentoringFormRef);
+  };
+
+  const prepareReservationTarget = (user) => {
+    if (!user?.userId) {
+      return;
+    }
+
+    setSelectedReservationMentorId(String(user.userId));
+
+    if (!reservationMessage.trim()) {
+      setReservationMessage(`${user.label}님과 시간을 맞춰 멘토링을 진행하고 싶어요.`);
+    }
+
+    scrollToSection(reservationFormRef);
+  };
+
   const openMentoringSession = (request) => {
     navigate(`/mentoring/session/${request.id}?type=request`, {
       state: {
         request,
+      },
+    });
+  };
+
+  const openSpace = (space) => {
+    if (!space?.id) {
+      return;
+    }
+
+    navigate(`/spaces/${space.id}`, {
+      state: {
+        space,
       },
     });
   };
@@ -733,6 +820,36 @@ export default function LobbyPage() {
   };
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
+  const currentZone = getLobbyZoneDefinition(currentZoneId);
+  const usersInCurrentZone = mentorOptions.filter(
+    (user) => getLobbyZoneForPosition(user.x, user.y).id === currentZoneId
+  );
+  const zoneUserCounts = mentorOptions.reduce(
+    (counts, user) => {
+      const zoneId = getLobbyZoneForPosition(user.x, user.y).id;
+      return {
+        ...counts,
+        [zoneId]: (counts[zoneId] || 0) + 1,
+      };
+    },
+    {
+      MAIN: 0,
+      STUDY: 0,
+      MENTORING: 0,
+    }
+  );
+  const nearbyUsers = mentorOptions.filter(
+    (user) => calculateDistance(playerPosition, user) <= 220
+  );
+  const currentZoneSpace = spaces.find((space) => space.type === currentZoneId) || null;
+  const relevantInteractionUsers =
+    currentZoneId === 'MENTORING'
+      ? usersInCurrentZone.length > 0
+        ? usersInCurrentZone
+        : nearbyUsers
+      : currentZoneId === 'STUDY'
+        ? usersInCurrentZone
+        : nearbyUsers;
   const lobbyNotifications = buildLobbyNotifications({
     serverNotifications,
     sentRequests,
@@ -1440,7 +1557,7 @@ export default function LobbyPage() {
             ) : null}
           </div>
 
-          <div className="lobby-info-card">
+          <div className="lobby-info-card" ref={mentoringFormRef}>
             <h2>멘토링 요청</h2>
             <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
               <label className="app-field">
@@ -1485,7 +1602,7 @@ export default function LobbyPage() {
             {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
           </div>
 
-          <div className="lobby-info-card">
+          <div className="lobby-info-card" ref={reservationFormRef}>
             <h2>멘토링 예약</h2>
             <p className="app-note">
               현재 로비에 있는 참가자를 예약 대상으로 선택할 수 있습니다.
@@ -1758,46 +1875,283 @@ export default function LobbyPage() {
 
           <section className="app-section">
             <h2>이용 가능한 공간</h2>
+            <p className="app-note">
+              공간 카드를 누르면 로비 안의 해당 구역으로 바로 이동합니다.
+            </p>
             {isLoading ? <p className="app-note">공간 정보를 불러오는 중입니다...</p> : null}
             {!isLoading && spaces.length === 0 ? (
               <p className="app-note">아직 이용 가능한 공간이 없습니다.</p>
             ) : null}
             {!isLoading && spaces.length > 0 ? (
               <ul className="space-list">
-                {spaces.map((space) => (
-                  <li key={space.id} className="space-card">
-                    <strong>{space.name}</strong>
-                    <span>
-                      {space.type} · 최대 {space.maxCapacity}명
-                    </span>
-                    <p>{space.description}</p>
-                  </li>
-                ))}
+                {spaces.map((space) => {
+                  const isActiveSpace = currentZoneId === space.type;
+
+                  return (
+                    <li
+                      key={space.id}
+                      className={`space-card ${isActiveSpace ? 'space-card--active' : ''}`}
+                    >
+                      <div className="space-card__body">
+                        <strong>{formatLobbySpaceLabel(space.type) || space.name}</strong>
+                        <span>
+                          최대 {space.maxCapacity}명 · 현재 {zoneUserCounts[space.type] || 0}명 접속 중
+                        </span>
+                        <p>{getLobbyZoneDefinition(space.type).description || space.description}</p>
+                      </div>
+                      <div className="space-card__actions">
+                        <button
+                          type="button"
+                          className={isActiveSpace ? 'secondary-button' : 'primary-button'}
+                          onClick={() => focusZone(space.type)}
+                        >
+                          {isActiveSpace ? '현재 구역' : formatLobbySpaceActionLabel(space.type)}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => openSpace(space)}
+                        >
+                          공간 입장
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </section>
         </section>
 
-        <section className="lobby-stage">
+        <section className="lobby-stage" ref={lobbyStageRef}>
           <div className="lobby-stage-header">
             <div>
               <h2>메타버스 로비</h2>
               <p className="app-note">
-                NeoSquare 로비를 움직이며 공간 인터랙션을 확인해 보세요. 방향키로 캐릭터를 이동할 수 있습니다.
+                방향키로 구역을 이동하고, 현재 위치에 맞는 액션을 바로 실행해 보세요.
               </p>
             </div>
+            <div className="lobby-zone-tabs">
+              {['MAIN', 'STUDY', 'MENTORING'].map((zoneId) => (
+                <button
+                  key={zoneId}
+                  type="button"
+                  className={
+                    currentZoneId === zoneId ? 'secondary-button' : 'secondary-button ghost-button'
+                  }
+                  onClick={() => focusZone(zoneId)}
+                >
+                  {getLobbyZoneDefinition(zoneId).label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="lobby-stage-insights">
+            <article className="lobby-zone-card">
+              <span className="lobby-zone-card__eyebrow">현재 위치</span>
+              <h3>{currentZone.label}</h3>
+              <p>{currentZone.description}</p>
+              <p className="app-note">{currentZone.helperText}</p>
+              <div className="lobby-zone-actions">
+                {currentZoneId === 'MAIN' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => focusZone('STUDY')}
+                    >
+                      스터디 라운지로 이동
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => focusZone('MENTORING')}
+                    >
+                      멘토링 존으로 이동
+                    </button>
+                    {currentZoneSpace ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => openSpace(currentZoneSpace)}
+                      >
+                        메인 광장 입장
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                {currentZoneId === 'STUDY' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => focusChatComposer('같이 스터디하실 분 계신가요?')}
+                    >
+                      스터디 메시지 쓰기
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => focusZone('MAIN')}
+                    >
+                      광장으로 돌아가기
+                    </button>
+                    {currentZoneSpace ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => openSpace(currentZoneSpace)}
+                      >
+                        스터디 라운지 입장
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                {currentZoneId === 'MENTORING' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => scrollToSection(mentoringFormRef)}
+                    >
+                      멘토링 요청 폼 열기
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => scrollToSection(reservationFormRef)}
+                    >
+                      예약 제안 폼 열기
+                    </button>
+                    {currentZoneSpace ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => openSpace(currentZoneSpace)}
+                      >
+                        멘토링 존 입장
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </article>
+
+            <article className="lobby-zone-card">
+              <span className="lobby-zone-card__eyebrow">구역 상호작용</span>
+              {currentZoneId === 'MAIN' ? (
+                <>
+                  <h3>지금 어디로 갈지 정해 보세요</h3>
+                  <ul className="lobby-zone-stat-list">
+                    <li>
+                      <strong>메인 광장</strong>
+                      <span>{zoneUserCounts.MAIN}명</span>
+                    </li>
+                    <li>
+                      <strong>스터디 라운지</strong>
+                      <span>{zoneUserCounts.STUDY}명</span>
+                    </li>
+                    <li>
+                      <strong>멘토링 존</strong>
+                      <span>{zoneUserCounts.MENTORING}명</span>
+                    </li>
+                  </ul>
+                  <p className="app-note">
+                    광장은 흐름을 고르는 허브입니다. 스터디 대화를 열거나 멘토링을 준비할 구역으로 이동해 보세요.
+                  </p>
+                </>
+              ) : null}
+
+              {currentZoneId === 'STUDY' ? (
+                <>
+                  <h3>같이 스터디할 사람</h3>
+                  {usersInCurrentZone.length === 0 ? (
+                    <p className="app-note">
+                      아직 같은 라운지에 잡힌 사용자가 없습니다. 공개 채팅으로 먼저 모집해 보세요.
+                    </p>
+                  ) : (
+                    <ul className="lobby-presence-list">
+                      {usersInCurrentZone.slice(0, 4).map((user) => (
+                        <li key={user.userId} className="lobby-presence-card">
+                          <div>
+                            <strong>{user.label}</strong>
+                            <p>같은 스터디 라운지에 있습니다.</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() =>
+                              focusChatComposer(`${user.label}님, 같이 스터디하실래요?`)
+                            }
+                          >
+                            채팅으로 부르기
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : null}
+
+              {currentZoneId === 'MENTORING' ? (
+                <>
+                  <h3>가까운 사람에게 바로 제안하기</h3>
+                  {relevantInteractionUsers.length === 0 ? (
+                    <p className="app-note">
+                      아직 이 구역이나 근처에 다른 사용자가 없습니다. 상대가 접속하면 바로 요청하거나 예약할 수 있습니다.
+                    </p>
+                  ) : (
+                    <ul className="lobby-presence-list">
+                      {relevantInteractionUsers.slice(0, 4).map((user) => (
+                        <li key={user.userId} className="lobby-presence-card">
+                          <div>
+                            <strong>{user.label}</strong>
+                            <p>{getLobbyZoneForPosition(user.x, user.y).label}에 있습니다.</p>
+                          </div>
+                          <div className="lobby-presence-card__actions">
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => prepareMentoringTarget(user)}
+                            >
+                              요청 준비
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => prepareReservationTarget(user)}
+                            >
+                              예약 준비
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : null}
+            </article>
           </div>
           <LobbyGame
             playerLabel={currentUser?.nickname || '나'}
             onPlayerMove={sendUserMove}
+            onZoneChange={setCurrentZoneId}
+            onPlayerContextChange={(context) => {
+              setCurrentZoneId(context.zoneId);
+              setPlayerPosition({
+                x: context.x,
+                y: context.y,
+              });
+            }}
             remoteEvent={remoteEvent}
+            zoneMoveRequest={zoneMoveRequest}
           />
-          <section className="lobby-chat-panel">
+          <section className="lobby-chat-panel" ref={chatPanelRef}>
             <div className="lobby-chat-header">
               <div>
                 <h3>로비 채팅</h3>
                 <p className="app-note">
-                  메시지는 현재 로비 실시간 연결을 통해 전송됩니다.
+                  스터디 라운지에서는 이 채팅으로 바로 사람을 모을 수 있습니다.
                 </p>
               </div>
             </div>
@@ -1823,6 +2177,7 @@ export default function LobbyPage() {
 
             <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
               <input
+                ref={chatInputRef}
                 type="text"
                 className="app-input"
                 placeholder="메시지를 입력하세요"

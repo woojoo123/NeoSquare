@@ -170,6 +170,19 @@ select {
   border-radius: 16px;
   padding: 16px;
   background: #f9fafb;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.space-card--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.space-card__body {
+  min-width: 0;
 }
 
 .space-card strong,
@@ -186,6 +199,17 @@ select {
 
 .space-card p {
   margin-top: 10px;
+}
+
+.space-card button {
+  flex-shrink: 0;
+}
+
+.space-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .lobby-layout {
@@ -546,6 +570,139 @@ select {
   align-items: center;
 }
 
+.space-page-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.space-page-layout {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.space-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+.space-stage-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f9fafb;
+  padding: 18px;
+}
+
+.space-study-board {
+  margin-top: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.space-stage-header {
+  margin-bottom: 16px;
+}
+
+.space-stage-header h2 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+
+.space-game-shell {
+  overflow: hidden;
+  border-radius: 18px;
+  background: #020617;
+  min-height: 720px;
+}
+
+.space-game-container {
+  width: 100%;
+  min-height: 720px;
+}
+
+.space-game-container canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.space-participant-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+.space-participant-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.space-participant-card--selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.space-participant-card strong {
+  display: block;
+  color: #0f172a;
+}
+
+.space-participant-card p {
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+
+.space-selected-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.space-study-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.space-study-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.space-study-card__meta strong,
+.space-study-card__meta span {
+  display: block;
+}
+
+.space-study-card__meta span {
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 0.9rem;
+}
+
+.space-study-card p {
+  margin-top: 12px;
+  color: #334155;
+}
+
 @media (max-width: 860px) {
   .session-hero {
     grid-template-columns: 1fr;
@@ -570,6 +727,111 @@ select {
 
 .lobby-stage-header {
   margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.lobby-zone-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ghost-button {
+  background: #ffffff;
+}
+
+.lobby-stage-insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.lobby-zone-card {
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.lobby-zone-card h3 {
+  margin: 6px 0 10px;
+  font-size: 1.05rem;
+}
+
+.lobby-zone-card p {
+  margin: 0;
+  color: #334155;
+}
+
+.lobby-zone-card__eyebrow {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #2563eb;
+}
+
+.lobby-zone-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lobby-zone-stat-list,
+.lobby-presence-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.lobby-zone-stat-list li,
+.lobby-presence-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.lobby-zone-stat-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.lobby-zone-stat-list strong,
+.lobby-presence-card strong {
+  color: #0f172a;
+}
+
+.lobby-zone-stat-list span {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.lobby-presence-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.lobby-presence-card p {
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+
+.lobby-presence-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .lobby-chat-panel {
@@ -654,9 +916,30 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .space-page-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .space-card,
+  .space-card__actions,
+  .space-participant-card,
+  .lobby-stage-header,
+  .lobby-presence-card {
+    flex-direction: column;
+  }
+
+  .lobby-stage-insights {
+    grid-template-columns: 1fr;
+  }
+
   .lobby-game-shell,
   .lobby-game-container {
     min-height: 360px;
+  }
+
+  .space-game-shell,
+  .space-game-container {
+    min-height: 420px;
   }
 
   .lobby-chat-form {

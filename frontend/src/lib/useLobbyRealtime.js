@@ -118,10 +118,21 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
   const hasEnteredRef = useRef(false);
   const lastMoveSentAtRef = useRef(0);
   const lastMovePositionRef = useRef(null);
+  const currentPositionRef = useRef(null);
   const remoteEventSequenceRef = useRef(0);
 
   function sendUserMove(position) {
-    if (!position || !userId || !spaceId) {
+    if (!position) {
+      return;
+    }
+
+    const nextPosition = {
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+    };
+    currentPositionRef.current = nextPosition;
+
+    if (!userId || !spaceId) {
       return;
     }
 
@@ -130,11 +141,6 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
     if (!socket || socket.readyState !== WebSocket.OPEN || !hasEnteredRef.current) {
       return;
     }
-
-    const nextPosition = {
-      x: Math.round(position.x),
-      y: Math.round(position.y),
-    };
     const previousPosition = lastMovePositionRef.current;
     const now = Date.now();
 
@@ -222,6 +228,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
+      currentPositionRef.current = null;
       remoteEventSequenceRef.current = 0;
       return undefined;
     }
@@ -299,6 +306,8 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
               payload: {
                 spaceId,
                 nickname,
+                x: currentPositionRef.current?.x ?? null,
+                y: currentPositionRef.current?.y ?? null,
               },
             })
           );
@@ -369,6 +378,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
+      currentPositionRef.current = null;
       remoteEventSequenceRef.current = 0;
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.close();

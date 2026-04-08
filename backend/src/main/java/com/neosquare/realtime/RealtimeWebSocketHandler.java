@@ -1,8 +1,11 @@
 package com.neosquare.realtime;
 
+import java.util.Set;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.slf4j.Logger;
@@ -56,6 +59,12 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        try {
+            broadcastSessionLeave(session);
+        } catch (Exception exception) {
+            log.warn("Failed to broadcast WebSocket leave message. sessionId={}", session.getId(), exception);
+        }
+
         realtimeSessionRegistry.removeSession(session);
         log.info(
                 "WebSocket disconnected. sessionId={}, code={}, reason={}",
@@ -91,6 +100,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     normalizedMessage.senderId()
             );
 
+            if (isSpaceRealtimeEvent(normalizedMessage.type())) {
+                handleSpaceRealtimeMessage(session, normalizedMessage);
+            }
+
             if (mentoringSessionSignalingService.supports(normalizedMessage.type())) {
                 SignalRouteResult routeResult = mentoringSessionSignalingService.routeSignal(normalizedMessage);
 
@@ -111,6 +124,183 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 sendMessage(session, WebSocketMessage.error(exception.getMessage(), incomingType));
             }
         }
+    }
+
+    private void handleSpaceRealtimeMessage(WebSocketSession session, WebSocketMessage normalizedMessage) throws Exception {
+        Long spaceId = resolveSpaceId(session, normalizedMessage.payload(), normalizedMessage.type());
+        Long previousSpaceId = realtimeSessionRegistry.findSpaceId(session).orElse(null);
+        Double x = extractCoordinate(normalizedMessage.payload(), "x");
+        Double y = extractCoordinate(normalizedMessage.payload(), "y");
+
+        if (normalizedMessage.type() != WebSocketEventType.USER_LEAVE) {
+            if (previousSpaceId != null && !previousSpaceId.equals(spaceId)) {
+                broadcastLeaveToSpace(previousSpaceId, normalizedMessage.senderId(), session);
+            }
+
+            realtimeSessionRegistry.updateSessionPresence(session, spaceId, x, y);
+        }
+
+        switch (normalizedMessage.type()) {
+            case USER_ENTER -> {
+                sendCurrentSpaceParticipants(session, spaceId);
+                broadcastToSpace(spaceId, normalizedMessage, session);
+            }
+            case USER_MOVE, CHAT_SEND -> broadcastToSpace(spaceId, normalizedMessage, session);
+            case USER_LEAVE -> {
+                broadcastToSpace(spaceId, normalizedMessage, session);
+                realtimeSessionRegistry.clearSessionSpace(session);
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void sendCurrentSpaceParticipants(WebSocketSession session, Long spaceId) throws Exception {
+        Set<WebSocketSession> sessionsInSpace = realtimeSessionRegistry.findOpenSessionsInSpace(spaceId);
+
+        for (WebSocketSession peerSession : sessionsInSpace) {
+            if (peerSession.getId().equals(session.getId())) {
+                continue;
+            }
+
+            WebSocketMessage snapshotMessage = buildPresenceSnapshot(peerSession, spaceId);
+
+            if (snapshotMessage != null) {
+                sendMessage(session, snapshotMessage);
+            }
+        }
+    }
+
+    private WebSocketMessage buildPresenceSnapshot(WebSocketSession session, Long spaceId) {
+        Long userId = realtimeSessionRegistry.findUserId(session).orElse(null);
+
+        if (userId == null) {
+            return null;
+        }
+
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("spaceId", spaceId);
+        payload.put("userId", userId);
+
+        realtimeSessionRegistry.findPosition(session).ifPresent(position -> {
+            payload.put("x", position.x());
+            payload.put("y", position.y());
+        });
+
+        String nickname = extractAuthenticatedNickname(session);
+
+        if (nickname != null) {
+            payload.put("nickname", nickname);
+        }
+
+        return WebSocketMessage.relay(WebSocketEventType.USER_ENTER, payload, userId);
+    }
+
+    private void broadcastSessionLeave(WebSocketSession session) throws Exception {
+        Long userId = realtimeSessionRegistry.findUserId(session).orElse(null);
+        Long spaceId = realtimeSessionRegistry.findSpaceId(session).orElse(null);
+
+        if (userId == null || spaceId == null) {
+            return;
+        }
+
+        broadcastLeaveToSpace(spaceId, userId, session);
+    }
+
+    private void broadcastLeaveToSpace(Long spaceId, Long userId, WebSocketSession sourceSession) throws Exception {
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("spaceId", spaceId);
+        payload.put("userId", userId);
+
+        broadcastToSpace(
+                spaceId,
+                WebSocketMessage.relay(WebSocketEventType.USER_LEAVE, payload, userId),
+                sourceSession
+        );
+    }
+
+    private void broadcastToSpace(
+            Long spaceId,
+            WebSocketMessage outboundMessage,
+            WebSocketSession sourceSession
+    ) throws Exception {
+        Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessionsInSpace(spaceId);
+
+        for (WebSocketSession targetSession : targetSessions) {
+            if (sourceSession != null && targetSession.getId().equals(sourceSession.getId())) {
+                continue;
+            }
+
+            sendMessage(targetSession, outboundMessage);
+        }
+    }
+
+    private boolean isSpaceRealtimeEvent(WebSocketEventType eventType) {
+        return eventType == WebSocketEventType.USER_ENTER
+                || eventType == WebSocketEventType.USER_LEAVE
+                || eventType == WebSocketEventType.USER_MOVE
+                || eventType == WebSocketEventType.CHAT_SEND;
+    }
+
+    private Long resolveSpaceId(
+            WebSocketSession session,
+            JsonNode payload,
+            WebSocketEventType eventType
+    ) {
+        Long payloadSpaceId = extractSpaceId(payload);
+
+        if (payloadSpaceId != null) {
+            return payloadSpaceId;
+        }
+
+        return realtimeSessionRegistry.findSpaceId(session)
+                .orElseThrow(() -> new IllegalStateException(
+                        "WebSocket " + eventType.getValue() + " message requires a spaceId."
+                ));
+    }
+
+    private Long extractSpaceId(JsonNode payload) {
+        if (payload == null || payload.get("spaceId") == null || payload.get("spaceId").isNull()) {
+            return null;
+        }
+
+        JsonNode spaceIdNode = payload.get("spaceId");
+
+        if (spaceIdNode.canConvertToLong()) {
+            return spaceIdNode.asLong();
+        }
+
+        if (spaceIdNode.isTextual()) {
+            try {
+                return Long.parseLong(spaceIdNode.asText());
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("WebSocket spaceId must be numeric.");
+            }
+        }
+
+        throw new IllegalArgumentException("WebSocket spaceId must be numeric.");
+    }
+
+    private Double extractCoordinate(JsonNode payload, String fieldName) {
+        if (payload == null || payload.get(fieldName) == null || payload.get(fieldName).isNull()) {
+            return null;
+        }
+
+        JsonNode coordinateNode = payload.get(fieldName);
+
+        if (coordinateNode.isNumber()) {
+            return coordinateNode.asDouble();
+        }
+
+        if (coordinateNode.isTextual()) {
+            try {
+                return Double.parseDouble(coordinateNode.asText());
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("WebSocket " + fieldName + " must be numeric.");
+            }
+        }
+
+        throw new IllegalArgumentException("WebSocket " + fieldName + " must be numeric.");
     }
 
     private void sendMessage(WebSocketSession session, WebSocketMessage message) throws Exception {

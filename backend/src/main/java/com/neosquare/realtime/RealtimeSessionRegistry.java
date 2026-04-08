@@ -13,7 +13,10 @@ import org.springframework.web.socket.WebSocketSession;
 public class RealtimeSessionRegistry {
 
     private final Map<Long, Set<WebSocketSession>> sessionsByUserId = new ConcurrentHashMap<>();
+    private final Map<Long, Set<WebSocketSession>> sessionsBySpaceId = new ConcurrentHashMap<>();
     private final Map<String, Long> userIdBySessionId = new ConcurrentHashMap<>();
+    private final Map<String, Long> spaceIdBySessionId = new ConcurrentHashMap<>();
+    private final Map<String, SessionPosition> positionBySessionId = new ConcurrentHashMap<>();
 
     public void bindSession(WebSocketSession session, Long userId) {
         Long existingUserId = userIdBySessionId.get(session.getId());
@@ -26,31 +29,56 @@ public class RealtimeSessionRegistry {
         sessionsByUserId.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet()).add(session);
     }
 
+    public void updateSessionPresence(WebSocketSession session, Long spaceId, Double x, Double y) {
+        assertSessionBound(session);
+
+        Long previousSpaceId = spaceIdBySessionId.put(session.getId(), spaceId);
+
+        if (previousSpaceId != null && !previousSpaceId.equals(spaceId)) {
+            removeSessionFromSpace(session, previousSpaceId);
+        }
+
+        sessionsBySpaceId.computeIfAbsent(spaceId, ignored -> ConcurrentHashMap.newKeySet()).add(session);
+
+        if (x != null && y != null) {
+            positionBySessionId.put(session.getId(), new SessionPosition(x, y));
+        }
+    }
+
+    public void clearSessionSpace(WebSocketSession session) {
+        Long spaceId = spaceIdBySessionId.remove(session.getId());
+
+        if (spaceId == null) {
+            return;
+        }
+
+        removeSessionFromSpace(session, spaceId);
+        positionBySessionId.remove(session.getId());
+    }
+
     public Set<WebSocketSession> findOpenSessions(Long userId) {
-        Set<WebSocketSession> sessions = sessionsByUserId.get(userId);
+        return findOpenSessionsFromMap(sessionsByUserId, userId);
+    }
 
-        if (sessions == null || sessions.isEmpty()) {
-            return Set.of();
-        }
-
-        Set<WebSocketSession> openSessions = sessions.stream()
-                .filter(WebSocketSession::isOpen)
-                .collect(Collectors.toSet());
-
-        sessions.retainAll(openSessions);
-
-        if (sessions.isEmpty()) {
-            sessionsByUserId.remove(userId);
-        }
-
-        return Set.copyOf(openSessions);
+    public Set<WebSocketSession> findOpenSessionsInSpace(Long spaceId) {
+        return findOpenSessionsFromMap(sessionsBySpaceId, spaceId);
     }
 
     public Optional<Long> findUserId(WebSocketSession session) {
         return Optional.ofNullable(userIdBySessionId.get(session.getId()));
     }
 
+    public Optional<Long> findSpaceId(WebSocketSession session) {
+        return Optional.ofNullable(spaceIdBySessionId.get(session.getId()));
+    }
+
+    public Optional<SessionPosition> findPosition(WebSocketSession session) {
+        return Optional.ofNullable(positionBySessionId.get(session.getId()));
+    }
+
     public void removeSession(WebSocketSession session) {
+        clearSessionSpace(session);
+
         Long userId = userIdBySessionId.remove(session.getId());
 
         if (userId == null) {
@@ -67,6 +95,49 @@ public class RealtimeSessionRegistry {
 
         if (sessions.isEmpty()) {
             sessionsByUserId.remove(userId);
+        }
+    }
+
+    private void assertSessionBound(WebSocketSession session) {
+        if (!userIdBySessionId.containsKey(session.getId())) {
+            throw new IllegalStateException("WebSocket session must be bound before presence is updated.");
+        }
+    }
+
+    private Set<WebSocketSession> findOpenSessionsFromMap(
+            Map<Long, Set<WebSocketSession>> sessionMap,
+            Long key
+    ) {
+        Set<WebSocketSession> sessions = sessionMap.get(key);
+
+        if (sessions == null || sessions.isEmpty()) {
+            return Set.of();
+        }
+
+        Set<WebSocketSession> openSessions = sessions.stream()
+                .filter(WebSocketSession::isOpen)
+                .collect(Collectors.toSet());
+
+        sessions.retainAll(openSessions);
+
+        if (sessions.isEmpty()) {
+            sessionMap.remove(key);
+        }
+
+        return Set.copyOf(openSessions);
+    }
+
+    private void removeSessionFromSpace(WebSocketSession session, Long spaceId) {
+        Set<WebSocketSession> sessions = sessionsBySpaceId.get(spaceId);
+
+        if (sessions == null) {
+            return;
+        }
+
+        sessions.remove(session);
+
+        if (sessions.isEmpty()) {
+            sessionsBySpaceId.remove(spaceId);
         }
     }
 }

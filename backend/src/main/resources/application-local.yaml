@@ -3,13 +3,13 @@ spring:
     activate:
       on-profile: local
   datasource:
-    url: ${DB_URL:jdbc:mariadb://localhost:3306/neosquare}
-    driver-class-name: org.mariadb.jdbc.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    url: jdbc:h2:file:./data/neosquare-local;MODE=MariaDB;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
   jpa:
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:update}
+      ddl-auto: update
 
 app:
   seed-demo-data: true

@@ -3,6 +3,7 @@ import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom'
 import LobbyPage from '../pages/LobbyPage';
 import LoginPage from '../pages/LoginPage';
 import MentoringSessionPage from '../pages/MentoringSessionPage';
+import SpacePage from '../pages/SpacePage';
 import SignupPage from '../pages/SignupPage';
 import RequireAuth from './RequireAuth';
 
@@ -25,6 +26,10 @@ const router = createBrowserRouter([
       {
         path: '/lobby',
         element: <LobbyPage />,
+      },
+      {
+        path: '/spaces/:spaceId',
+        element: <SpacePage />,
       },
       {
         path: '/mentoring/session/:requestId',

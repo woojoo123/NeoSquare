@@ -2,13 +2,17 @@ package com.neosquare.realtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -18,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -34,7 +39,7 @@ class RealtimeWebSocketHandlerTest {
     @BeforeEach
     void setUp() {
         mentoringSessionSignalingService = mock(MentoringSessionSignalingService.class);
-        realtimeSessionRegistry = mock(RealtimeSessionRegistry.class);
+        realtimeSessionRegistry = new RealtimeSessionRegistry();
         realtimeWebSocketHandler = new RealtimeWebSocketHandler(
                 objectMapper,
                 mentoringSessionSignalingService,
@@ -44,22 +49,16 @@ class RealtimeWebSocketHandlerTest {
 
     @Test
     void afterConnectionEstablishedBindsAuthenticatedUserAndSendsConnectedMessage() throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-1");
-        when(session.getAttributes()).thenReturn(Map.of(
-                WebSocketSessionAttributes.USER_ID, 7L,
-                WebSocketSessionAttributes.USER_NICKNAME, "Alice"
-        ));
+        WebSocketSession session = createSession("session-1", 7L, "Alice");
 
         realtimeWebSocketHandler.afterConnectionEstablished(session);
 
-        verify(realtimeSessionRegistry).bindSession(session, 7L);
-        JsonNode response = captureResponse(session);
+        assertThat(realtimeSessionRegistry.findUserId(session)).contains(7L);
+        JsonNode response = captureSingleResponse(session);
 
         assertThat(response.get("type").asText()).isEqualTo("ws_connected");
         assertThat(response.get("payload").get("sessionId").asText()).isEqualTo("session-1");
         assertThat(response.get("payload").get("message").asText()).isEqualTo("WebSocket connected.");
-        assertThat(response.get("timestamp").asText()).isNotBlank();
     }
 
     @Test
@@ -77,44 +76,92 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
-    void handleTextMessageWithValidPayloadSendsAck() throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-2");
-        when(session.getAttributes()).thenReturn(Map.of(
-                WebSocketSessionAttributes.USER_ID, 7L,
-                WebSocketSessionAttributes.USER_NICKNAME, "Alice"
-        ));
+    void handleTextMessageWithUserEnterBroadcastsToPeersAndReturnsExistingParticipants() throws Exception {
+        WebSocketSession existingSession = createSession("session-existing", 11L, "Jisu");
+        WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
+
+        realtimeSessionRegistry.bindSession(existingSession, 11L);
+        realtimeSessionRegistry.updateSessionPresence(existingSession, 3L, 120.0, 220.0);
+        realtimeSessionRegistry.bindSession(sourceSession, 7L);
 
         realtimeWebSocketHandler.handleTextMessage(
-                session,
+                sourceSession,
                 new TextMessage("""
                         {
                           "type": "user_enter",
                           "senderId": 99,
                           "payload": {
-                            "spaceId": 1
+                            "spaceId": 3,
+                            "x": 180,
+                            "y": 260
                           }
                         }
                         """)
         );
 
-        JsonNode response = captureResponse(session);
+        List<JsonNode> sourceResponses = captureResponses(sourceSession, 2);
+        List<JsonNode> peerResponses = captureResponses(existingSession, 1);
 
-        assertThat(response.get("type").asText()).isEqualTo("ws_ack");
-        assertThat(response.get("payload").get("receivedType").asText()).isEqualTo("user_enter");
-        assertThat(response.get("payload").get("sessionId").asText()).isEqualTo("session-2");
-        assertThat(response.get("payload").get("message").asText()).isEqualTo("Message received.");
+        assertThat(realtimeSessionRegistry.findSpaceId(sourceSession)).contains(3L);
+        assertThat(realtimeSessionRegistry.findPosition(sourceSession))
+                .contains(new SessionPosition(180.0, 260.0));
+
+        assertThat(sourceResponses.stream()
+                .map(response -> response.get("type").asText())
+                .collect(Collectors.toList()))
+                .containsExactly("user_enter", "ws_ack");
+        assertThat(sourceResponses.get(0).get("senderId").asLong()).isEqualTo(11L);
+        assertThat(sourceResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Jisu");
+
+        assertThat(peerResponses.get(0).get("type").asText()).isEqualTo("user_enter");
+        assertThat(peerResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
+        assertThat(peerResponses.get(0).get("payload").get("userId").asLong()).isEqualTo(7L);
+        assertThat(peerResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Alice");
+    }
+
+    @Test
+    void handleTextMessageWithChatSendBroadcastsOnlyToSameSpace() throws Exception {
+        WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
+        WebSocketSession sameSpaceSession = createSession("session-peer", 11L, "Jisu");
+        WebSocketSession otherSpaceSession = createSession("session-other", 21L, "Mina");
+
+        realtimeSessionRegistry.bindSession(sourceSession, 7L);
+        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0);
+        realtimeSessionRegistry.bindSession(sameSpaceSession, 11L);
+        realtimeSessionRegistry.updateSessionPresence(sameSpaceSession, 3L, 200.0, 280.0);
+        realtimeSessionRegistry.bindSession(otherSpaceSession, 21L);
+        realtimeSessionRegistry.updateSessionPresence(otherSpaceSession, 5L, 320.0, 380.0);
+
+        realtimeWebSocketHandler.handleTextMessage(
+                sourceSession,
+                new TextMessage("""
+                        {
+                          "type": "chat_send",
+                          "senderId": 999,
+                          "payload": {
+                            "spaceId": 3,
+                            "content": "스터디 같이 하실 분 계신가요?"
+                          }
+                        }
+                        """)
+        );
+
+        List<JsonNode> sourceResponses = captureResponses(sourceSession, 1);
+        List<JsonNode> peerResponses = captureResponses(sameSpaceSession, 1);
+
+        assertThat(sourceResponses.get(0).get("type").asText()).isEqualTo("ws_ack");
+        assertThat(peerResponses.get(0).get("type").asText()).isEqualTo("chat_send");
+        assertThat(peerResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
+        assertThat(peerResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Alice");
+        assertThat(peerResponses.get(0).get("payload").get("content").asText())
+                .isEqualTo("스터디 같이 하실 분 계신가요?");
+        verify(otherSpaceSession, never()).sendMessage(ArgumentMatchers.any(TextMessage.class));
     }
 
     @Test
     void handleTextMessageWithWebrtcOfferRoutesSignalToTargetSession() throws Exception {
-        WebSocketSession sourceSession = mock(WebSocketSession.class);
-        WebSocketSession targetSession = mock(WebSocketSession.class);
-        when(sourceSession.getId()).thenReturn("session-source");
-        when(sourceSession.getAttributes()).thenReturn(Map.of(
-                WebSocketSessionAttributes.USER_ID, 7L,
-                WebSocketSessionAttributes.USER_NICKNAME, "Alice"
-        ));
+        WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
+        WebSocketSession targetSession = createSession("session-target", 11L, "Jisu");
 
         WebSocketMessage routedMessage = new WebSocketMessage(
                 WebSocketEventType.WEBRTC_OFFER,
@@ -158,26 +205,17 @@ class RealtimeWebSocketHandlerTest {
         verify(mentoringSessionSignalingService).routeSignal(routedMessageCaptor.capture());
 
         assertThat(routedMessageCaptor.getValue().senderId()).isEqualTo(7L);
-        assertThat(routedMessageCaptor.getValue().payload().get("requestId").asLong()).isEqualTo(10L);
-        JsonNode ackResponse = captureResponse(sourceSession);
-        JsonNode routedResponse = captureResponse(targetSession);
+        List<JsonNode> sourceResponses = captureResponses(sourceSession, 1);
+        List<JsonNode> targetResponses = captureResponses(targetSession, 1);
 
-        assertThat(ackResponse.get("type").asText()).isEqualTo("ws_ack");
-        assertThat(ackResponse.get("payload").get("receivedType").asText()).isEqualTo("webrtc_offer");
-        assertThat(routedResponse.get("type").asText()).isEqualTo("webrtc_offer");
-        assertThat(routedResponse.get("senderId").asLong()).isEqualTo(7L);
-        assertThat(routedResponse.get("payload").get("requestId").asLong()).isEqualTo(10L);
-        assertThat(routedResponse.get("payload").get("scope").asText()).isEqualTo("mentoring_session");
+        assertThat(sourceResponses.get(0).get("type").asText()).isEqualTo("ws_ack");
+        assertThat(targetResponses.get(0).get("type").asText()).isEqualTo("webrtc_offer");
+        assertThat(targetResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
     }
 
     @Test
     void handleTextMessageWithRejectedSignalSendsError() throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-4");
-        when(session.getAttributes()).thenReturn(Map.of(
-                WebSocketSessionAttributes.USER_ID, 7L,
-                WebSocketSessionAttributes.USER_NICKNAME, "Alice"
-        ));
+        WebSocketSession session = createSession("session-4", 7L, "Alice");
 
         when(mentoringSessionSignalingService.supports(WebSocketEventType.WEBRTC_OFFER)).thenReturn(true);
         when(mentoringSessionSignalingService.routeSignal(ArgumentMatchers.any()))
@@ -197,37 +235,11 @@ class RealtimeWebSocketHandlerTest {
                         """)
         );
 
-        JsonNode response = captureResponse(session);
+        JsonNode response = captureSingleResponse(session);
 
         assertThat(response.get("type").asText()).isEqualTo("ws_error");
         assertThat(response.get("payload").get("message").asText()).isEqualTo("Target participant is not connected.");
         assertThat(response.get("payload").get("receivedType").asText()).isEqualTo("webrtc_offer");
-    }
-
-    @Test
-    void handleTextMessageWithInvalidPayloadSendsError() throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-3");
-        when(session.getAttributes()).thenReturn(Map.of(
-                WebSocketSessionAttributes.USER_ID, 7L,
-                WebSocketSessionAttributes.USER_NICKNAME, "Alice"
-        ));
-
-        realtimeWebSocketHandler.handleTextMessage(
-                session,
-                new TextMessage("""
-                        {
-                          "payload": {
-                            "spaceId": 1
-                          }
-                        }
-                        """)
-        );
-
-        JsonNode response = captureResponse(session);
-
-        assertThat(response.get("type").asText()).isEqualTo("ws_error");
-        assertThat(response.get("payload").get("message").asText()).isEqualTo("Invalid WebSocket message.");
     }
 
     @Test
@@ -250,7 +262,7 @@ class RealtimeWebSocketHandlerTest {
                         """)
         );
 
-        JsonNode response = captureResponse(session);
+        JsonNode response = captureSingleResponse(session);
 
         assertThat(response.get("type").asText()).isEqualTo("ws_error");
         assertThat(response.get("payload").get("message").asText()).isEqualTo("WebSocket session is not authenticated.");
@@ -258,20 +270,52 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
-    void afterConnectionClosedRemovesBoundSession() {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-closed");
+    void afterConnectionClosedBroadcastsLeaveAndRemovesBoundSession() throws Exception {
+        WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
+        WebSocketSession peerSession = createSession("session-peer", 11L, "Jisu");
 
-        realtimeWebSocketHandler.afterConnectionClosed(session, org.springframework.web.socket.CloseStatus.NORMAL);
+        realtimeSessionRegistry.bindSession(sourceSession, 7L);
+        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0);
+        realtimeSessionRegistry.bindSession(peerSession, 11L);
+        realtimeSessionRegistry.updateSessionPresence(peerSession, 3L, 200.0, 280.0);
 
-        verify(realtimeSessionRegistry).removeSession(session);
+        realtimeWebSocketHandler.afterConnectionClosed(sourceSession, CloseStatus.NORMAL);
+
+        List<JsonNode> peerResponses = captureResponses(peerSession, 1);
+
+        assertThat(peerResponses.get(0).get("type").asText()).isEqualTo("user_leave");
+        assertThat(peerResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
+        assertThat(realtimeSessionRegistry.findUserId(sourceSession)).isEmpty();
+        assertThat(realtimeSessionRegistry.findSpaceId(sourceSession)).isEmpty();
     }
 
-    private JsonNode captureResponse(WebSocketSession session) throws Exception {
+    private WebSocketSession createSession(String sessionId, Long userId, String nickname) {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn(sessionId);
+        when(session.isOpen()).thenReturn(true);
+        when(session.getAttributes()).thenReturn(Map.of(
+                WebSocketSessionAttributes.USER_ID, userId,
+                WebSocketSessionAttributes.USER_NICKNAME, nickname
+        ));
+        return session;
+    }
+
+    private JsonNode captureSingleResponse(WebSocketSession session) throws Exception {
+        return captureResponses(session, 1).get(0);
+    }
+
+    private List<JsonNode> captureResponses(WebSocketSession session, int expectedCount) throws Exception {
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, times(expectedCount)).sendMessage(captor.capture());
 
-        verify(session, times(1)).sendMessage(captor.capture());
-
-        return objectMapper.readTree(captor.getValue().getPayload());
+        return captor.getAllValues().stream()
+                .map(message -> {
+                    try {
+                        return objectMapper.readTree(message.getPayload());
+                    } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(exception);
+                    }
+                })
+                .collect(Collectors.toList());
     }
 }

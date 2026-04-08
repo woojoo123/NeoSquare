@@ -1,36 +1,29 @@
 import { useEffect, useRef } from 'react';
 
-const GAME_WIDTH = 960;
-const GAME_HEIGHT = 540;
+const GAME_WIDTH = 1100;
+const GAME_HEIGHT = 720;
 
-export default function LobbyGame({
+export default function SpaceGame({
   playerLabel,
+  spaceType,
   onPlayerMove,
-  onZoneChange,
-  onPlayerContextChange,
+  onParticipantSelect,
   remoteEvent,
-  zoneMoveRequest,
 }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
   const sceneRef = useRef(null);
   const onPlayerMoveRef = useRef(onPlayerMove);
-  const onZoneChangeRef = useRef(onZoneChange);
-  const onPlayerContextChangeRef = useRef(onPlayerContextChange);
+  const onParticipantSelectRef = useRef(onParticipantSelect);
   const pendingRemoteEventsRef = useRef([]);
-  const pendingZoneMoveRef = useRef(null);
 
   useEffect(() => {
     onPlayerMoveRef.current = onPlayerMove;
   }, [onPlayerMove]);
 
   useEffect(() => {
-    onZoneChangeRef.current = onZoneChange;
-  }, [onZoneChange]);
-
-  useEffect(() => {
-    onPlayerContextChangeRef.current = onPlayerContextChange;
-  }, [onPlayerContextChange]);
+    onParticipantSelectRef.current = onParticipantSelect;
+  }, [onParticipantSelect]);
 
   useEffect(() => {
     if (!remoteEvent) {
@@ -46,19 +39,6 @@ export default function LobbyGame({
   }, [remoteEvent]);
 
   useEffect(() => {
-    if (!zoneMoveRequest?.zoneId) {
-      return;
-    }
-
-    if (!sceneRef.current) {
-      pendingZoneMoveRef.current = zoneMoveRequest;
-      return;
-    }
-
-    sceneRef.current.movePlayerToZone(zoneMoveRequest.zoneId);
-  }, [zoneMoveRequest]);
-
-  useEffect(() => {
     if (!containerRef.current) {
       return undefined;
     }
@@ -67,25 +47,23 @@ export default function LobbyGame({
     let nextGame = null;
 
     async function createGame() {
-      const [{ default: Phaser }, { default: LobbyScene }] = await Promise.all([
+      const [{ default: Phaser }, { default: SpaceScene }] = await Promise.all([
         import('phaser'),
-        import('../game/LobbyScene'),
+        import('../game/SpaceScene'),
       ]);
 
       if (isDisposed || !containerRef.current) {
         return;
       }
 
-      const lobbyScene = new LobbyScene({
+      const spaceScene = new SpaceScene({
         playerLabel,
+        spaceType,
         onPlayerMove: (position) => {
           onPlayerMoveRef.current?.(position);
         },
-        onZoneChange: (zoneId) => {
-          onZoneChangeRef.current?.(zoneId);
-        },
-        onPlayerContextChange: (context) => {
-          onPlayerContextChangeRef.current?.(context);
+        onParticipantSelect: (participant) => {
+          onParticipantSelectRef.current?.(participant);
         },
         onSceneReady: (scene) => {
           sceneRef.current = scene;
@@ -94,11 +72,6 @@ export default function LobbyGame({
             scene.applyRemoteEvent(queuedEvent);
           });
           pendingRemoteEventsRef.current = [];
-
-          if (pendingZoneMoveRef.current?.zoneId) {
-            scene.movePlayerToZone(pendingZoneMoveRef.current.zoneId);
-            pendingZoneMoveRef.current = null;
-          }
         },
       });
 
@@ -107,7 +80,7 @@ export default function LobbyGame({
         parent: containerRef.current,
         width: GAME_WIDTH,
         height: GAME_HEIGHT,
-        scene: [lobbyScene],
+        scene: [spaceScene],
         backgroundColor: '#0f172a',
         scale: {
           mode: Phaser.Scale.FIT,
@@ -130,7 +103,6 @@ export default function LobbyGame({
       isDisposed = true;
       sceneRef.current = null;
       pendingRemoteEventsRef.current = [];
-      pendingZoneMoveRef.current = null;
       if (gameRef.current) {
         gameRef.current.destroy(true);
       } else {
@@ -138,11 +110,11 @@ export default function LobbyGame({
       }
       gameRef.current = null;
     };
-  }, [playerLabel]);
+  }, [playerLabel, spaceType]);
 
   return (
-    <div className="lobby-game-shell">
-      <div ref={containerRef} className="lobby-game-container" />
+    <div className="space-game-shell">
+      <div ref={containerRef} className="space-game-container" />
     </div>
   );
 }

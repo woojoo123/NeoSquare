@@ -1,22 +1,43 @@
 import Phaser from 'phaser';
 
+import {
+  LOBBY_ZONE_DEFINITIONS,
+  getLobbyZoneCenter,
+  getLobbyZoneDefinition,
+  getLobbyZoneForPosition,
+} from '../lib/lobbyZones';
+
 const WORLD_WIDTH = 1400;
 const WORLD_HEIGHT = 900;
 const PLAYER_SIZE = 34;
 const PLAYER_SPEED = 260;
 const WORLD_PADDING = 40;
+const PLAYER_CONTEXT_THRESHOLD = 18;
 
 export default class LobbyScene extends Phaser.Scene {
-  constructor({ playerLabel = 'You', onPlayerMove, onSceneReady } = {}) {
+  constructor({
+    playerLabel = '나',
+    onPlayerMove,
+    onSceneReady,
+    onZoneChange,
+    onPlayerContextChange,
+  } = {}) {
     super('LobbyScene');
     this.playerLabel = playerLabel;
     this.onPlayerMove = onPlayerMove;
     this.onSceneReady = onSceneReady;
+    this.onZoneChange = onZoneChange;
+    this.onPlayerContextChange = onPlayerContextChange;
     this.player = null;
     this.playerBody = null;
     this.playerName = null;
+    this.zoneHighlight = null;
+    this.zoneStatusTitle = null;
+    this.zoneStatusDescription = null;
     this.cursors = null;
     this.remotePlayers = new Map();
+    this.currentZoneId = 'MAIN';
+    this.lastReportedPosition = null;
   }
 
   create() {
@@ -24,8 +45,10 @@ export default class LobbyScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     this.drawLobbyBackground();
+    this.zoneHighlight = this.add.graphics();
 
-    this.player = this.add.container(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+    const spawnPosition = getLobbyZoneCenter('MAIN');
+    this.player = this.add.container(spawnPosition.x, spawnPosition.y);
 
     const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.28);
     this.playerBody = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, 0x38bdf8);
@@ -34,7 +57,7 @@ export default class LobbyScene extends Phaser.Scene {
     const playerHead = this.add.circle(0, -26, 12, 0xf8fafc);
     this.playerName = this.add
       .text(0, 34, this.playerLabel, {
-        fontFamily: 'Arial, sans-serif',
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '16px',
         color: '#e2e8f0',
         align: 'center',
@@ -53,21 +76,45 @@ export default class LobbyScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     this.add
-      .text(28, 24, 'NeoSquare Lobby', {
-        fontFamily: 'Arial, sans-serif',
+      .text(28, 24, 'NeoSquare 로비', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '24px',
         color: '#f8fafc',
       })
       .setScrollFactor(0);
 
     this.add
-      .text(28, 56, 'Use arrow keys to move around the lobby.', {
-        fontFamily: 'Arial, sans-serif',
+      .text(28, 56, '방향키로 이동하고, 구역에 맞는 액션을 바로 실행해 보세요.', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '15px',
         color: '#cbd5e1',
       })
       .setScrollFactor(0);
 
+    this.zoneStatusTitle = this.add
+      .text(28, 92, '', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '16px',
+        color: '#f8fafc',
+      })
+      .setScrollFactor(0);
+
+    this.zoneStatusDescription = this.add
+      .text(28, 116, '', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '14px',
+        color: '#cbd5e1',
+        wordWrap: {
+          width: 420,
+        },
+      })
+      .setScrollFactor(0);
+
+    this.emitPlayerContext(true);
+    this.onPlayerMove?.({
+      x: this.player.x,
+      y: this.player.y,
+    });
     this.onSceneReady?.(this);
   }
 
@@ -118,6 +165,7 @@ export default class LobbyScene extends Phaser.Scene {
         x: this.player.x,
         y: this.player.y,
       });
+      this.emitPlayerContext();
     }
   }
 
@@ -147,7 +195,31 @@ export default class LobbyScene extends Phaser.Scene {
     }
   }
 
-  addRemotePlayer(userId, x, y, label = 'Guest') {
+  movePlayerToZone(zoneId) {
+    if (!this.player) {
+      return;
+    }
+
+    const center = getLobbyZoneCenter(zoneId);
+
+    this.tweens.killTweensOf(this.player);
+    this.tweens.add({
+      targets: this.player,
+      x: center.x,
+      y: center.y,
+      duration: 320,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        this.onPlayerMove?.({
+          x: this.player.x,
+          y: this.player.y,
+        });
+        this.emitPlayerContext(true);
+      },
+    });
+  }
+
+  addRemotePlayer(userId, x, y, label = '게스트') {
     const existingRemotePlayer = this.remotePlayers.get(userId);
 
     if (existingRemotePlayer) {
@@ -164,7 +236,7 @@ export default class LobbyScene extends Phaser.Scene {
     const head = this.add.circle(0, -26, 12, 0xf8fafc);
     const nameLabel = this.add
       .text(0, 34, label, {
-        fontFamily: 'Arial, sans-serif',
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '16px',
         color: '#e2e8f0',
         align: 'center',
@@ -242,6 +314,68 @@ export default class LobbyScene extends Phaser.Scene {
     };
   }
 
+  emitPlayerContext(force = false) {
+    if (!this.player) {
+      return;
+    }
+
+    const nextZone = getLobbyZoneForPosition(this.player.x, this.player.y);
+    const previousPosition = this.lastReportedPosition;
+    const movedDistance = previousPosition
+      ? Phaser.Math.Distance.Between(
+          previousPosition.x,
+          previousPosition.y,
+          this.player.x,
+          this.player.y
+        )
+      : PLAYER_CONTEXT_THRESHOLD;
+    const zoneChanged = nextZone.id !== this.currentZoneId;
+
+    if (!force && !zoneChanged && movedDistance < PLAYER_CONTEXT_THRESHOLD) {
+      return;
+    }
+
+    this.currentZoneId = nextZone.id;
+    this.lastReportedPosition = {
+      x: this.player.x,
+      y: this.player.y,
+    };
+
+    this.refreshZoneOverlay(nextZone.id);
+    this.refreshZoneStatus(nextZone.id);
+    this.onZoneChange?.(nextZone.id);
+    this.onPlayerContextChange?.({
+      x: this.player.x,
+      y: this.player.y,
+      zoneId: nextZone.id,
+    });
+  }
+
+  refreshZoneOverlay(zoneId) {
+    if (!this.zoneHighlight) {
+      return;
+    }
+
+    const zone = getLobbyZoneDefinition(zoneId);
+
+    this.zoneHighlight.clear();
+    this.zoneHighlight.lineStyle(5, zone.borderColor, 0.95);
+    this.zoneHighlight.strokeRoundedRect(
+      zone.x - 6,
+      zone.y - 6,
+      zone.width + 12,
+      zone.height + 12,
+      32
+    );
+  }
+
+  refreshZoneStatus(zoneId) {
+    const zone = getLobbyZoneDefinition(zoneId);
+
+    this.zoneStatusTitle?.setText(`현재 구역: ${zone.label}`);
+    this.zoneStatusDescription?.setText(zone.helperText);
+  }
+
   drawLobbyBackground() {
     const background = this.add.graphics();
 
@@ -250,21 +384,33 @@ export default class LobbyScene extends Phaser.Scene {
 
     background.fillStyle(0x132238, 1);
     background.fillRoundedRect(60, 60, WORLD_WIDTH - 120, WORLD_HEIGHT - 120, 32);
-
-    background.lineStyle(2, 0x1e3a5f, 0.8);
-
-    for (let x = 120; x < WORLD_WIDTH - 120; x += 80) {
-      background.lineBetween(x, 100, x, WORLD_HEIGHT - 100);
-    }
-
-    for (let y = 100; y < WORLD_HEIGHT - 100; y += 80) {
-      background.lineBetween(100, y, WORLD_WIDTH - 100, y);
-    }
-
     background.lineStyle(4, 0x38bdf8, 0.35);
     background.strokeRoundedRect(60, 60, WORLD_WIDTH - 120, WORLD_HEIGHT - 120, 32);
 
-    // The local player still drives the scene for now.
-    // Remote player add/move/remove methods are prepared for the next realtime step.
+    LOBBY_ZONE_DEFINITIONS.forEach((zone) => {
+      background.fillStyle(zone.fillColor, 1);
+      background.fillRoundedRect(zone.x, zone.y, zone.width, zone.height, 28);
+      background.lineStyle(3, zone.borderColor, 0.82);
+      background.strokeRoundedRect(zone.x, zone.y, zone.width, zone.height, 28);
+
+      this.add
+        .text(zone.x + 24, zone.y + 24, zone.label, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '22px',
+          color: Phaser.Display.Color.IntegerToColor(zone.accentColor).rgba,
+        })
+        .setDepth(1);
+
+      this.add
+        .text(zone.x + 24, zone.y + 60, zone.description, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '14px',
+          color: '#cbd5e1',
+          wordWrap: {
+            width: zone.width - 48,
+          },
+        })
+        .setDepth(1);
+    });
   }
 }

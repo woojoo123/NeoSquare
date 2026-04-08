@@ -46,8 +46,8 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 - WebSocket
 - JWT
 - Lombok
+- H2
 - MariaDB
-- H2 (테스트 전용 설정)
 - Redis (목표 스택, 현재 로컬 자동 설정 비활성화)
 
 ### Frontend
@@ -80,19 +80,19 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 - Java 17
 - Node.js 18 이상 권장
 - npm
-- MariaDB 10.x 이상 권장
 
-현재 backend 기본 실행 설정은 MariaDB를 사용합니다. Redis는 아직 자동 설정이 비활성화되어 있어 필수는 아닙니다.
+현재 backend 기본 실행 설정은 로컬 H2 파일 DB를 사용합니다. Redis는 아직 자동 설정이 비활성화되어 있어 필수는 아닙니다.
 
 ### Spring Profile 구성
-- `local`: 기본 프로필. MariaDB를 사용하고 로컬 시연용 더미 데이터를 자동으로 넣습니다.
+- `local`: 기본 프로필. 로컬 H2 파일 DB를 사용하고 로컬 시연용 더미 데이터를 자동으로 넣습니다.
+- `mariadb`: MariaDB를 사용하고 로컬 시연용 더미 데이터를 자동으로 넣습니다.
 - `prod`: 운영용 프로필. MariaDB를 사용하며 더미 데이터를 넣지 않습니다.
 - `test`: 테스트 전용 프로필. H2 in-memory DB를 사용합니다.
 
 프로필을 명시하지 않으면 `local`이 기본으로 적용됩니다.
 
 ### MariaDB 초기 준비 예시
-로컬에서 빠르게 실행하려면 먼저 MariaDB에 DB와 계정을 만들어 두는 편이 안전합니다.
+MariaDB로 실행하려면 먼저 DB와 계정을 만들어 두는 편이 안전합니다.
 
 ```sql
 CREATE DATABASE neosquare CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -112,13 +112,18 @@ FLUSH PRIVILEGES;
 - API: `http://localhost:8080`
 - Health check: `http://localhost:8080/api/health`
 
-실행 전에 최소한 아래 환경변수 또는 동일한 값의 datasource 설정이 필요합니다.
+기본 `local` 프로필은 별도 DB 준비 없이 바로 실행됩니다.
+
+MariaDB로 실행하려면 아래처럼 `mariadb` 프로필과 환경변수를 함께 지정합니다.
 
 ```bash
+export SPRING_PROFILES_ACTIVE=mariadb
 export DB_URL=jdbc:mariadb://localhost:3306/neosquare
 export DB_USERNAME=neosquare
 export DB_PASSWORD=neosquare1234!
 export JWT_SECRET=replace-with-32-bytes-or-more-secret
+
+./gradlew :backend:bootRun
 ```
 
 ### 2. Frontend 실행
@@ -161,14 +166,16 @@ npm run build
 | --- | --- | --- |
 | `JWT_SECRET` | 기본 개발용 값 존재 | JWT 서명 키 |
 | `JWT_ACCESS_TOKEN_EXPIRATION_MILLIS` | `3600000` | access token 만료 시간(ms) |
-| `DB_URL` | `jdbc:mariadb://localhost:3306/neosquare` | MariaDB JDBC URL |
-| `DB_USERNAME` | `root` | MariaDB 계정 |
-| `DB_PASSWORD` | 빈 값 | MariaDB 비밀번호 |
+| `SPRING_PROFILES_ACTIVE` | `local` | 실행 프로필 |
+| `DB_URL` | `jdbc:mariadb://localhost:3306/neosquare` | MariaDB 프로필 JDBC URL |
+| `DB_USERNAME` | 없음 | MariaDB 계정 |
+| `DB_PASSWORD` | 없음 | MariaDB 비밀번호 |
 | `JPA_DDL_AUTO` | `update` | JPA 스키마 반영 전략 |
 
 참고:
-- 공통 설정은 `application.yaml`, 프로필별 설정은 `application-local.yaml`, `application-prod.yaml`, `application-test.yaml`에 분리되어 있습니다.
-- backend 기본 실행은 `local` 프로필과 MariaDB를 기준으로 동작합니다.
+- 공통 설정은 `application.yaml`, 프로필별 설정은 `application-local.yaml`, `application-mariadb.yaml`, `application-prod.yaml`, `application-test.yaml`에 분리되어 있습니다.
+- backend 기본 실행은 `local` 프로필과 H2 파일 DB를 기준으로 동작합니다.
+- MariaDB 기반 실행은 `mariadb` 또는 `prod` 프로필에서 사용합니다.
 - 테스트만 `test` 프로필과 H2 in-memory 설정을 사용합니다.
 - Redis 자동 설정은 현재 비활성화되어 있어 로컬 실행 필수 조건이 아닙니다.
 
