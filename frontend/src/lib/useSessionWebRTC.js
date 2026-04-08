@@ -1,25 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
 
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
 const SIGNAL_EVENT_TYPES = ['webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate'];
-
-function getSessionWebSocketUrl() {
-  const configuredUrl = import.meta.env.VITE_WS_URL;
-
-  if (configuredUrl) {
-    return configuredUrl;
-  }
-
-  if (typeof window === 'undefined') {
-    return 'ws://localhost:8080/ws';
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
-}
 
 function toNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -461,7 +447,7 @@ export function useSessionWebRTC({
     }
 
     let isDisposed = false;
-    const socket = new WebSocket(getSessionWebSocketUrl());
+    const socket = new WebSocket(getAuthenticatedWebSocketUrl());
     socketRef.current = socket;
     isSocketReadyRef.current = false;
 

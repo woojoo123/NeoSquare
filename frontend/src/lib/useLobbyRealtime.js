@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
 
 const MOVE_THROTTLE_MS = 120;
 const MOVE_DISTANCE_THRESHOLD = 12;
@@ -104,21 +105,6 @@ function appendChatMessage(previousMessages, nextMessage) {
   }
 
   return [...previousMessages, nextMessage].slice(-CHAT_MESSAGE_LIMIT);
-}
-
-function getLobbyWebSocketUrl() {
-  const configuredUrl = import.meta.env.VITE_WS_URL;
-
-  if (configuredUrl) {
-    return configuredUrl;
-  }
-
-  if (typeof window === 'undefined') {
-    return 'ws://localhost:8080/ws';
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
 }
 
 export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
@@ -339,7 +325,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
       remoteEventSequenceRef.current = 0;
-      socket = new WebSocket(getLobbyWebSocketUrl());
+      socket = new WebSocket(getAuthenticatedWebSocketUrl());
       socketRef.current = socket;
     } catch (error) {
       setConnectionStatus('error');
