@@ -349,7 +349,9 @@ export default function MentoringSessionPage() {
       endSessionTimeoutRef.current = window.setTimeout(() => {
         navigateToLobby({
           refreshMentoring: true,
-          sessionMessage: 'Mentoring session ended. You can leave quick feedback below.',
+          sessionMessage: isReservationSession
+            ? 'Mentoring session ended. Reservation feedback sync is not available yet.'
+            : 'Mentoring session ended. You can leave quick feedback below.',
           feedbackPrompt: {
             requestId: completedSession?.id ?? sessionRequest?.id ?? requestId,
             counterpartName: counterpartName || 'Session partner',

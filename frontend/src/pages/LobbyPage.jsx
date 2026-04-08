@@ -8,9 +8,9 @@ import {
   getSessionFeedbackByRequestId,
 } from '../api/feedbacks';
 import {
-  getMyNotifications,
-  readAllNotifications,
-  readNotification,
+  getNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
 } from '../api/notifications';
 import {
   acceptMentoringRequest,
@@ -30,17 +30,12 @@ import {
 import { getSpaces } from '../api/spaces';
 import AppLayout from '../components/AppLayout';
 import LobbyGame from '../components/LobbyGame';
-import { getMentoringReservationEntryState } from '../lib/mentoringReservationStorage';
 import {
   dismissLobbyNotification,
   getDismissedLobbyNotificationIds,
 } from '../lib/lobbyNotificationStorage';
+import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
-import {
-  getStoredSessionFeedback,
-  getStoredSessionFeedbacks,
-  saveSessionFeedback,
-} from '../lib/sessionFeedbackStorage';
 import { useAuthStore } from '../store/authStore';
 
 function getMentoringRequestItems(rawValue) {
@@ -355,7 +350,7 @@ function buildLobbyNotifications({
       );
       const entryState =
         reservation?.status === 'ACCEPTED'
-          ? getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp)
+          ? getReservationEntryState(reservation.reservedAt, nowTimestamp)
           : null;
 
       if (entryState?.status === 'ready') {
@@ -378,7 +373,7 @@ function buildLobbyNotifications({
       return;
     }
 
-    const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
+    const entryState = getReservationEntryState(reservation.reservedAt, nowTimestamp);
     const isReady = entryState.status === 'ready';
 
     if (!isReady) {
@@ -405,7 +400,7 @@ function buildLobbyNotifications({
       return;
     }
 
-    const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
+    const entryState = getReservationEntryState(reservation.reservedAt, nowTimestamp);
     const isReady = entryState.status === 'ready';
 
     if (!isReady) {
@@ -542,7 +537,9 @@ export default function LobbyPage() {
       setNotificationError('');
 
       try {
-        const updatedNotification = normalizeServerNotification(await readNotification(notification.id));
+        const updatedNotification = normalizeServerNotification(
+          await markNotificationAsRead(notification.id)
+        );
         setServerNotifications((currentNotifications) =>
           currentNotifications.map((currentNotification) =>
             String(currentNotification.id) === String(notification.id)
@@ -596,7 +593,9 @@ export default function LobbyPage() {
       setNotificationError('');
 
       try {
-        const updatedNotification = normalizeServerNotification(await readNotification(notification.id));
+        const updatedNotification = normalizeServerNotification(
+          await markNotificationAsRead(notification.id)
+        );
         setServerNotifications((currentNotifications) =>
           currentNotifications.map((currentNotification) =>
             String(currentNotification.id) === String(notification.id)
@@ -659,7 +658,7 @@ export default function LobbyPage() {
   };
 
   const refreshNotifications = async () => {
-    setServerNotifications(normalizeServerNotifications(await getMyNotifications()));
+    setServerNotifications(normalizeServerNotifications(await getNotifications()));
   };
 
   const handleReadAllNotifications = async () => {
@@ -667,7 +666,9 @@ export default function LobbyPage() {
     setNotificationError('');
 
     try {
-      const updatedNotifications = normalizeServerNotifications(await readAllNotifications());
+      const updatedNotifications = normalizeServerNotifications(
+        await markAllNotificationsAsRead()
+      );
       const updatedNotificationMap = new Map(
         updatedNotifications.map((notification) => [String(notification.id), notification])
       );
@@ -694,14 +695,7 @@ export default function LobbyPage() {
     }
 
     const serverFeedbacks = normalizeFeedbackHistory(await getMySessionFeedbacks());
-    const reservationFallbackFeedbacks = getStoredSessionFeedbacks(userId).filter(
-      (feedbackItem) => feedbackItem.sessionSource === 'reservation'
-    );
-
-    setFeedbackHistory(sortFeedbackHistory([
-      ...serverFeedbacks,
-      ...reservationFallbackFeedbacks,
-    ]));
+    setFeedbackHistory(sortFeedbackHistory(serverFeedbacks));
   };
 
   const handleMentoringSubmit = async (event) => {
@@ -859,47 +853,34 @@ export default function LobbyPage() {
       return;
     }
 
+    if (feedbackPrompt.sessionSource === 'reservation') {
+      setFeedbackStatus('idle');
+      setFeedbackNotice('');
+      setFeedbackError(
+        'Reservation session feedback is not connected to a server API yet.'
+      );
+      return;
+    }
+
     setFeedbackStatus('saving');
     setFeedbackNotice('');
     setFeedbackError('');
 
     try {
-      if (feedbackPrompt.sessionSource === 'reservation') {
-        const savedFeedback = saveSessionFeedback({
-          requestId: feedbackPrompt.requestId,
-          counterpartName: feedbackPrompt.counterpartName,
-          role: feedbackPrompt.role,
-          sessionSource: feedbackPrompt.sessionSource || 'request',
-          reservedAt: feedbackPrompt.reservedAt || null,
-          authorUserId: currentUser?.id,
-          rating: feedbackRating,
-          summary: feedbackSummary.trim(),
-          feedback: feedbackMessage.trim(),
-        });
+      const savedFeedback = normalizeServerFeedback(await createSessionFeedback({
+        requestId: Number(feedbackPrompt.requestId),
+        rating: Number(feedbackRating),
+        summary: feedbackSummary.trim(),
+        feedback: feedbackMessage.trim(),
+      }));
 
-        setFeedbackRating(String(savedFeedback.rating || 5));
-        setFeedbackSummary(savedFeedback.summary || '');
-        setFeedbackMessage(savedFeedback.feedback || '');
-        setFeedbackStatus('saved');
-        setFeedbackNotice(
-          `Feedback saved in this browser at ${formatFeedbackTimestamp(savedFeedback.submittedAt)}.`
-        );
-      } else {
-        const savedFeedback = normalizeServerFeedback(await createSessionFeedback({
-          requestId: Number(feedbackPrompt.requestId),
-          rating: Number(feedbackRating),
-          summary: feedbackSummary.trim(),
-          feedback: feedbackMessage.trim(),
-        }));
-
-        setFeedbackRating(String(savedFeedback?.rating || 5));
-        setFeedbackSummary(savedFeedback?.summary || '');
-        setFeedbackMessage(savedFeedback?.feedback || '');
-        setFeedbackStatus('saved');
-        setFeedbackNotice(
-          `Feedback saved on the server at ${formatFeedbackTimestamp(savedFeedback?.submittedAt)}.`
-        );
-      }
+      setFeedbackRating(String(savedFeedback?.rating || 5));
+      setFeedbackSummary(savedFeedback?.summary || '');
+      setFeedbackMessage(savedFeedback?.feedback || '');
+      setFeedbackStatus('saved');
+      setFeedbackNotice(
+        `Feedback saved on the server at ${formatFeedbackTimestamp(savedFeedback?.submittedAt)}.`
+      );
 
       setLobbyNotice('Session feedback saved.');
       await refreshFeedbackHistory(currentUser?.id);
@@ -944,7 +925,7 @@ export default function LobbyPage() {
             getMyReservations(),
             getReceivedReservations(),
             getMySessionFeedbacks(),
-            getMyNotifications(),
+            getNotifications(),
           ]);
 
         if (!isMounted) {
@@ -958,12 +939,7 @@ export default function LobbyPage() {
         setReservations(normalizeReservations(myReservationsResponse));
         setReceivedReservations(normalizeReservations(receivedReservationsResponse));
         setServerNotifications(normalizeServerNotifications(myNotificationsResponse));
-        setFeedbackHistory(sortFeedbackHistory([
-          ...normalizeFeedbackHistory(myFeedbacksResponse),
-          ...getStoredSessionFeedbacks(meResponse?.id).filter(
-            (feedbackItem) => feedbackItem.sessionSource === 'reservation'
-          ),
-        ]));
+        setFeedbackHistory(sortFeedbackHistory(normalizeFeedbackHistory(myFeedbacksResponse)));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -1064,18 +1040,13 @@ export default function LobbyPage() {
 
       try {
         if (feedbackPrompt.sessionSource === 'reservation') {
-          const storedFeedback = getStoredSessionFeedback(feedbackPrompt.requestId);
-
-          if (!storedFeedback || !isMounted) {
+          if (!isMounted) {
             return;
           }
 
-          setFeedbackRating(String(storedFeedback.rating || 5));
-          setFeedbackSummary(storedFeedback.summary || '');
-          setFeedbackMessage(storedFeedback.feedback || '');
-          setFeedbackStatus('saved');
+          setFeedbackStatus('idle');
           setFeedbackNotice(
-            `Feedback already saved in this browser at ${formatFeedbackTimestamp(storedFeedback.submittedAt)}.`
+            'Reservation session feedback will be enabled after the reservation feedback API is added.'
           );
           return;
         }
@@ -1140,9 +1111,11 @@ export default function LobbyPage() {
     }
   }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
 
-  const isRequestFeedbackPrompt = feedbackPrompt?.sessionSource !== 'reservation';
+  const isReservationFeedbackPrompt = feedbackPrompt?.sessionSource === 'reservation';
   const isFeedbackLocked =
-    feedbackStatus === 'saving' || (Boolean(feedbackPrompt) && isRequestFeedbackPrompt && feedbackStatus === 'saved');
+    feedbackStatus === 'saving' ||
+    isReservationFeedbackPrompt ||
+    (Boolean(feedbackPrompt) && !isReservationFeedbackPrompt && feedbackStatus === 'saved');
 
   return (
     <AppLayout
@@ -1247,7 +1220,7 @@ export default function LobbyPage() {
               ) : null}
               <p className="app-note">
                 {feedbackPrompt.sessionSource === 'reservation'
-                  ? 'Reservation session feedback still uses this browser fallback for now.'
+                  ? 'Reservation session feedback fallback was removed. This prompt stays visible, but saving will open after the reservation feedback API is added.'
                   : 'Request session feedback is stored on the server and shown again in your history.'}
               </p>
 
@@ -1297,10 +1270,10 @@ export default function LobbyPage() {
                     {feedbackStatus === 'saving'
                       ? 'Saving feedback...'
                       : feedbackStatus === 'saved'
-                        ? feedbackPrompt.sessionSource === 'reservation'
-                          ? 'Update feedback'
-                          : 'Feedback saved'
-                        : 'Save feedback'}
+                        ? 'Feedback saved'
+                        : feedbackPrompt.sessionSource === 'reservation'
+                          ? 'Reservation feedback pending'
+                          : 'Save feedback'}
                   </button>
                   <button
                     type="button"
@@ -1321,7 +1294,7 @@ export default function LobbyPage() {
           <div className="lobby-info-card">
             <h2>Recent session feedback</h2>
             {feedbackHistory.length === 0 ? (
-              <p className="app-note">No feedback history yet.</p>
+              <p className="app-note">No server feedback history yet.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {feedbackHistory.map((feedbackItem) => (
@@ -1475,7 +1448,7 @@ export default function LobbyPage() {
             ) : (
               <ul className="mentoring-request-list">
                 {reservations.map((reservation) => {
-                  const reservationEntryState = getMentoringReservationEntryState(
+                  const reservationEntryState = getReservationEntryState(
                     reservation.reservedAt,
                     reservationClock
                   );
@@ -1533,7 +1506,7 @@ export default function LobbyPage() {
             ) : (
               <ul className="mentoring-request-list">
                 {receivedReservations.map((reservation) => {
-                  const reservationEntryState = getMentoringReservationEntryState(
+                  const reservationEntryState = getReservationEntryState(
                     reservation.reservedAt,
                     reservationClock
                   );
