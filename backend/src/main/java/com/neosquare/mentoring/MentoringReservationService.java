@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 
 import com.neosquare.auth.AuthUserPrincipal;
+import com.neosquare.notification.NotificationService;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
 
@@ -16,13 +17,16 @@ public class MentoringReservationService {
 
     private final MentoringReservationRepository mentoringReservationRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     public MentoringReservationService(
             MentoringReservationRepository mentoringReservationRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            NotificationService notificationService
     ) {
         this.mentoringReservationRepository = mentoringReservationRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -100,6 +104,7 @@ public class MentoringReservationService {
         }
 
         reservation.accept();
+        notificationService.createReservationAcceptedNotification(reservation);
 
         return MentoringReservationResponse.from(reservation);
     }

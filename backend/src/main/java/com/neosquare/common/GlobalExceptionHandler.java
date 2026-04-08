@@ -18,6 +18,9 @@ import com.neosquare.mentoring.MentoringReservationNotFoundException;
 import com.neosquare.mentoring.SelfMentoringRequestException;
 import com.neosquare.mentoring.SelfMentoringReservationException;
 import com.neosquare.mentoring.UserNotFoundException;
+import com.neosquare.notification.InvalidNotificationStateException;
+import com.neosquare.notification.NotificationAccessDeniedException;
+import com.neosquare.notification.NotificationNotFoundException;
 import com.neosquare.space.SpaceNotFoundException;
 
 import org.springframework.http.HttpStatus;
@@ -100,6 +103,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationNotFoundException(NotificationNotFoundException exception) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
     @ExceptionHandler(MentoringFeedbackNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleMentoringFeedbackNotFoundException(
             MentoringFeedbackNotFoundException exception
@@ -172,6 +185,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
+    @ExceptionHandler(NotificationAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationAccessDeniedException(
+            NotificationAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
     @ExceptionHandler(MentoringRequestAccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleMentoringRequestAccessDeniedException(
             MentoringRequestAccessDeniedException exception
@@ -194,6 +219,18 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(InvalidNotificationStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidNotificationStateException(
+            InvalidNotificationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(InvalidMentoringRequestStateException.class)

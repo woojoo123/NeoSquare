@@ -8,6 +8,11 @@ import {
   getSessionFeedbackByRequestId,
 } from '../api/feedbacks';
 import {
+  getMyNotifications,
+  readAllNotifications,
+  readNotification,
+} from '../api/notifications';
+import {
   acceptMentoringRequest,
   createMentoringRequest,
   getReceivedMentoringRequests,
@@ -148,6 +153,46 @@ function normalizeReservations(rawValue) {
   }));
 }
 
+function getNotificationItems(rawValue) {
+  if (Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (Array.isArray(rawValue?.items)) {
+    return rawValue.items;
+  }
+
+  if (Array.isArray(rawValue?.notifications)) {
+    return rawValue.notifications;
+  }
+
+  return [];
+}
+
+function normalizeServerNotification(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const notification = rawValue.item || rawValue.notification || rawValue;
+
+  return {
+    id: notification.id ?? null,
+    type: String(notification.type || '').toUpperCase(),
+    title: notification.title || '',
+    message: notification.message || '',
+    relatedId: notification.relatedId ?? null,
+    isRead: Boolean(notification.isRead ?? notification.read),
+    createdAt: notification.createdAt || null,
+  };
+}
+
+function normalizeServerNotifications(rawValue) {
+  return getNotificationItems(rawValue)
+    .map(normalizeServerNotification)
+    .filter(Boolean);
+}
+
 function normalizeFeedbackPrompt(rawValue) {
   if (!rawValue) {
     return null;
@@ -269,6 +314,7 @@ function getDefaultReservationDateTime() {
 }
 
 function buildLobbyNotifications({
+  serverNotifications,
   sentRequests,
   reservations,
   receivedReservations,
@@ -282,21 +328,49 @@ function buildLobbyNotifications({
     reservation_accepted: 2,
   };
 
-  sentRequests.forEach((request) => {
-    if (request.status !== 'ACCEPTED') {
+  serverNotifications.forEach((notification) => {
+    if (notification.isRead) {
       return;
     }
 
-    notifications.push({
-      id: `request-accepted-${request.id}`,
-      type: 'request_accepted',
-      title: 'Mentoring request accepted',
-      message: `${request.mentorLabel} accepted your mentoring request.`,
-      relatedId: request.id,
-      actionType: 'enter_request_session',
-      actionLabel: 'Enter session',
-      request,
-    });
+    if (notification.type === 'REQUEST_ACCEPTED') {
+      const request = sentRequests.find(
+        (requestItem) => String(requestItem.id) === String(notification.relatedId)
+      );
+
+      notifications.push({
+        ...notification,
+        source: 'server',
+        type: 'request_accepted',
+        actionType: request?.status === 'ACCEPTED' ? 'enter_request_session' : 'view_requests',
+        actionLabel: request?.status === 'ACCEPTED' ? 'Enter session' : 'View requests',
+        request,
+      });
+      return;
+    }
+
+    if (notification.type === 'RESERVATION_ACCEPTED') {
+      const reservation = reservations.find(
+        (reservationItem) => String(reservationItem.id) === String(notification.relatedId)
+      );
+      const entryState =
+        reservation?.status === 'ACCEPTED'
+          ? getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp)
+          : null;
+
+      if (entryState?.status === 'ready') {
+        return;
+      }
+
+      notifications.push({
+        ...notification,
+        source: 'server',
+        type: 'reservation_accepted',
+        actionType: 'view_my_reservations',
+        actionLabel: 'View reservation',
+        reservation,
+      });
+    }
   });
 
   reservations.forEach((reservation) => {
@@ -307,17 +381,22 @@ function buildLobbyNotifications({
     const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
     const isReady = entryState.status === 'ready';
 
+    if (!isReady) {
+      return;
+    }
+
     notifications.push({
-      id: `${isReady ? 'reservation-ready' : 'reservation-accepted'}-my-${reservation.id}`,
-      type: isReady ? 'reservation_ready' : 'reservation_accepted',
-      title: isReady ? 'Reservation ready' : 'Reservation accepted',
-      message: isReady
-        ? `${reservation.mentorLabel} reservation is ready to enter.`
-        : `${reservation.mentorLabel} reservation was accepted. ${entryState.label}`,
+      id: `reservation-ready-my-${reservation.id}`,
+      source: 'computed',
+      type: 'reservation_ready',
+      title: 'Reservation ready',
+      message: `${reservation.mentorLabel} reservation is ready to enter.`,
       relatedId: reservation.id,
-      actionType: isReady ? 'enter_reservation_session' : 'view_my_reservations',
-      actionLabel: isReady ? 'Enter session' : 'View reservation',
+      actionType: 'enter_reservation_session',
+      actionLabel: 'Enter session',
       reservation,
+      isRead: false,
+      createdAt: reservation.reservedAt || reservation.createdAt || null,
     });
   });
 
@@ -329,27 +408,44 @@ function buildLobbyNotifications({
     const entryState = getMentoringReservationEntryState(reservation.reservedAt, nowTimestamp);
     const isReady = entryState.status === 'ready';
 
+    if (!isReady) {
+      return;
+    }
+
     notifications.push({
-      id: `${isReady ? 'reservation-ready' : 'reservation-accepted'}-received-${reservation.id}`,
-      type: isReady ? 'reservation_ready' : 'reservation_accepted',
-      title: isReady ? 'Accepted reservation is ready' : 'Accepted reservation',
-      message: isReady
-        ? `Scheduled mentoring with ${reservation.requesterLabel} can start now.`
-        : `Accepted reservation with ${reservation.requesterLabel}. ${entryState.label}`,
+      id: `reservation-ready-received-${reservation.id}`,
+      source: 'computed',
+      type: 'reservation_ready',
+      title: 'Accepted reservation is ready',
+      message: `Scheduled mentoring with ${reservation.requesterLabel} can start now.`,
       relatedId: reservation.id,
-      actionType: isReady ? 'enter_reservation_session' : 'view_received_reservations',
-      actionLabel: isReady ? 'Enter session' : 'View reservation',
+      actionType: 'enter_reservation_session',
+      actionLabel: 'Enter session',
       reservation,
+      isRead: false,
+      createdAt: reservation.reservedAt || reservation.createdAt || null,
     });
   });
 
   return notifications
-    .filter((notification) => !dismissedNotificationIds.includes(notification.id))
-    .sort(
-      (leftNotification, rightNotification) =>
+    .filter(
+      (notification) =>
+        notification.source === 'server' || !dismissedNotificationIds.includes(notification.id)
+    )
+    .sort((leftNotification, rightNotification) => {
+      const priorityDifference =
         (notificationPriority[leftNotification.type] ?? 99) -
-        (notificationPriority[rightNotification.type] ?? 99)
-    );
+        (notificationPriority[rightNotification.type] ?? 99);
+
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      const leftTime = new Date(leftNotification.createdAt || 0).getTime();
+      const rightTime = new Date(rightNotification.createdAt || 0).getTime();
+
+      return rightTime - leftTime;
+    });
 }
 
 export default function LobbyPage() {
@@ -383,6 +479,10 @@ export default function LobbyPage() {
   const [receivedReservationError, setReceivedReservationError] = useState('');
   const [activeReceivedReservationActionId, setActiveReceivedReservationActionId] =
     useState(null);
+  const [serverNotifications, setServerNotifications] = useState([]);
+  const [notificationError, setNotificationError] = useState('');
+  const [activeNotificationId, setActiveNotificationId] = useState(null);
+  const [isReadingAllNotifications, setIsReadingAllNotifications] = useState(false);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [reservationClock, setReservationClock] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
@@ -436,7 +536,31 @@ export default function LobbyPage() {
     });
   };
 
-  const handleNotificationAction = (notification) => {
+  const handleNotificationAction = async (notification) => {
+    if (notification.source === 'server' && !notification.isRead) {
+      setActiveNotificationId(notification.id);
+      setNotificationError('');
+
+      try {
+        const updatedNotification = normalizeServerNotification(await readNotification(notification.id));
+        setServerNotifications((currentNotifications) =>
+          currentNotifications.map((currentNotification) =>
+            String(currentNotification.id) === String(notification.id)
+              ? updatedNotification
+              : currentNotification
+          )
+        );
+      } catch (error) {
+        setNotificationError(
+          error?.response?.data?.message || error.message || 'Failed to update notification.'
+        );
+        setActiveNotificationId(null);
+        return;
+      }
+
+      setActiveNotificationId(null);
+    }
+
     if (notification.actionType === 'enter_request_session' && notification.request) {
       openMentoringSession(notification.request);
       return;
@@ -462,8 +586,36 @@ export default function LobbyPage() {
     }
   };
 
-  const handleDismissNotification = (notificationId) => {
-    const nextDismissedIds = dismissLobbyNotification(currentUser?.id, notificationId);
+  const handleDismissNotification = async (notification) => {
+    if (notification.source === 'server') {
+      if (notification.isRead) {
+        return;
+      }
+
+      setActiveNotificationId(notification.id);
+      setNotificationError('');
+
+      try {
+        const updatedNotification = normalizeServerNotification(await readNotification(notification.id));
+        setServerNotifications((currentNotifications) =>
+          currentNotifications.map((currentNotification) =>
+            String(currentNotification.id) === String(notification.id)
+              ? updatedNotification
+              : currentNotification
+          )
+        );
+      } catch (error) {
+        setNotificationError(
+          error?.response?.data?.message || error.message || 'Failed to update notification.'
+        );
+      } finally {
+        setActiveNotificationId(null);
+      }
+
+      return;
+    }
+
+    const nextDismissedIds = dismissLobbyNotification(currentUser?.id, notification.id);
     setDismissedNotificationIds(nextDismissedIds);
   };
 
@@ -477,12 +629,14 @@ export default function LobbyPage() {
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
   const lobbyNotifications = buildLobbyNotifications({
+    serverNotifications,
     sentRequests,
     reservations,
     receivedReservations,
     nowTimestamp: reservationClock,
     dismissedNotificationIds,
   });
+  const hasUnreadServerNotifications = serverNotifications.some((notification) => !notification.isRead);
 
   const refreshMentoringRequests = async () => {
     const [sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
@@ -502,6 +656,35 @@ export default function LobbyPage() {
 
     setReservations(normalizeReservations(myReservationsResponse));
     setReceivedReservations(normalizeReservations(receivedReservationsResponse));
+  };
+
+  const refreshNotifications = async () => {
+    setServerNotifications(normalizeServerNotifications(await getMyNotifications()));
+  };
+
+  const handleReadAllNotifications = async () => {
+    setIsReadingAllNotifications(true);
+    setNotificationError('');
+
+    try {
+      const updatedNotifications = normalizeServerNotifications(await readAllNotifications());
+      const updatedNotificationMap = new Map(
+        updatedNotifications.map((notification) => [String(notification.id), notification])
+      );
+
+      setServerNotifications((currentNotifications) =>
+        currentNotifications.map(
+          (notification) => updatedNotificationMap.get(String(notification.id)) || notification
+        )
+      );
+      setLobbyNotice('All notifications marked as read.');
+    } catch (error) {
+      setNotificationError(
+        error?.response?.data?.message || error.message || 'Failed to mark notifications as read.'
+      );
+    } finally {
+      setIsReadingAllNotifications(false);
+    }
   };
 
   const refreshFeedbackHistory = async (userId = currentUser?.id) => {
@@ -751,6 +934,7 @@ export default function LobbyPage() {
           myReservationsResponse,
           receivedReservationsResponse,
           myFeedbacksResponse,
+          myNotificationsResponse,
         ] =
           await Promise.all([
             getMe(),
@@ -760,6 +944,7 @@ export default function LobbyPage() {
             getMyReservations(),
             getReceivedReservations(),
             getMySessionFeedbacks(),
+            getMyNotifications(),
           ]);
 
         if (!isMounted) {
@@ -772,6 +957,7 @@ export default function LobbyPage() {
         setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
         setReservations(normalizeReservations(myReservationsResponse));
         setReceivedReservations(normalizeReservations(receivedReservationsResponse));
+        setServerNotifications(normalizeServerNotifications(myNotificationsResponse));
         setFeedbackHistory(sortFeedbackHistory([
           ...normalizeFeedbackHistory(myFeedbacksResponse),
           ...getStoredSessionFeedbacks(meResponse?.id).filter(
@@ -827,6 +1013,9 @@ export default function LobbyPage() {
       return;
     }
 
+    refreshNotifications().catch(() => {
+      // Initial lobby loading already exposes the main error state.
+    });
     refreshFeedbackHistory(currentUser.id).catch(() => {
       // Initial lobby loading already exposes the main error state.
     });
@@ -998,6 +1187,19 @@ export default function LobbyPage() {
 
           <div className="lobby-info-card">
             <h2>Notifications</h2>
+            {hasUnreadServerNotifications ? (
+              <div className="mentoring-request-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleReadAllNotifications}
+                  disabled={isReadingAllNotifications}
+                >
+                  {isReadingAllNotifications ? 'Marking all...' : 'Mark all as read'}
+                </button>
+              </div>
+            ) : null}
+            {notificationError ? <p className="app-error">{notificationError}</p> : null}
             {lobbyNotifications.length === 0 ? (
               <p className="app-note">No important notifications right now.</p>
             ) : (
@@ -1012,15 +1214,17 @@ export default function LobbyPage() {
                         type="button"
                         className="primary-button"
                         onClick={() => handleNotificationAction(notification)}
+                        disabled={activeNotificationId === notification.id}
                       >
-                        {notification.actionLabel}
+                        {activeNotificationId === notification.id ? 'Updating...' : notification.actionLabel}
                       </button>
                       <button
                         type="button"
                         className="secondary-button"
-                        onClick={() => handleDismissNotification(notification.id)}
+                        onClick={() => handleDismissNotification(notification)}
+                        disabled={activeNotificationId === notification.id}
                       >
-                        Dismiss
+                        {notification.source === 'server' ? 'Mark as read' : 'Dismiss'}
                       </button>
                     </div>
                   </li>
