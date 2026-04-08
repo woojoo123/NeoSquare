@@ -51,7 +51,7 @@ function normalizeRemoteEvent(message, currentUserId, activeSpaceId, sequence) {
       payload.label ||
       payload.userNickname ||
       payload.userName ||
-      `User ${remoteUserId}`,
+      `사용자 ${remoteUserId}`,
   };
 }
 
@@ -83,7 +83,7 @@ function normalizeChatMessage(message, currentUserId, activeSpaceId) {
       payload.label ||
       payload.userNickname ||
       payload.userName ||
-      `User ${senderId}`,
+      `사용자 ${senderId}`,
     content,
     timestamp: message.timestamp || new Date().toISOString(),
     isMine: senderId === currentUserId,
@@ -309,7 +309,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
           return;
         }
 
-        setLastError('Failed to parse realtime message.');
+        setLastError('실시간 메시지를 해석하지 못했습니다.');
         console.error('Failed to parse realtime message:', error);
       }
     }
@@ -329,7 +329,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       socketRef.current = socket;
     } catch (error) {
       setConnectionStatus('error');
-      setLastError('Failed to create WebSocket connection.');
+      setLastError('실시간 연결을 만들지 못했습니다.');
       console.error('Failed to create WebSocket connection:', error);
       return undefined;
     }
@@ -350,7 +350,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       }
 
       setConnectionStatus('error');
-      setLastError('WebSocket connection error.');
+      setLastError('실시간 연결 중 오류가 발생했습니다.');
     };
 
     socket.onclose = () => {

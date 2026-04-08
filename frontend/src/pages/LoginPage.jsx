@@ -40,7 +40,7 @@ export default function LoginPage() {
       const nextAccessToken = loginResponse?.data?.accessToken;
 
       if (!nextAccessToken) {
-        throw new Error('Access token was not returned.');
+        throw new Error('액세스 토큰을 받지 못했습니다.');
       }
 
       setAccessToken(nextAccessToken);
@@ -51,7 +51,7 @@ export default function LoginPage() {
     } catch (error) {
       clearAuth();
       setErrorMessage(
-        error?.response?.data?.message || error.message || 'Login failed.'
+        error?.response?.data?.message || error.message || '로그인에 실패했습니다.'
       );
     } finally {
       setIsSubmitting(false);
@@ -60,13 +60,13 @@ export default function LoginPage() {
 
   return (
     <AppLayout
-      eyebrow="Login"
-      title="NeoSquare login"
-      description="Sign in with your NeoSquare account. Successful login stores the access token and loads the current user."
+      eyebrow="로그인"
+      title="NeoSquare 로그인"
+      description="NeoSquare 계정으로 로그인하면 액세스 토큰을 저장하고 현재 사용자 정보를 불러옵니다."
     >
       <form className="app-form" onSubmit={handleLogin}>
         <label className="app-field">
-          <span>Email</span>
+          <span>이메일</span>
           <input
             className="app-input"
             type="email"
@@ -78,23 +78,23 @@ export default function LoginPage() {
           />
         </label>
         <label className="app-field">
-          <span>Password</span>
+          <span>비밀번호</span>
           <input
             className="app-input"
             type="password"
             name="password"
             value={form.password}
             onChange={handleChange}
-            placeholder="Enter your password"
+            placeholder="비밀번호를 입력하세요"
             required
           />
         </label>
         <div className="app-actions">
           <button type="submit" className="primary-button" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
+            {isSubmitting ? '로그인 중...' : '로그인'}
           </button>
           <Link className="text-link" to="/signup">
-            Create account
+            회원가입
           </Link>
         </div>
       </form>
@@ -104,11 +104,11 @@ export default function LoginPage() {
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
       {accessToken ? (
         <p className="app-note">
-          You are already signed in as {currentUser?.nickname || 'a user'}.
+          현재 {currentUser?.nickname || '사용자'} 계정으로 로그인되어 있습니다.
         </p>
       ) : (
         <p className="app-note">
-          Unauthenticated users trying to access `/lobby` are redirected here.
+          로그인하지 않은 사용자가 `/lobby`에 접근하면 이 페이지로 이동합니다.
         </p>
       )}
     </AppLayout>

@@ -64,7 +64,7 @@ function normalizeSessionChatMessage(message, currentUserId, requestId) {
       payload.label ||
       payload.userNickname ||
       payload.userName ||
-      `User ${senderId}`,
+      `사용자 ${senderId}`,
     content,
     timestamp: message.timestamp || new Date().toISOString(),
     isMine: senderId === currentUserId,
@@ -162,7 +162,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
           return;
         }
 
-        setErrorMessage('Failed to parse session chat message.');
+        setErrorMessage('세션 채팅 메시지를 해석하지 못했습니다.');
         console.error('Failed to parse session chat message:', error);
       }
     }
@@ -176,7 +176,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
       socketRef.current = socket;
     } catch (error) {
       setConnectionStatus('error');
-      setErrorMessage('Failed to create session chat connection.');
+      setErrorMessage('세션 채팅 연결을 만들지 못했습니다.');
       console.error('Failed to create session chat connection:', error);
       return undefined;
     }
@@ -197,7 +197,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
       }
 
       setConnectionStatus('error');
-      setErrorMessage('Session chat connection error.');
+      setErrorMessage('세션 채팅 연결 중 오류가 발생했습니다.');
     };
 
     socket.onclose = () => {

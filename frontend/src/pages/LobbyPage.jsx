@@ -65,14 +65,14 @@ function normalizeSentRequests(rawValue) {
       request.requesterName ||
       request.senderNickname ||
       request.userNickname ||
-      'You',
+      '나',
     mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
     mentorLabel:
       request.mentorNickname ||
       request.mentorName ||
       request.receiverNickname ||
       request.targetNickname ||
-      `User ${request.mentorId ?? request.receiverId ?? request.targetUserId ?? '?'}`,
+      `사용자 ${request.mentorId ?? request.receiverId ?? request.targetUserId ?? '?'}`,
     message: request.message || request.content || '',
     status: request.status || 'PENDING',
     createdAt: request.createdAt || request.timestamp || null,
@@ -90,14 +90,14 @@ function normalizeReceivedRequests(rawValue) {
       request.requesterName ||
       request.senderNickname ||
       request.userNickname ||
-      `User ${request.requesterId ?? request.senderId ?? request.userId ?? '?'}`,
+      `사용자 ${request.requesterId ?? request.senderId ?? request.userId ?? '?'}`,
     mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
     mentorLabel:
       request.mentorNickname ||
       request.mentorName ||
       request.receiverNickname ||
       request.targetNickname ||
-      'You',
+      '나',
     message: request.message || request.content || '',
     status: request.status || 'PENDING',
     createdAt: request.createdAt || request.timestamp || null,
@@ -132,7 +132,7 @@ function normalizeReservations(rawValue) {
       reservation.requesterName ||
       reservation.senderNickname ||
       reservation.userNickname ||
-      `User ${reservation.requesterId ?? reservation.senderId ?? reservation.userId ?? '?'}`,
+      `사용자 ${reservation.requesterId ?? reservation.senderId ?? reservation.userId ?? '?'}`,
     mentorId: reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? null,
     mentorLabel:
       reservation.mentorLabel ||
@@ -140,7 +140,7 @@ function normalizeReservations(rawValue) {
       reservation.mentorName ||
       reservation.receiverNickname ||
       reservation.targetNickname ||
-      `User ${reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? '?'}`,
+      `사용자 ${reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? '?'}`,
     reservedAt: reservation.reservedAt || reservation.scheduledAt || null,
     message: reservation.message || reservation.content || '',
     status: reservation.status || 'PENDING',
@@ -201,7 +201,7 @@ function normalizeFeedbackPrompt(rawValue) {
 
   return {
     requestId,
-    counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || 'Session partner',
+    counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || '세션 상대',
     role: rawValue.role || 'Participant',
     sessionSource: rawValue.sessionSource || 'request',
     reservedAt: rawValue.reservedAt || null,
@@ -240,7 +240,7 @@ function normalizeServerFeedback(rawValue) {
       feedback.targetUserLabel ||
       feedback.counterpartName ||
       feedback.targetNickname ||
-      'Session partner',
+      '세션 상대',
     role: feedback.authorRole || feedback.role || 'Participant',
     rating: Number(feedback.rating) || 0,
     summary: feedback.summary || '',
@@ -280,13 +280,13 @@ function formatFeedbackTimestamp(value) {
 }
 
 function formatHistorySessionLabel(feedbackItem) {
-  const sessionType = feedbackItem.sessionSource === 'reservation' ? 'Reservation' : 'Request';
+  const sessionType = feedbackItem.sessionSource === 'reservation' ? '예약' : '요청';
   return `${sessionType} #${feedbackItem.requestId}`;
 }
 
 function formatReservationTimestamp(value) {
   if (!value) {
-    return 'No reservation time';
+    return '예약 시간이 없습니다';
   }
 
   const parsedDate = new Date(value);
@@ -296,6 +296,102 @@ function formatReservationTimestamp(value) {
   }
 
   return parsedDate.toLocaleString();
+}
+
+function formatParticipantRole(role) {
+  if (role === 'Requester') {
+    return '요청자';
+  }
+
+  if (role === 'Mentor') {
+    return '멘토';
+  }
+
+  return '참여자';
+}
+
+function formatSessionSourceLabel(sessionSource) {
+  return sessionSource === 'reservation' ? '예약 멘토링' : '요청 멘토링';
+}
+
+function formatRequestStatus(status) {
+  if (status === 'PENDING') {
+    return '대기 중';
+  }
+
+  if (status === 'ACCEPTED') {
+    return '수락됨';
+  }
+
+  if (status === 'REJECTED') {
+    return '거절됨';
+  }
+
+  if (status === 'COMPLETED') {
+    return '종료됨';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatReservationStatus(status) {
+  if (status === 'PENDING') {
+    return '대기 중';
+  }
+
+  if (status === 'ACCEPTED') {
+    return '수락됨';
+  }
+
+  if (status === 'REJECTED') {
+    return '거절됨';
+  }
+
+  if (status === 'CANCELED') {
+    return '취소됨';
+  }
+
+  if (status === 'COMPLETED') {
+    return '종료됨';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatNotificationTypeLabel(type) {
+  if (type === 'request_accepted') {
+    return '요청 수락';
+  }
+
+  if (type === 'reservation_accepted') {
+    return '예약 수락';
+  }
+
+  if (type === 'reservation_ready') {
+    return '예약 입장 가능';
+  }
+
+  return type || '알림';
+}
+
+function formatRealtimeConnectionStatus(status) {
+  if (status === 'connecting') {
+    return '연결 중';
+  }
+
+  if (status === 'connected') {
+    return '연결됨';
+  }
+
+  if (status === 'disconnected') {
+    return '연결 종료';
+  }
+
+  if (status === 'error') {
+    return '오류';
+  }
+
+  return '대기 중';
 }
 
 function getDefaultReservationDateTime() {
@@ -338,8 +434,13 @@ function buildLobbyNotifications({
         source: 'server',
         type: 'request_accepted',
         actionType: request?.status === 'ACCEPTED' ? 'enter_request_session' : 'view_requests',
-        actionLabel: request?.status === 'ACCEPTED' ? 'Enter session' : 'View requests',
+        actionLabel: request?.status === 'ACCEPTED' ? '세션 입장' : '요청 보기',
         request,
+        title: request?.status === 'ACCEPTED' ? '멘토링 요청이 수락되었습니다' : '요청 상태가 업데이트되었습니다',
+        message:
+          request?.status === 'ACCEPTED'
+            ? `${request?.mentorLabel || '상대방'} 님이 멘토링 요청을 수락했습니다.`
+            : notification.message,
       });
       return;
     }
@@ -362,8 +463,13 @@ function buildLobbyNotifications({
         source: 'server',
         type: 'reservation_accepted',
         actionType: 'view_my_reservations',
-        actionLabel: 'View reservation',
+        actionLabel: '예약 보기',
         reservation,
+        title: '멘토링 예약이 수락되었습니다',
+        message:
+          reservation
+            ? `${reservation.mentorLabel} 님과의 예약이 확정되었습니다.`
+            : notification.message,
       });
     }
   });
@@ -384,11 +490,11 @@ function buildLobbyNotifications({
       id: `reservation-ready-my-${reservation.id}`,
       source: 'computed',
       type: 'reservation_ready',
-      title: 'Reservation ready',
-      message: `${reservation.mentorLabel} reservation is ready to enter.`,
+      title: '예약 세션 입장이 가능합니다',
+      message: `${reservation.mentorLabel} 님과의 예약 세션에 지금 입장할 수 있습니다.`,
       relatedId: reservation.id,
       actionType: 'enter_reservation_session',
-      actionLabel: 'Enter session',
+      actionLabel: '세션 입장',
       reservation,
       isRead: false,
       createdAt: reservation.reservedAt || reservation.createdAt || null,
@@ -411,11 +517,11 @@ function buildLobbyNotifications({
       id: `reservation-ready-received-${reservation.id}`,
       source: 'computed',
       type: 'reservation_ready',
-      title: 'Accepted reservation is ready',
-      message: `Scheduled mentoring with ${reservation.requesterLabel} can start now.`,
+      title: '수락한 예약 세션 입장이 가능합니다',
+      message: `${reservation.requesterLabel} 님과의 예약 멘토링을 지금 시작할 수 있습니다.`,
       relatedId: reservation.id,
       actionType: 'enter_reservation_session',
-      actionLabel: 'Enter session',
+      actionLabel: '세션 입장',
       reservation,
       isRead: false,
       createdAt: reservation.reservedAt || reservation.createdAt || null,
@@ -549,7 +655,7 @@ export default function LobbyPage() {
         );
       } catch (error) {
         setNotificationError(
-          error?.response?.data?.message || error.message || 'Failed to update notification.'
+          error?.response?.data?.message || error.message || '알림 상태를 업데이트하지 못했습니다.'
         );
         setActiveNotificationId(null);
         return;
@@ -605,7 +711,7 @@ export default function LobbyPage() {
         );
       } catch (error) {
         setNotificationError(
-          error?.response?.data?.message || error.message || 'Failed to update notification.'
+          error?.response?.data?.message || error.message || '알림 상태를 업데이트하지 못했습니다.'
         );
       } finally {
         setActiveNotificationId(null);
@@ -678,10 +784,10 @@ export default function LobbyPage() {
           (notification) => updatedNotificationMap.get(String(notification.id)) || notification
         )
       );
-      setLobbyNotice('All notifications marked as read.');
+      setLobbyNotice('모든 알림을 읽음 처리했습니다.');
     } catch (error) {
       setNotificationError(
-        error?.response?.data?.message || error.message || 'Failed to mark notifications as read.'
+        error?.response?.data?.message || error.message || '알림 전체 읽음 처리에 실패했습니다.'
       );
     } finally {
       setIsReadingAllNotifications(false);
@@ -702,7 +808,7 @@ export default function LobbyPage() {
     event.preventDefault();
 
     if (!selectedMentorId) {
-      setMentoringError('Select a mentor target first.');
+      setMentoringError('먼저 멘토 대상을 선택해 주세요.');
       setMentoringFeedback('');
       return;
     }
@@ -719,10 +825,10 @@ export default function LobbyPage() {
 
       await refreshMentoringRequests();
       setMentoringMessage('');
-      setMentoringFeedback('Mentoring request sent.');
+      setMentoringFeedback('멘토링 요청을 보냈습니다.');
     } catch (error) {
       const message =
-        error?.response?.data?.message || error.message || 'Failed to send mentoring request.';
+        error?.response?.data?.message || error.message || '멘토링 요청 전송에 실패했습니다.';
       setMentoringError(message);
     } finally {
       setIsSubmittingRequest(false);
@@ -733,13 +839,13 @@ export default function LobbyPage() {
     event.preventDefault();
 
     if (!selectedReservationMentorId) {
-      setReservationError('Select a reservation target first.');
+      setReservationError('먼저 예약 대상을 선택해 주세요.');
       setReservationNotice('');
       return;
     }
 
     if (!reservationDateTime) {
-      setReservationError('Choose a reservation date and time.');
+      setReservationError('예약 날짜와 시간을 선택해 주세요.');
       setReservationNotice('');
       return;
     }
@@ -759,11 +865,11 @@ export default function LobbyPage() {
       setReservationMessage('');
       setReservationDateTime(getDefaultReservationDateTime());
       setReservationStatus('saved');
-      setReservationNotice('Reservation created.');
+      setReservationNotice('예약을 생성했습니다.');
     } catch (error) {
       setReservationStatus('error');
       setReservationError(
-        error?.response?.data?.message || error.message || 'Failed to create reservation.'
+        error?.response?.data?.message || error.message || '예약 생성에 실패했습니다.'
       );
     }
   };
@@ -776,10 +882,10 @@ export default function LobbyPage() {
     try {
       await cancelReservation(reservationId);
       await refreshReservations();
-      setReservationNotice('Reservation canceled.');
+      setReservationNotice('예약을 취소했습니다.');
     } catch (error) {
       setReservationError(
-        error?.response?.data?.message || error.message || 'Failed to cancel reservation.'
+        error?.response?.data?.message || error.message || '예약 취소에 실패했습니다.'
       );
     } finally {
       setActiveReservationActionId(null);
@@ -800,13 +906,13 @@ export default function LobbyPage() {
 
       await refreshReservations();
       setReceivedReservationNotice(
-        decision === 'accept' ? 'Reservation accepted.' : 'Reservation rejected.'
+        decision === 'accept' ? '예약을 수락했습니다.' : '예약을 거절했습니다.'
       );
     } catch (error) {
       setReceivedReservationError(
         error?.response?.data?.message ||
           error.message ||
-          'Failed to update received reservation.'
+          '받은 예약 상태 변경에 실패했습니다.'
       );
     } finally {
       setActiveReceivedReservationActionId(null);
@@ -829,7 +935,7 @@ export default function LobbyPage() {
       const message =
         error?.response?.data?.message ||
         error.message ||
-        'Failed to update mentoring request status.';
+        '멘토링 요청 상태 변경에 실패했습니다.';
       setRequestActionError(message);
     } finally {
       setActiveRequestActionId(null);
@@ -857,7 +963,7 @@ export default function LobbyPage() {
       setFeedbackStatus('idle');
       setFeedbackNotice('');
       setFeedbackError(
-        'Reservation session feedback is not connected to a server API yet.'
+        '예약 세션 피드백은 아직 서버 API와 연결되지 않았습니다.'
       );
       return;
     }
@@ -879,15 +985,15 @@ export default function LobbyPage() {
       setFeedbackMessage(savedFeedback?.feedback || '');
       setFeedbackStatus('saved');
       setFeedbackNotice(
-        `Feedback saved on the server at ${formatFeedbackTimestamp(savedFeedback?.submittedAt)}.`
+        `${formatFeedbackTimestamp(savedFeedback?.submittedAt)}에 피드백을 저장했습니다.`
       );
 
-      setLobbyNotice('Session feedback saved.');
+      setLobbyNotice('세션 피드백을 저장했습니다.');
       await refreshFeedbackHistory(currentUser?.id);
     } catch (error) {
       setFeedbackStatus('error');
       setFeedbackError(
-        error?.response?.data?.message || error.message || 'Failed to save session feedback.'
+        error?.response?.data?.message || error.message || '세션 피드백 저장에 실패했습니다.'
       );
     }
   };
@@ -947,7 +1053,7 @@ export default function LobbyPage() {
 
         const status = error?.response?.status;
         const message =
-          error?.response?.data?.message || error.message || 'Failed to load lobby.';
+          error?.response?.data?.message || error.message || '로비 정보를 불러오지 못했습니다.';
 
         if (status === 401) {
           clearAuth();
@@ -1046,7 +1152,7 @@ export default function LobbyPage() {
 
           setFeedbackStatus('idle');
           setFeedbackNotice(
-            'Reservation session feedback will be enabled after the reservation feedback API is added.'
+            '예약 세션 피드백은 예약 피드백 API가 추가되면 활성화될 예정입니다.'
           );
           return;
         }
@@ -1075,7 +1181,7 @@ export default function LobbyPage() {
           setFeedbackError(
             error?.response?.data?.message ||
               error.message ||
-              'Failed to load existing session feedback.'
+              '기존 세션 피드백을 불러오지 못했습니다.'
           );
         }
       }
@@ -1119,14 +1225,14 @@ export default function LobbyPage() {
 
   return (
     <AppLayout
-      eyebrow="Lobby"
-      title="NeoSquare lobby"
-      description="Authenticated users can load their profile and the current public spaces from the backend."
+      eyebrow="로비"
+      title="NeoSquare 로비"
+      description="현재 로그인한 사용자가 프로필, 공간, 요청, 예약, 알림 상태를 한 번에 확인할 수 있는 메인 공간입니다."
       panelClassName="app-panel--wide"
     >
       <div className="app-actions">
         <button type="button" className="primary-button" onClick={handleLogout}>
-          Sign out
+          로그아웃
         </button>
       </div>
       {lobbyNotice ? <p className="app-success">{lobbyNotice}</p> : null}
@@ -1134,32 +1240,32 @@ export default function LobbyPage() {
       <div className="lobby-layout">
         <section className="lobby-sidebar">
           <div className="lobby-info-card">
-            <h2>Current user</h2>
+            <h2>현재 사용자</h2>
             {currentUser ? (
               <>
                 <strong>{currentUser.nickname}</strong>
                 <span>{currentUser.email}</span>
               </>
             ) : (
-              <p className="app-note">Loading user...</p>
+              <p className="app-note">사용자 정보를 불러오는 중입니다...</p>
             )}
           </div>
 
           <div className="lobby-info-card">
-            <h2>Lobby status</h2>
+            <h2>로비 상태</h2>
             <p className="app-note">
-              Phaser canvas and local player movement are active only on this page.
+              메타버스 로비 화면과 내 캐릭터 이동은 이 페이지에서만 활성화됩니다.
             </p>
             <p className="app-note">
-              Available spaces: {isLoading ? 'Loading...' : spaces.length}
+              이용 가능한 공간 수: {isLoading ? '불러오는 중...' : spaces.length}
             </p>
             <p className="app-note">
-              Active space for realtime: {primarySpace ? primarySpace.name : 'No space selected'}
+              실시간 연결 기준 공간: {primarySpace ? primarySpace.name : '선택된 공간이 없습니다'}
             </p>
           </div>
 
           <div className="lobby-info-card">
-            <h2>Notifications</h2>
+            <h2>알림</h2>
             {hasUnreadServerNotifications ? (
               <div className="mentoring-request-actions">
                 <button
@@ -1168,19 +1274,19 @@ export default function LobbyPage() {
                   onClick={handleReadAllNotifications}
                   disabled={isReadingAllNotifications}
                 >
-                  {isReadingAllNotifications ? 'Marking all...' : 'Mark all as read'}
+                  {isReadingAllNotifications ? '읽음 처리 중...' : '모두 읽음 처리'}
                 </button>
               </div>
             ) : null}
             {notificationError ? <p className="app-error">{notificationError}</p> : null}
             {lobbyNotifications.length === 0 ? (
-              <p className="app-note">No important notifications right now.</p>
+              <p className="app-note">지금 확인할 중요한 알림이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {lobbyNotifications.map((notification) => (
                   <li key={notification.id} className="mentoring-request-card">
                     <strong>{notification.title}</strong>
-                    <span>{notification.type}</span>
+                    <span>{formatNotificationTypeLabel(notification.type)}</span>
                     <p>{notification.message}</p>
                     <div className="mentoring-request-actions">
                       <button
@@ -1189,7 +1295,7 @@ export default function LobbyPage() {
                         onClick={() => handleNotificationAction(notification)}
                         disabled={activeNotificationId === notification.id}
                       >
-                        {activeNotificationId === notification.id ? 'Updating...' : notification.actionLabel}
+                        {activeNotificationId === notification.id ? '처리 중...' : notification.actionLabel}
                       </button>
                       <button
                         type="button"
@@ -1197,7 +1303,7 @@ export default function LobbyPage() {
                         onClick={() => handleDismissNotification(notification)}
                         disabled={activeNotificationId === notification.id}
                       >
-                        {notification.source === 'server' ? 'Mark as read' : 'Dismiss'}
+                        {notification.source === 'server' ? '읽음 처리' : '닫기'}
                       </button>
                     </div>
                   </li>
@@ -1208,44 +1314,44 @@ export default function LobbyPage() {
 
           {feedbackPrompt ? (
             <div className="lobby-info-card">
-              <h2>Leave feedback for this session</h2>
+              <h2>이번 세션 피드백 남기기</h2>
               <p className="app-note">
-                Session #{feedbackPrompt.requestId} with {feedbackPrompt.counterpartName}
+                세션 #{feedbackPrompt.requestId} · {feedbackPrompt.counterpartName}
               </p>
-              <p className="app-note">Your role: {feedbackPrompt.role}</p>
+              <p className="app-note">내 역할: {formatParticipantRole(feedbackPrompt.role)}</p>
               {feedbackPrompt.requestMessage ? (
                 <p className="app-note">
-                  Request summary: {feedbackPrompt.requestMessage}
+                  요청 요약: {feedbackPrompt.requestMessage}
                 </p>
               ) : null}
               <p className="app-note">
                 {feedbackPrompt.sessionSource === 'reservation'
-                  ? 'Reservation session feedback fallback was removed. This prompt stays visible, but saving will open after the reservation feedback API is added.'
-                  : 'Request session feedback is stored on the server and shown again in your history.'}
+                  ? '예약 세션 피드백은 아직 준비 중입니다. 기능이 열리면 이 화면에서 바로 저장할 수 있습니다.'
+                  : '요청 기반 세션 피드백은 서버에 저장되며, 아래 히스토리에서도 다시 확인할 수 있습니다.'}
               </p>
 
               <form className="mentoring-form" onSubmit={handleFeedbackSubmit}>
                 <label className="app-field">
-                  <span>Rating</span>
+                  <span>평점</span>
                   <select
                     className="app-input"
                     value={feedbackRating}
                     onChange={(event) => setFeedbackRating(event.target.value)}
                     disabled={isFeedbackLocked}
                   >
-                    <option value="5">5 - Excellent</option>
-                    <option value="4">4 - Good</option>
-                    <option value="3">3 - Okay</option>
-                    <option value="2">2 - Needs work</option>
-                    <option value="1">1 - Poor</option>
+                    <option value="5">5 - 매우 만족</option>
+                    <option value="4">4 - 만족</option>
+                    <option value="3">3 - 보통</option>
+                    <option value="2">2 - 아쉬움</option>
+                    <option value="1">1 - 불만족</option>
                   </select>
                 </label>
 
                 <label className="app-field">
-                  <span>Session summary</span>
+                  <span>세션 요약</span>
                   <textarea
                     className="app-input mentoring-textarea"
-                    placeholder="Summarize what you covered in this mentoring session."
+                    placeholder="이번 멘토링 세션에서 다룬 내용을 짧게 정리해 주세요."
                     value={feedbackSummary}
                     onChange={(event) => setFeedbackSummary(event.target.value)}
                     rows={2}
@@ -1254,10 +1360,10 @@ export default function LobbyPage() {
                 </label>
 
                 <label className="app-field">
-                  <span>Feedback</span>
+                  <span>피드백</span>
                   <textarea
                     className="app-input mentoring-textarea"
-                    placeholder="Leave a short note about how the session went."
+                    placeholder="세션이 어땠는지 짧은 후기를 남겨 주세요."
                     value={feedbackMessage}
                     onChange={(event) => setFeedbackMessage(event.target.value)}
                     rows={3}
@@ -1268,12 +1374,12 @@ export default function LobbyPage() {
                 <div className="mentoring-request-actions">
                   <button type="submit" className="primary-button" disabled={isFeedbackLocked}>
                     {feedbackStatus === 'saving'
-                      ? 'Saving feedback...'
+                      ? '저장 중...'
                       : feedbackStatus === 'saved'
-                        ? 'Feedback saved'
+                        ? '저장 완료'
                         : feedbackPrompt.sessionSource === 'reservation'
-                          ? 'Reservation feedback pending'
-                          : 'Save feedback'}
+                          ? '예약 피드백 준비 중'
+                          : '피드백 저장'}
                   </button>
                   <button
                     type="button"
@@ -1281,7 +1387,7 @@ export default function LobbyPage() {
                     onClick={handleDismissFeedback}
                     disabled={feedbackStatus === 'saving'}
                   >
-                    Dismiss
+                    닫기
                   </button>
                 </div>
               </form>
@@ -1292,9 +1398,9 @@ export default function LobbyPage() {
           ) : null}
 
           <div className="lobby-info-card">
-            <h2>Recent session feedback</h2>
+            <h2>최근 세션 피드백</h2>
             {feedbackHistory.length === 0 ? (
-              <p className="app-note">No server feedback history yet.</p>
+              <p className="app-note">아직 저장된 세션 피드백이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {feedbackHistory.map((feedbackItem) => (
@@ -1302,20 +1408,18 @@ export default function LobbyPage() {
                     key={feedbackItem.id ?? `${feedbackItem.sessionSource}-${feedbackItem.requestId}`}
                     className="mentoring-request-card"
                   >
-                    <strong>{feedbackItem.counterpartName || 'Session partner'}</strong>
+                    <strong>{feedbackItem.counterpartName || '세션 상대'}</strong>
                     <span>
-                      {feedbackItem.sessionSource === 'reservation'
-                        ? 'Scheduled mentoring'
-                        : 'Request mentoring'}
+                      {formatSessionSourceLabel(feedbackItem.sessionSource)}
                     </span>
                     <p>{formatHistorySessionLabel(feedbackItem)}</p>
-                    <p>Saved at: {formatFeedbackTimestamp(feedbackItem.submittedAt)}</p>
+                    <p>저장 시각: {formatFeedbackTimestamp(feedbackItem.submittedAt)}</p>
                     {feedbackItem.reservedAt ? (
-                      <p>Reserved for: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
+                      <p>예약 시간: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
                     ) : null}
-                    <p>Rating: {feedbackItem.rating || 0}/5</p>
-                    <p>{feedbackItem.summary || 'No session summary was saved.'}</p>
-                    <p>{feedbackItem.feedback || 'No feedback note was saved.'}</p>
+                    <p>평점: {feedbackItem.rating || 0}/5</p>
+                    <p>{feedbackItem.summary || '저장된 세션 요약이 없습니다.'}</p>
+                    <p>{feedbackItem.feedback || '저장된 피드백 메모가 없습니다.'}</p>
                   </li>
                 ))}
               </ul>
@@ -1323,10 +1427,10 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card">
-            <h2>Realtime connection</h2>
-            <p className="app-note">Status: {connectionStatus}</p>
+            <h2>실시간 연결 상태</h2>
+            <p className="app-note">상태: {formatRealtimeConnectionStatus(connectionStatus)}</p>
             <p className="app-note">
-              Last event: {lastMessage?.type || 'Waiting for server response...'}
+              마지막 이벤트: {lastMessage?.type || '서버 응답을 기다리는 중입니다...'}
             </p>
             {lastError ? <p className="app-error">{lastError}</p> : null}
             {lastMessage ? (
@@ -1337,10 +1441,10 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card">
-            <h2>Mentoring request</h2>
+            <h2>멘토링 요청</h2>
             <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
               <label className="app-field">
-                <span>Mentor target</span>
+                <span>멘토 대상</span>
                 <select
                   className="app-input"
                   value={selectedMentorId}
@@ -1348,7 +1452,7 @@ export default function LobbyPage() {
                   disabled={mentorOptions.length === 0 || isSubmittingRequest}
                 >
                   {mentorOptions.length === 0 ? (
-                    <option value="">No mentor candidates in lobby</option>
+                    <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
                   ) : null}
                   {mentorOptions.map((mentor) => (
                     <option key={mentor.userId} value={mentor.userId}>
@@ -1359,10 +1463,10 @@ export default function LobbyPage() {
               </label>
 
               <label className="app-field">
-                <span>Message</span>
+                <span>메시지</span>
                 <textarea
                   className="app-input mentoring-textarea"
-                  placeholder="Can you help me with a mentoring session?"
+                  placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
                   value={mentoringMessage}
                   onChange={(event) => setMentoringMessage(event.target.value)}
                   rows={3}
@@ -1374,7 +1478,7 @@ export default function LobbyPage() {
                 className="primary-button"
                 disabled={mentorOptions.length === 0 || isSubmittingRequest}
               >
-                {isSubmittingRequest ? 'Sending...' : 'Send request'}
+                {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
               </button>
             </form>
             {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
@@ -1382,13 +1486,13 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card">
-            <h2>Mentoring reservation</h2>
+            <h2>멘토링 예약</h2>
             <p className="app-note">
-              Use the current lobby participants as temporary reservation targets.
+              현재 로비에 있는 참가자를 예약 대상으로 선택할 수 있습니다.
             </p>
             <form className="mentoring-form" onSubmit={handleReservationSubmit}>
               <label className="app-field">
-                <span>Reservation target</span>
+                <span>예약 대상</span>
                 <select
                   className="app-input"
                   value={selectedReservationMentorId}
@@ -1396,7 +1500,7 @@ export default function LobbyPage() {
                   disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
                 >
                   {mentorOptions.length === 0 ? (
-                    <option value="">No mentor candidates in lobby</option>
+                    <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
                   ) : null}
                   {mentorOptions.map((mentor) => (
                     <option key={mentor.userId} value={mentor.userId}>
@@ -1407,7 +1511,7 @@ export default function LobbyPage() {
               </label>
 
               <label className="app-field">
-                <span>Reservation time</span>
+                <span>예약 시간</span>
                 <input
                   type="datetime-local"
                   className="app-input"
@@ -1418,10 +1522,10 @@ export default function LobbyPage() {
               </label>
 
               <label className="app-field">
-                <span>Message</span>
+                <span>메시지</span>
                 <textarea
                   className="app-input mentoring-textarea"
-                  placeholder="I'd like to schedule a portfolio review for later."
+                  placeholder="예: 나중에 포트폴리오 리뷰를 받고 싶어요."
                   value={reservationMessage}
                   onChange={(event) => setReservationMessage(event.target.value)}
                   rows={3}
@@ -1434,7 +1538,7 @@ export default function LobbyPage() {
                 className="primary-button"
                 disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
               >
-                {reservationStatus === 'saving' ? 'Saving reservation...' : 'Create reservation'}
+                {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
               </button>
             </form>
             {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
@@ -1442,9 +1546,9 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card" ref={myReservationsSectionRef}>
-            <h2>My reservations</h2>
+            <h2>내 예약</h2>
             {reservations.length === 0 ? (
-              <p className="app-note">No mentoring reservations yet.</p>
+              <p className="app-note">아직 생성한 멘토링 예약이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {reservations.map((reservation) => {
@@ -1463,9 +1567,9 @@ export default function LobbyPage() {
                   return (
                     <li key={reservation.id} className="mentoring-request-card">
                       <strong>{reservation.mentorLabel}</strong>
-                      <span>{reservation.status}</span>
+                      <span>{formatReservationStatus(reservation.status)}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
-                      <p>{reservation.message || 'No reservation message provided.'}</p>
+                      <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
                       {reservation.status === 'ACCEPTED' ? (
                         <p>{reservationEntryState.label}</p>
                       ) : null}
@@ -1477,7 +1581,7 @@ export default function LobbyPage() {
                               className="primary-button"
                               onClick={() => openReservationSession(reservation)}
                             >
-                              Enter session
+                              세션 입장
                             </button>
                           ) : null}
                           <button
@@ -1486,7 +1590,7 @@ export default function LobbyPage() {
                             onClick={() => handleReservationCancel(reservation.id)}
                             disabled={isProcessing}
                           >
-                            {isProcessing ? 'Canceling...' : 'Cancel'}
+                            {isProcessing ? '취소 중...' : '취소'}
                           </button>
                         </div>
                       ) : null}
@@ -1498,11 +1602,11 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card" ref={receivedReservationsSectionRef}>
-            <h2>Received reservations</h2>
+            <h2>받은 예약</h2>
             {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
             {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
             {receivedReservations.length === 0 ? (
-              <p className="app-note">No received reservations yet.</p>
+              <p className="app-note">아직 받은 예약이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {receivedReservations.map((reservation) => {
@@ -1517,10 +1621,10 @@ export default function LobbyPage() {
 
                   return (
                     <li key={reservation.id} className="mentoring-request-card">
-                      <strong>{reservation.requesterLabel || 'Unknown requester'}</strong>
-                      <span>{reservation.status}</span>
+                      <strong>{reservation.requesterLabel || '알 수 없는 요청자'}</strong>
+                      <span>{formatReservationStatus(reservation.status)}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
-                      <p>{reservation.message || 'No reservation message provided.'}</p>
+                      <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
                       {reservation.status === 'ACCEPTED' ? (
                         <p>{reservationEntryState.label}</p>
                       ) : null}
@@ -1532,7 +1636,7 @@ export default function LobbyPage() {
                               className="primary-button"
                               onClick={() => openReservationSession(reservation)}
                             >
-                              Enter session
+                              세션 입장
                             </button>
                           ) : null}
                           {isPending ? (
@@ -1545,7 +1649,7 @@ export default function LobbyPage() {
                                 }
                                 disabled={isProcessing}
                               >
-                                {isProcessing ? 'Processing...' : 'Accept'}
+                                {isProcessing ? '처리 중...' : '수락'}
                               </button>
                               <button
                                 type="button"
@@ -1555,7 +1659,7 @@ export default function LobbyPage() {
                                 }
                                 disabled={isProcessing}
                               >
-                                Reject
+                                거절
                               </button>
                             </>
                           ) : null}
@@ -1569,16 +1673,16 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card" ref={sentRequestsSectionRef}>
-            <h2>Sent mentoring requests</h2>
+            <h2>보낸 멘토링 요청</h2>
             {sentRequests.length === 0 ? (
-              <p className="app-note">No mentoring requests sent yet.</p>
+              <p className="app-note">아직 보낸 멘토링 요청이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {sentRequests.map((request) => (
                   <li key={request.id} className="mentoring-request-card">
                     <strong>{request.mentorLabel}</strong>
-                    <span>{request.status}</span>
-                    <p>{request.message || 'No message provided.'}</p>
+                    <span>{formatRequestStatus(request.status)}</span>
+                    <p>{request.message || '메시지가 없습니다.'}</p>
                     {request.status === 'ACCEPTED' ? (
                       <div className="mentoring-request-actions">
                         <button
@@ -1586,7 +1690,7 @@ export default function LobbyPage() {
                           className="primary-button"
                           onClick={() => openMentoringSession(request)}
                         >
-                          Enter session
+                          세션 입장
                         </button>
                       </div>
                     ) : null}
@@ -1597,10 +1701,10 @@ export default function LobbyPage() {
           </div>
 
           <div className="lobby-info-card">
-            <h2>Received mentoring requests</h2>
+            <h2>받은 멘토링 요청</h2>
             {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
             {receivedRequests.length === 0 ? (
-              <p className="app-note">No mentoring requests received yet.</p>
+              <p className="app-note">아직 받은 멘토링 요청이 없습니다.</p>
             ) : (
               <ul className="mentoring-request-list">
                 {receivedRequests.map((request) => {
@@ -1610,8 +1714,8 @@ export default function LobbyPage() {
                   return (
                     <li key={request.id} className="mentoring-request-card">
                       <strong>{request.requesterLabel}</strong>
-                      <span>{request.status}</span>
-                      <p>{request.message || 'No message provided.'}</p>
+                      <span>{formatRequestStatus(request.status)}</span>
+                      <p>{request.message || '메시지가 없습니다.'}</p>
                       {isPending || request.status === 'ACCEPTED' ? (
                         <div className="mentoring-request-actions">
                           {isPending ? (
@@ -1622,7 +1726,7 @@ export default function LobbyPage() {
                                 onClick={() => handleMentoringDecision(request.id, 'accept')}
                                 disabled={isProcessing}
                               >
-                                {isProcessing ? 'Processing...' : 'Accept'}
+                                {isProcessing ? '처리 중...' : '수락'}
                               </button>
                               <button
                                 type="button"
@@ -1630,7 +1734,7 @@ export default function LobbyPage() {
                                 onClick={() => handleMentoringDecision(request.id, 'reject')}
                                 disabled={isProcessing}
                               >
-                                Reject
+                                거절
                               </button>
                             </>
                           ) : null}
@@ -1640,7 +1744,7 @@ export default function LobbyPage() {
                               className="primary-button"
                               onClick={() => openMentoringSession(request)}
                             >
-                              Enter session
+                              세션 입장
                             </button>
                           ) : null}
                         </div>
@@ -1653,10 +1757,10 @@ export default function LobbyPage() {
           </div>
 
           <section className="app-section">
-            <h2>Available spaces</h2>
-            {isLoading ? <p className="app-note">Loading spaces...</p> : null}
+            <h2>이용 가능한 공간</h2>
+            {isLoading ? <p className="app-note">공간 정보를 불러오는 중입니다...</p> : null}
             {!isLoading && spaces.length === 0 ? (
-              <p className="app-note">No spaces are available yet.</p>
+              <p className="app-note">아직 이용 가능한 공간이 없습니다.</p>
             ) : null}
             {!isLoading && spaces.length > 0 ? (
               <ul className="space-list">
@@ -1664,7 +1768,7 @@ export default function LobbyPage() {
                   <li key={space.id} className="space-card">
                     <strong>{space.name}</strong>
                     <span>
-                      {space.type} · capacity {space.maxCapacity}
+                      {space.type} · 최대 {space.maxCapacity}명
                     </span>
                     <p>{space.description}</p>
                   </li>
@@ -1677,31 +1781,30 @@ export default function LobbyPage() {
         <section className="lobby-stage">
           <div className="lobby-stage-header">
             <div>
-              <h2>Metaverse lobby</h2>
+              <h2>메타버스 로비</h2>
               <p className="app-note">
-                This is the minimum NeoSquare lobby scene. Use the arrow keys to move
-                your character.
+                NeoSquare 로비를 움직이며 공간 인터랙션을 확인해 보세요. 방향키로 캐릭터를 이동할 수 있습니다.
               </p>
             </div>
           </div>
           <LobbyGame
-            playerLabel={currentUser?.nickname || 'You'}
+            playerLabel={currentUser?.nickname || '나'}
             onPlayerMove={sendUserMove}
             remoteEvent={remoteEvent}
           />
           <section className="lobby-chat-panel">
             <div className="lobby-chat-header">
               <div>
-                <h3>Lobby chat</h3>
+                <h3>로비 채팅</h3>
                 <p className="app-note">
-                  Messages are sent through the current lobby WebSocket connection.
+                  메시지는 현재 로비 실시간 연결을 통해 전송됩니다.
                 </p>
               </div>
             </div>
 
             <div className="lobby-chat-messages">
               {chatMessages.length === 0 ? (
-                <p className="app-note">No chat messages yet.</p>
+                <p className="app-note">아직 채팅 메시지가 없습니다.</p>
               ) : (
                 chatMessages.map((message) => (
                   <article
@@ -1709,7 +1812,7 @@ export default function LobbyPage() {
                     className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
                   >
                     <span className="chat-message__meta">
-                      {message.isMine ? 'You' : message.nickname}
+                      {message.isMine ? '나' : message.nickname}
                     </span>
                     <p>{message.content}</p>
                   </article>
@@ -1722,12 +1825,12 @@ export default function LobbyPage() {
               <input
                 type="text"
                 className="app-input"
-                placeholder="Type a message"
+                placeholder="메시지를 입력하세요"
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
               />
               <button type="submit" className="primary-button">
-                Send
+                전송
               </button>
             </form>
           </section>

@@ -27,14 +27,14 @@ function normalizeSessionRequest(rawValue) {
       request.requesterName ||
       request.senderNickname ||
       request.userNickname ||
-      'Requester',
+      '요청자',
     mentorId: request.mentorId ?? request.receiverId ?? request.targetUserId ?? null,
     mentorLabel:
       request.mentorNickname ||
       request.mentorName ||
       request.receiverNickname ||
       request.targetNickname ||
-      'Mentor',
+      '멘토',
     reservedAt: null,
     sessionSource: 'request',
     createdAt: request.createdAt || request.timestamp || null,
@@ -60,7 +60,7 @@ function normalizeReservationSession(rawValue) {
       reservation.requesterName ||
       reservation.senderNickname ||
       reservation.userNickname ||
-      'Requester',
+      '요청자',
     mentorId: reservation.mentorId ?? reservation.receiverId ?? reservation.targetUserId ?? null,
     mentorLabel:
       reservation.mentorLabel ||
@@ -68,7 +68,7 @@ function normalizeReservationSession(rawValue) {
       reservation.mentorName ||
       reservation.receiverNickname ||
       reservation.targetNickname ||
-      'Mentor',
+      '멘토',
     reservedAt: reservation.reservedAt || reservation.scheduledAt || null,
     sessionSource: 'reservation',
     createdAt: reservation.createdAt || reservation.timestamp || null,
@@ -96,6 +96,82 @@ function formatSessionTimestamp(value) {
   }
 
   return parsedDate.toLocaleString();
+}
+
+function formatSessionRole(role) {
+  if (role === 'Requester') {
+    return '요청자';
+  }
+
+  if (role === 'Mentor') {
+    return '멘토';
+  }
+
+  return '참여자';
+}
+
+function formatSessionStatus(status) {
+  if (status === 'PENDING') {
+    return '대기 중';
+  }
+
+  if (status === 'ACCEPTED') {
+    return '수락됨';
+  }
+
+  if (status === 'REJECTED') {
+    return '거절됨';
+  }
+
+  if (status === 'CANCELED') {
+    return '취소됨';
+  }
+
+  if (status === 'COMPLETED') {
+    return '종료됨';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatSessionChatStatus(status) {
+  if (status === 'idle') {
+    return '대기 중';
+  }
+
+  if (status === 'connecting') {
+    return '연결 중';
+  }
+
+  if (status === 'connected') {
+    return '연결됨';
+  }
+
+  if (status === 'disconnected') {
+    return '연결 종료';
+  }
+
+  if (status === 'error') {
+    return '오류';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatSignalType(type) {
+  if (type === 'webrtc_offer') {
+    return '연결 제안';
+  }
+
+  if (type === 'webrtc_answer') {
+    return '연결 응답';
+  }
+
+  if (type === 'webrtc_ice_candidate') {
+    return 'ICE 후보';
+  }
+
+  return type || '없음';
 }
 
 export default function MentoringSessionPage() {
@@ -228,7 +304,7 @@ export default function MentoringSessionPage() {
         const message =
           error?.response?.data?.message ||
           error.message ||
-          'Failed to load mentoring session.';
+          '멘토링 세션 정보를 불러오지 못했습니다.';
         setErrorMessage(message);
       } finally {
         if (isMounted) {
@@ -309,7 +385,7 @@ export default function MentoringSessionPage() {
 
     if (isReservationSession) {
       setActionMessage(
-        'Local preview is ready. Reservation sessions can use this workspace now, and realtime signaling can be attached later.'
+        '로컬 미리보기가 준비되었습니다. 예약 세션은 현재 이 화면을 공용으로 사용하며, 실시간 연결은 추후 보강될 예정입니다.'
       );
       return;
     }
@@ -330,7 +406,7 @@ export default function MentoringSessionPage() {
     }
 
     setSessionExitStatus('ending');
-    setActionMessage('Ending session...');
+    setActionMessage('세션을 종료하는 중입니다...');
     setErrorMessage('');
 
     try {
@@ -344,17 +420,17 @@ export default function MentoringSessionPage() {
       setSessionRequest(completedSession);
       cleanupSessionResources();
       setSessionExitStatus('ended');
-      setActionMessage('Session ended. Returning to lobby for quick feedback...');
+      setActionMessage('세션이 종료되었습니다. 로비로 돌아가 빠르게 피드백을 남겨 보세요.');
 
       endSessionTimeoutRef.current = window.setTimeout(() => {
         navigateToLobby({
           refreshMentoring: true,
           sessionMessage: isReservationSession
-            ? 'Mentoring session ended. Reservation feedback sync is not available yet.'
-            : 'Mentoring session ended. You can leave quick feedback below.',
+            ? '멘토링 세션이 종료되었습니다. 예약 피드백 연동은 아직 준비 중입니다.'
+            : '멘토링 세션이 종료되었습니다. 아래에서 빠르게 피드백을 남길 수 있습니다.',
           feedbackPrompt: {
             requestId: completedSession?.id ?? sessionRequest?.id ?? requestId,
-            counterpartName: counterpartName || 'Session partner',
+            counterpartName: counterpartName || '세션 상대',
             role: myRole,
             sessionSource: completedSession?.sessionSource || sessionRequest?.sessionSource || 'request',
             reservedAt: completedSession?.reservedAt || sessionRequest?.reservedAt || null,
@@ -366,7 +442,7 @@ export default function MentoringSessionPage() {
       setSessionExitStatus('idle');
       setActionMessage('');
       setErrorMessage(
-        error?.response?.data?.message || error.message || 'Failed to end this mentoring session.'
+        error?.response?.data?.message || error.message || '멘토링 세션 종료에 실패했습니다.'
       );
     }
   };
@@ -392,106 +468,106 @@ export default function MentoringSessionPage() {
 
   const videoStatusLabel =
     videoCallStatus === 'connected'
-      ? 'Connected'
+      ? '연결됨'
       : videoCallStatus === 'connecting'
-        ? 'Connecting'
+        ? '연결 중'
         : videoCallStatus === 'signaling'
-          ? 'Signaling'
+          ? '시그널링 중'
           : videoCallStatus === 'ready'
-            ? 'Video call ready'
+            ? '영상 연결 준비 완료'
             : videoCallStatus === 'error'
-              ? 'Error'
+              ? '오류'
               : videoCallStatus === 'disconnected'
-                ? 'Disconnected'
+                ? '연결 끊김'
               : videoCallStatus === 'preparing'
-                ? 'Preparing'
-                : 'Not connected';
+                ? '준비 중'
+                : '미연결';
 
   const localMediaStatusLabel =
     localMediaStatus === 'ready'
-      ? 'Local media ready'
+      ? '로컬 미디어 준비 완료'
       : localMediaStatus === 'preparing'
-        ? 'Preparing local media'
+        ? '로컬 미디어 준비 중'
         : localMediaStatus === 'error'
-          ? 'Local media error'
-          : 'Local media idle';
+          ? '로컬 미디어 오류'
+          : '로컬 미디어 대기';
 
   const localVideoStatus =
     videoCallStatus === 'connected'
-      ? 'Local preview is connected to the peer session.'
+      ? '로컬 화면이 상대 세션과 연결되었습니다.'
       : videoCallStatus === 'connecting'
-        ? 'Local preview is attached. Waiting for remote stream.'
+        ? '로컬 화면이 연결되었고 상대 영상을 기다리는 중입니다.'
         : videoCallStatus === 'signaling'
-          ? 'Offer/answer exchange is in progress.'
+          ? '연결 제안과 응답을 교환하는 중입니다.'
           : localMediaStatus === 'ready'
-      ? cameraOn
-        ? 'Local preview ready.'
-        : 'Camera is off. Turn it on before preview.'
-      : localMediaStatus === 'preparing'
-        ? 'Preparing local camera and microphone.'
-        : localMediaStatus === 'error' || videoCallStatus === 'error'
-          ? 'Local preview could not be prepared.'
-          : 'Camera off';
+            ? cameraOn
+              ? '로컬 미리보기가 준비되었습니다.'
+              : '카메라가 꺼져 있습니다. 필요하면 켜 주세요.'
+            : localMediaStatus === 'preparing'
+              ? '로컬 카메라와 마이크를 준비하는 중입니다.'
+              : localMediaStatus === 'error' || videoCallStatus === 'error'
+                ? '로컬 미리보기를 준비하지 못했습니다.'
+                : '카메라 꺼짐';
 
   const remoteVideoStatus =
     hasRemoteStream
-      ? 'Remote stream connected.'
+      ? '상대 영상이 연결되었습니다.'
       : videoCallStatus === 'connecting'
-        ? 'Connecting remote stream...'
+        ? '상대 영상을 연결하는 중입니다...'
         : videoCallStatus === 'signaling'
-          ? 'Waiting for offer/answer exchange.'
+          ? '연결 제안과 응답 교환을 기다리는 중입니다.'
           : videoCallStatus === 'disconnected'
-            ? 'Remote participant is offline or the call was interrupted.'
+            ? '상대가 오프라인이거나 통화가 끊어졌습니다.'
             : videoCallStatus === 'error'
-              ? 'Remote connection failed. Retry the session call.'
-          : videoCallStatus === 'preparing'
-            ? 'Preparing peer connection.'
-            : 'Remote not connected';
+              ? '상대 연결에 실패했습니다. 다시 시도해 주세요.'
+              : videoCallStatus === 'preparing'
+                ? '상대 연결을 준비하는 중입니다.'
+                : '상대 미연결';
 
   return (
     <AppLayout
-      eyebrow="Mentoring"
-      title="Mentoring session"
-      description="This is the minimum session entry screen for an accepted mentoring request."
+      eyebrow="멘토링"
+      title="멘토링 세션"
+      description="수락된 멘토링 요청 또는 예약을 기준으로 대화와 영상 연결을 이어가는 세션 화면입니다."
       panelClassName="app-panel--wide"
     >
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
 
       {isLoading ? (
-        <p className="app-note">Loading session...</p>
+        <p className="app-note">세션 정보를 불러오는 중입니다...</p>
       ) : sessionRequest ? (
         <section className="session-panel">
           <section className="session-hero">
             <div className="session-hero__main">
               <p className="session-hero__eyebrow">
-                {isReservationSession ? 'Reservation session' : 'Session ready'}
+                {isReservationSession ? '예약 세션' : '세션 준비 완료'}
               </p>
-              <h2>{counterpartName || 'Unknown user'}</h2>
+              <h2>{counterpartName || '알 수 없는 사용자'}</h2>
               <p className="session-hero__summary">
-                {sessionRequest.message || 'No mentoring request summary was provided.'}
+                {sessionRequest.message || '저장된 멘토링 요약이 없습니다.'}
               </p>
               <div className="session-meta-list">
                 <span className="session-meta-pill">
-                  Type: {isReservationSession ? 'Scheduled mentoring' : 'Request mentoring'}
+                  유형: {isReservationSession ? '예약 멘토링' : '요청 멘토링'}
                 </span>
-                <span className="session-meta-pill">Role: {myRole}</span>
-                <span className="session-meta-pill">Status: {sessionRequest.status}</span>
+                <span className="session-meta-pill">역할: {formatSessionRole(myRole)}</span>
+                <span className="session-meta-pill">상태: {formatSessionStatus(sessionRequest.status)}</span>
                 <span className="session-meta-pill">
-                  {isReservationSession ? 'Reservation' : 'Request'} #{sessionRequest.id}
+                  {isReservationSession ? '예약' : '요청'} #{sessionRequest.id}
                 </span>
                 {sessionRequest.reservedAt ? (
                   <span className="session-meta-pill">
-                    Reserved for: {formatSessionTimestamp(sessionRequest.reservedAt)}
+                    예약 시각: {formatSessionTimestamp(sessionRequest.reservedAt)}
                   </span>
                 ) : null}
               </div>
               <p className="app-note">
                 {isReservationSession
-                  ? 'This session was opened from an accepted reservation. You can continue with the same mentoring workspace here.'
-                  : 'You can continue the conversation here before moving into video mentoring.'}
+                  ? '수락된 예약에서 이어진 세션입니다. 이 화면에서 동일한 멘토링 작업 공간을 계속 사용할 수 있습니다.'
+                  : '영상 멘토링으로 넘어가기 전 이 화면에서 대화와 연결 준비를 이어갈 수 있습니다.'}
               </p>
               {sessionRequest.createdAt ? (
-                <p className="app-note">Request created at: {sessionRequest.createdAt}</p>
+                <p className="app-note">생성 시각: {formatSessionTimestamp(sessionRequest.createdAt)}</p>
               ) : null}
             </div>
 
@@ -507,10 +583,10 @@ export default function MentoringSessionPage() {
                 }
               >
                 {sessionExitStatus === 'ending'
-                  ? 'Ending session...'
+                  ? '세션 종료 중...'
                   : sessionRequest.status === 'COMPLETED'
-                    ? 'Session completed'
-                    : 'End session'}
+                    ? '세션 종료 완료'
+                    : '세션 종료'}
               </button>
               <button
                 type="button"
@@ -518,7 +594,7 @@ export default function MentoringSessionPage() {
                 onClick={handleBackToLobby}
                 disabled={sessionExitStatus === 'ending'}
               >
-                Back to lobby
+                로비로 돌아가기
               </button>
             </div>
           </section>
@@ -543,20 +619,22 @@ export default function MentoringSessionPage() {
             >
               <div className="session-video-header">
                 <div>
-                  <h2>Video mentoring area</h2>
+                  <h2>영상 멘토링 영역</h2>
                   <p className="app-note">
                     {isReservationSession
-                      ? 'Local preview is available here. Reservation sessions can attach realtime signaling later.'
-                      : 'Prepare signaling, peer connection, and remote video here.'}
+                      ? '이 영역에서 로컬 미리보기를 사용할 수 있습니다. 예약 세션용 실시간 연결은 이후 보강됩니다.'
+                      : '이 영역에서 시그널링과 피어 연결을 준비하고 상대 영상을 확인할 수 있습니다.'}
                   </p>
                 </div>
                 <div className="session-video-status-list">
-                  <span className="session-meta-pill">Connection: {videoStatusLabel}</span>
-                  <span className="session-meta-pill">Local: {localMediaStatusLabel}</span>
-                  <span className="session-meta-pill">Camera: {cameraOn ? 'On' : 'Off'}</span>
-                  <span className="session-meta-pill">Microphone: {microphoneOn ? 'On' : 'Off'}</span>
+                  <span className="session-meta-pill">연결: {videoStatusLabel}</span>
+                  <span className="session-meta-pill">로컬: {localMediaStatusLabel}</span>
+                  <span className="session-meta-pill">카메라: {cameraOn ? '켜짐' : '꺼짐'}</span>
+                  <span className="session-meta-pill">마이크: {microphoneOn ? '켜짐' : '꺼짐'}</span>
                   {lastSignalType ? (
-                    <span className="session-meta-pill">Last signal: {lastSignalType}</span>
+                    <span className="session-meta-pill">
+                      최근 시그널: {formatSignalType(lastSignalType)}
+                    </span>
                   ) : null}
                 </div>
               </div>
@@ -565,8 +643,8 @@ export default function MentoringSessionPage() {
                 <article
                   className={`session-video-slot ${cameraOn ? 'session-video-slot--active' : ''}`}
                 >
-                  <span className="session-video-slot__label">Local video</span>
-                  <strong>{currentUser?.nickname || 'You'}</strong>
+                  <span className="session-video-slot__label">내 영상</span>
+                  <strong>{currentUser?.nickname || '나'}</strong>
                   <div className="session-video-stage">
                     {hasLocalPreview ? (
                       <video
@@ -578,7 +656,7 @@ export default function MentoringSessionPage() {
                       />
                     ) : (
                       <div className="session-video-placeholder">
-                        <span>Local preview unavailable</span>
+                        <span>로컬 미리보기가 없습니다</span>
                       </div>
                     )}
                   </div>
@@ -588,8 +666,8 @@ export default function MentoringSessionPage() {
                 <article
                   className={`session-video-slot ${videoCallStatus !== 'not_connected' ? 'session-video-slot--active' : ''}`}
                 >
-                  <span className="session-video-slot__label">Remote video</span>
-                  <strong>{counterpartName || 'Session partner'}</strong>
+                  <span className="session-video-slot__label">상대 영상</span>
+                  <strong>{counterpartName || '세션 상대'}</strong>
                   <div className="session-video-stage">
                     {hasRemoteStream ? (
                       <video
@@ -600,7 +678,7 @@ export default function MentoringSessionPage() {
                       />
                     ) : (
                       <div className="session-video-placeholder">
-                        <span>Remote preview will appear here</span>
+                        <span>상대 영상이 여기에 표시됩니다</span>
                       </div>
                     )}
                   </div>
@@ -620,16 +698,16 @@ export default function MentoringSessionPage() {
                   }
                 >
                   {videoCallStatus === 'connected'
-                    ? 'Video connected'
+                    ? '영상 연결됨'
                     : videoCallStatus === 'error' || videoCallStatus === 'disconnected'
-                      ? 'Retry connection'
+                      ? '다시 연결'
                       : videoCallStatus === 'ready'
-                        ? 'Start signaling'
+                        ? '시그널링 시작'
                         : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
-                          ? 'Connecting...'
+                          ? '연결 중...'
                     : videoCallStatus === 'error'
-                      ? 'Retry connection'
-                      : 'Start video call'}
+                      ? '다시 연결'
+                      : '영상 연결 시작'}
                 </button>
                 <button
                   type="button"
@@ -637,7 +715,7 @@ export default function MentoringSessionPage() {
                   onClick={handleToggleCamera}
                   disabled={!hasLocalPreview || sessionExitStatus === 'ending'}
                 >
-                  {cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                  {cameraOn ? '카메라 끄기' : '카메라 켜기'}
                 </button>
                 <button
                   type="button"
@@ -645,7 +723,7 @@ export default function MentoringSessionPage() {
                   onClick={handleToggleMicrophone}
                   disabled={!hasLocalPreview || sessionExitStatus === 'ending'}
                 >
-                  {microphoneOn ? 'Mute microphone' : 'Turn microphone on'}
+                  {microphoneOn ? '마이크 끄기' : '마이크 켜기'}
                 </button>
               </div>
             </section>
@@ -653,11 +731,11 @@ export default function MentoringSessionPage() {
             <section className="session-chat-panel">
               <div className="session-chat-header">
                 <div>
-                  <h2>Session chat</h2>
+                  <h2>세션 채팅</h2>
                   <p className="app-note">
                     {isReservationSession
-                      ? 'Reservation sessions currently reuse the page layout first. Session chat can be attached after reservation-backed realtime ids are added.'
-                      : `Status: ${sessionChatStatus}. This chat is scoped to request #${sessionRequest.id}.`}
+                      ? '예약 세션은 현재 페이지 레이아웃을 우선 재사용합니다. 예약 전용 실시간 식별자가 추가되면 세션 채팅도 함께 연결할 수 있습니다.'
+                      : `상태: ${formatSessionChatStatus(sessionChatStatus)}. 이 채팅은 요청 #${sessionRequest.id} 기준으로 동작합니다.`}
                   </p>
                 </div>
               </div>
@@ -666,7 +744,7 @@ export default function MentoringSessionPage() {
 
               <div className="session-chat-messages">
                 {sessionMessages.length === 0 ? (
-                  <p className="app-note">No session messages yet.</p>
+                  <p className="app-note">아직 세션 메시지가 없습니다.</p>
                 ) : (
                   sessionMessages.map((message) => (
                     <article
@@ -674,7 +752,7 @@ export default function MentoringSessionPage() {
                       className={`session-chat-message ${message.isMine ? 'session-chat-message--mine' : ''}`}
                     >
                       <span className="session-chat-message__meta">
-                        {message.isMine ? 'You' : message.nickname}
+                        {message.isMine ? '나' : message.nickname}
                       </span>
                       <p>{message.content}</p>
                     </article>
@@ -687,7 +765,7 @@ export default function MentoringSessionPage() {
                 <input
                   type="text"
                   className="app-input"
-                  placeholder="Type a mentoring session message"
+                  placeholder="세션에서 보낼 메시지를 입력하세요"
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   disabled={
@@ -705,14 +783,14 @@ export default function MentoringSessionPage() {
                     sessionExitStatus === 'ending'
                   }
                 >
-                  Send
+                  전송
                 </button>
               </form>
             </section>
           </section>
         </section>
       ) : (
-        <p className="app-note">No accepted mentoring session was found.</p>
+        <p className="app-note">입장 가능한 멘토링 세션을 찾지 못했습니다.</p>
       )}
     </AppLayout>
   );

@@ -46,8 +46,8 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 - WebSocket
 - JWT
 - Lombok
-- H2 (로컬 기본 설정)
-- MariaDB (목표 스택, 현재 설정 예시만 존재)
+- MariaDB
+- H2 (테스트 전용 설정)
 - Redis (목표 스택, 현재 로컬 자동 설정 비활성화)
 
 ### Frontend
@@ -80,8 +80,26 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 - Java 17
 - Node.js 18 이상 권장
 - npm
+- MariaDB 10.x 이상 권장
 
-현재 로컬 기본 설정은 H2 in-memory DB를 사용하므로, MariaDB와 Redis 없이도 기본 실행이 가능합니다.
+현재 backend 기본 실행 설정은 MariaDB를 사용합니다. Redis는 아직 자동 설정이 비활성화되어 있어 필수는 아닙니다.
+
+### Spring Profile 구성
+- `local`: 기본 프로필. MariaDB를 사용하고 로컬 시연용 더미 데이터를 자동으로 넣습니다.
+- `prod`: 운영용 프로필. MariaDB를 사용하며 더미 데이터를 넣지 않습니다.
+- `test`: 테스트 전용 프로필. H2 in-memory DB를 사용합니다.
+
+프로필을 명시하지 않으면 `local`이 기본으로 적용됩니다.
+
+### MariaDB 초기 준비 예시
+로컬에서 빠르게 실행하려면 먼저 MariaDB에 DB와 계정을 만들어 두는 편이 안전합니다.
+
+```sql
+CREATE DATABASE neosquare CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'neosquare'@'localhost' IDENTIFIED BY 'neosquare1234!';
+GRANT ALL PRIVILEGES ON neosquare.* TO 'neosquare'@'localhost';
+FLUSH PRIVILEGES;
+```
 
 ### 1. Backend 실행
 프로젝트 루트에서:
@@ -93,6 +111,15 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 기본 주소:
 - API: `http://localhost:8080`
 - Health check: `http://localhost:8080/api/health`
+
+실행 전에 최소한 아래 환경변수 또는 동일한 값의 datasource 설정이 필요합니다.
+
+```bash
+export DB_URL=jdbc:mariadb://localhost:3306/neosquare
+export DB_USERNAME=neosquare
+export DB_PASSWORD=neosquare1234!
+export JWT_SECRET=replace-with-32-bytes-or-more-secret
+```
 
 ### 2. Frontend 실행
 별도 터미널에서:
@@ -116,6 +143,8 @@ Backend 테스트:
 ./gradlew :backend:test
 ```
 
+테스트는 `test` 프로필과 H2 in-memory DB를 사용합니다.
+
 Frontend 빌드:
 
 ```bash
@@ -132,13 +161,34 @@ npm run build
 | --- | --- | --- |
 | `JWT_SECRET` | 기본 개발용 값 존재 | JWT 서명 키 |
 | `JWT_ACCESS_TOKEN_EXPIRATION_MILLIS` | `3600000` | access token 만료 시간(ms) |
-| `spring.datasource.url` | H2 in-memory 기본값 | 로컬 개발용 DB |
-| `spring.datasource.username` | `sa` | H2 기본 계정 |
-| `spring.datasource.password` | 빈 값 | H2 기본 비밀번호 |
+| `DB_URL` | `jdbc:mariadb://localhost:3306/neosquare` | MariaDB JDBC URL |
+| `DB_USERNAME` | `root` | MariaDB 계정 |
+| `DB_PASSWORD` | 빈 값 | MariaDB 비밀번호 |
+| `JPA_DDL_AUTO` | `update` | JPA 스키마 반영 전략 |
 
 참고:
-- MariaDB 설정 예시는 `application.yaml` 하단 주석에 포함되어 있습니다.
+- 공통 설정은 `application.yaml`, 프로필별 설정은 `application-local.yaml`, `application-prod.yaml`, `application-test.yaml`에 분리되어 있습니다.
+- backend 기본 실행은 `local` 프로필과 MariaDB를 기준으로 동작합니다.
+- 테스트만 `test` 프로필과 H2 in-memory 설정을 사용합니다.
 - Redis 자동 설정은 현재 비활성화되어 있어 로컬 실행 필수 조건이 아닙니다.
+
+### 로컬 더미 데이터
+`local` 프로필로 backend를 실행하면 로비와 멘토링 흐름을 바로 확인할 수 있게 더미 데이터가 자동으로 들어갑니다.
+
+공통 비밀번호:
+- `demo1234!`
+
+더미 계정:
+- `mina@neosquare.local` / `미나`
+- `jisu@neosquare.local` / `지수`
+- `hyunwoo@neosquare.local` / `현우`
+- `seoyeon@neosquare.local` / `서연`
+
+포함되는 더미 데이터:
+- 보낸 요청 / 받은 요청 / 수락된 요청 / 종료된 요청 예시
+- 수락된 예약 / 대기 중 예약 예시
+- 요청 기반 세션 피드백 예시
+- 요청 수락 / 예약 수락 알림 예시
 
 ### Frontend
 
@@ -204,7 +254,7 @@ NeoSquare/
 - WebRTC는 최소 signaling 및 P2P 연결 구조까지 구현되어 있으며, TURN 서버, 네트워크 예외 대응, 운영형 품질 보강이 필요합니다.
 - 예약 기반 세션은 세션 페이지를 재사용하지만, reservation 전용 signaling/chat/feedback API는 아직 확장 전입니다.
 - 피드백은 현재 request 기반 저장을 우선 지원합니다. reservation 기반 피드백은 아직 서버 API가 없습니다.
-- 로컬 개발은 H2 기준이며, MariaDB/Redis 운영형 구성은 아직 활성화되어 있지 않습니다.
+- Redis 운영형 구성은 아직 활성화되어 있지 않습니다.
 
 ### 예정 기능
 - reservation 기반 피드백 / 리뷰 저장

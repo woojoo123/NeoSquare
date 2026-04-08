@@ -67,7 +67,7 @@ function normalizeSignalControlMessage(message) {
 }
 
 function getConnectionErrorMessage(error) {
-  return error?.message || 'Failed to prepare WebRTC connection.';
+  return error?.message || '영상 연결을 준비하지 못했습니다.';
 }
 
 export function useSessionWebRTC({
@@ -88,7 +88,7 @@ export function useSessionWebRTC({
   const socketClosingRef = useRef(false);
   const [connectionStatus, setConnectionStatus] = useState('not_connected');
   const [statusMessage, setStatusMessage] = useState(
-    'Start the call after local media is ready.'
+    '로컬 미디어가 준비되면 통화를 시작할 수 있습니다.'
   );
   const [errorMessage, setErrorMessage] = useState('');
   const [lastSignalType, setLastSignalType] = useState('');
@@ -112,7 +112,7 @@ export function useSessionWebRTC({
     setHasRemoteStream(false);
   }
 
-  function cleanupPeerConnection(nextStatus = 'not_connected', nextMessage = 'WebRTC idle.') {
+  function cleanupPeerConnection(nextStatus = 'not_connected', nextMessage = '영상 연결 대기 중입니다.') {
     const peer = peerRef.current;
 
     if (peer) {
@@ -180,7 +180,7 @@ export function useSessionWebRTC({
 
           if (!activeTracks) {
             clearRemoteStream();
-            setStatus('disconnected', 'Remote media stopped. Retry the connection if needed.', {
+            setStatus('disconnected', '상대 미디어가 종료되었습니다. 필요하면 다시 연결해 주세요.', {
               canRetry: true,
             });
           }
@@ -199,8 +199,8 @@ export function useSessionWebRTC({
   function ensurePeerConnection(streamOverride) {
     if (typeof RTCPeerConnection === 'undefined') {
       setConnectionStatus('error');
-      setErrorMessage('This browser does not support RTCPeerConnection.');
-      setStatus('error', 'WebRTC connection is unavailable in this environment.', {
+      setErrorMessage('이 브라우저는 영상 통화 연결을 지원하지 않습니다.');
+      setStatus('error', '현재 환경에서는 영상 연결을 사용할 수 없습니다.', {
         canRetry: false,
       });
       return null;
@@ -246,31 +246,31 @@ export function useSessionWebRTC({
     peer.ontrack = (event) => {
       const [nextRemoteStream] = event.streams;
       attachRemoteStream(nextRemoteStream);
-      setStatus('connected', 'Remote stream connected.');
+      setStatus('connected', '상대 영상이 연결되었습니다.');
     };
 
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
 
       if (state === 'connected') {
-        setStatus('connected', 'WebRTC peer connection established.');
+        setStatus('connected', '상대와 영상 연결이 수립되었습니다.');
         setErrorMessage('');
       } else if (state === 'connecting') {
-        setStatus('connecting', 'Connecting to the remote participant...');
+        setStatus('connecting', '상대 참가자와 연결 중입니다...');
       } else if (state === 'disconnected') {
         clearRemoteStream();
         setStatus(
           'disconnected',
-          'Peer connection disconnected. Retry after the other participant rejoins.',
+          '연결이 끊어졌습니다. 상대가 다시 참여하면 재시도해 주세요.',
           { canRetry: true }
         );
       } else if (state === 'failed') {
         clearRemoteStream();
-        setErrorMessage('WebRTC peer connection failed.');
-        setStatus('error', 'Peer connection failed.', { canRetry: true });
+        setErrorMessage('영상 연결에 실패했습니다.');
+        setStatus('error', '연결에 실패했습니다.', { canRetry: true });
       } else if (state === 'closed') {
         clearRemoteStream();
-        setStatus('not_connected', 'Peer connection closed.');
+        setStatus('not_connected', '연결이 종료되었습니다.');
       }
     };
 
@@ -278,8 +278,8 @@ export function useSessionWebRTC({
       const state = peer.iceConnectionState;
 
       if (state === 'failed') {
-        setErrorMessage('ICE connection failed.');
-        setStatus('error', 'ICE connection failed.', { canRetry: true });
+        setErrorMessage('ICE 연결에 실패했습니다.');
+        setStatus('error', 'ICE 연결에 실패했습니다.', { canRetry: true });
       }
     };
 
@@ -299,28 +299,28 @@ export function useSessionWebRTC({
     }
 
     if (!isSocketReadyRef.current) {
-      setStatus('signaling', 'Waiting for signaling socket before creating offer...');
+      setStatus('signaling', '시그널링 소켓 연결을 기다리는 중입니다...');
       return false;
     }
 
     try {
-      setStatus('signaling', 'Creating WebRTC offer...');
+      setStatus('signaling', '영상 연결 제안을 생성하는 중입니다...');
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       sendSignal('webrtc_offer', { sdp: offer });
-      setStatus('signaling', 'Offer sent. Waiting for answer...');
+      setStatus('signaling', '연결 제안을 전송했습니다. 응답을 기다리는 중입니다...');
       return true;
     } catch (error) {
       setErrorMessage(getConnectionErrorMessage(error));
-      setStatus('error', 'Failed to create WebRTC offer.', { canRetry: true });
+      setStatus('error', '영상 연결 제안을 만들지 못했습니다.', { canRetry: true });
       return false;
     }
   }
 
   async function createAnswer(signal) {
     if (!localStreamRef.current) {
-      setErrorMessage('Prepare local media before answering the session call.');
-      setStatus('error', 'Incoming offer received, but local media is not ready.', {
+      setErrorMessage('세션 응답 전에 로컬 미디어를 먼저 준비해 주세요.');
+      setStatus('error', '연결 제안을 받았지만 로컬 미디어가 아직 준비되지 않았습니다.', {
         canRetry: false,
       });
       return;
@@ -334,17 +334,17 @@ export function useSessionWebRTC({
     }
 
     try {
-      setStatus('signaling', 'Received offer. Creating answer...');
+      setStatus('signaling', '연결 제안을 받아 응답을 생성하는 중입니다...');
       await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
       await flushPendingIceCandidates(peer);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       sendSignal('webrtc_answer', { sdp: answer });
-      setStatus('connecting', 'Answer sent. Waiting for remote stream...');
+      setStatus('connecting', '연결 응답을 전송했습니다. 상대 영상을 기다리는 중입니다...');
       setErrorMessage('');
     } catch (error) {
       setErrorMessage(getConnectionErrorMessage(error));
-      setStatus('error', 'Failed to process incoming offer.', { canRetry: true });
+      setStatus('error', '받은 연결 제안을 처리하지 못했습니다.', { canRetry: true });
     }
   }
 
@@ -352,7 +352,7 @@ export function useSessionWebRTC({
     const peer = peerRef.current;
 
     if (!peer) {
-      setStatus('disconnected', 'Answer arrived before the local peer was ready. Retry the call.', {
+      setStatus('disconnected', '로컬 연결 준비 전에 연결 응답이 도착했습니다. 다시 시도해 주세요.', {
         canRetry: true,
       });
       return;
@@ -361,11 +361,11 @@ export function useSessionWebRTC({
     try {
       await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
       await flushPendingIceCandidates(peer);
-      setStatus('connecting', 'Answer received. Connecting to remote stream...');
+      setStatus('connecting', '연결 응답을 받아 상대 영상과 연결 중입니다...');
       setErrorMessage('');
     } catch (error) {
       setErrorMessage(getConnectionErrorMessage(error));
-      setStatus('error', 'Failed to apply remote answer.', { canRetry: true });
+      setStatus('error', '상대 연결 응답을 적용하지 못했습니다.', { canRetry: true });
     }
   }
 
@@ -396,8 +396,8 @@ export function useSessionWebRTC({
     setErrorMessage('');
 
     if (!activeStream) {
-      setErrorMessage('Local media is required before signaling.');
-      setStatus('error', 'Prepare local media before starting the WebRTC connection.', {
+      setErrorMessage('시그널링 전에 로컬 미디어가 필요합니다.');
+      setStatus('error', '영상 연결을 시작하기 전에 로컬 미디어를 준비해 주세요.', {
         canRetry: false,
       });
       return false;
@@ -407,13 +407,13 @@ export function useSessionWebRTC({
       peerRef.current &&
       ['error', 'disconnected', 'not_connected'].includes(connectionStatus)
     ) {
-      cleanupPeerConnection('not_connected', 'Resetting the previous WebRTC state...');
+      cleanupPeerConnection('not_connected', '이전 영상 연결 상태를 초기화하는 중입니다...');
     }
 
     ensurePeerConnection(activeStream);
 
     if (!isSocketReadyRef.current) {
-      setStatus('preparing', 'Opening signaling socket...');
+      setStatus('preparing', '시그널링 소켓을 여는 중입니다...');
       return true;
     }
 
@@ -421,7 +421,7 @@ export function useSessionWebRTC({
       return createOffer(activeStream);
     }
 
-    setStatus('signaling', 'Waiting for the other participant offer...');
+    setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
     return true;
   }
 
@@ -429,7 +429,7 @@ export function useSessionWebRTC({
     startRequestedRef.current = false;
     setErrorMessage('');
     setLastSignalType('');
-    cleanupPeerConnection('not_connected', 'WebRTC connection stopped.');
+    cleanupPeerConnection('not_connected', '영상 연결을 중지했습니다.');
   }
 
   useEffect(() => {
@@ -438,7 +438,7 @@ export function useSessionWebRTC({
       socketRef.current?.close();
       socketClosingRef.current = false;
       startRequestedRef.current = false;
-      cleanupPeerConnection('not_connected', 'WebRTC idle.');
+      cleanupPeerConnection('not_connected', '영상 연결 대기 중입니다.');
       setErrorMessage('');
       setLastSignalType('');
       isSocketReadyRef.current = false;
@@ -466,7 +466,7 @@ export function useSessionWebRTC({
             if (isInitiator) {
               await createOffer(localStreamRef.current);
             } else {
-              setStatus('signaling', 'Waiting for the other participant offer...');
+              setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
             }
           }
 
@@ -480,9 +480,9 @@ export function useSessionWebRTC({
 
           if (controlMessage.type === 'ws_ack') {
             if (controlMessage.receivedType === 'webrtc_offer') {
-              setStatus('signaling', 'Offer acknowledged. Waiting for answer...');
+              setStatus('signaling', '연결 제안 전송이 확인되었습니다. 응답을 기다리는 중입니다...');
             } else if (controlMessage.receivedType === 'webrtc_answer') {
-              setStatus('connecting', 'Answer acknowledged. Connecting to remote stream...');
+              setStatus('connecting', '연결 응답 전송이 확인되었습니다. 상대 영상과 연결 중입니다...');
             }
 
             return;
@@ -494,11 +494,11 @@ export function useSessionWebRTC({
             if (controlMessage.message.includes('not connected')) {
               setStatus(
                 'disconnected',
-                'The other participant is not connected to this session yet.',
+                '상대 참가자가 아직 이 세션에 접속하지 않았습니다.',
                 { canRetry: true }
               );
             } else {
-              setStatus('error', controlMessage.message || 'WebRTC signaling failed.', {
+              setStatus('error', controlMessage.message || '영상 연결 신호 처리에 실패했습니다.', {
                 canRetry: true,
               });
             }
@@ -533,8 +533,8 @@ export function useSessionWebRTC({
           return;
         }
 
-        setErrorMessage('Failed to parse signaling message.');
-        setStatus('error', 'Failed to parse signaling message.', { canRetry: true });
+        setErrorMessage('시그널링 메시지를 해석하지 못했습니다.');
+        setStatus('error', '시그널링 메시지를 해석하지 못했습니다.', { canRetry: true });
       }
     }
 
@@ -547,8 +547,8 @@ export function useSessionWebRTC({
         return;
       }
 
-      setErrorMessage('WebRTC signaling socket error.');
-      setStatus('error', 'Signaling socket error.', { canRetry: true });
+      setErrorMessage('영상 연결 통신 오류가 발생했습니다.');
+      setStatus('error', '영상 연결 통신 오류가 발생했습니다.', { canRetry: true });
     };
 
     socket.onclose = () => {
@@ -565,11 +565,11 @@ export function useSessionWebRTC({
       }
 
       if (startRequestedRef.current) {
-        setStatus('disconnected', 'Signaling socket closed. Retry the call.', {
+        setStatus('disconnected', '시그널링 소켓이 종료되었습니다. 다시 시도해 주세요.', {
           canRetry: true,
         });
       } else {
-        setStatus('not_connected', 'Signaling socket closed.');
+        setStatus('not_connected', '시그널링 소켓이 종료되었습니다.');
       }
     };
 
@@ -581,7 +581,7 @@ export function useSessionWebRTC({
       socket.close();
       socketClosingRef.current = false;
       startRequestedRef.current = false;
-      cleanupPeerConnection('not_connected', 'WebRTC idle.');
+      cleanupPeerConnection('not_connected', '영상 연결 대기 중입니다.');
       setLastSignalType('');
       setErrorMessage('');
     };
@@ -598,7 +598,7 @@ export function useSessionWebRTC({
       if (isInitiator) {
         createOffer(localStream);
       } else if (!peerRef.current?.remoteDescription) {
-        setStatus('signaling', 'Waiting for the other participant offer...');
+        setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
       }
     }
   }, [isInitiator, localStream]);

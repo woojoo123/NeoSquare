@@ -32,13 +32,13 @@ export default function SignupPage() {
       navigate('/login', {
         replace: true,
         state: {
-          message: 'Signup completed. Please sign in.',
+          message: '회원가입이 완료되었습니다. 로그인해 주세요.',
           email: form.email,
         },
       });
     } catch (error) {
       setErrorMessage(
-        error?.response?.data?.message || error.message || 'Signup failed.'
+        error?.response?.data?.message || error.message || '회원가입에 실패했습니다.'
       );
     } finally {
       setIsSubmitting(false);
@@ -47,25 +47,25 @@ export default function SignupPage() {
 
   return (
     <AppLayout
-      eyebrow="Signup"
-      title="Create a NeoSquare account"
-      description="Create an account, then continue to the login page and sign in."
+      eyebrow="회원가입"
+      title="NeoSquare 계정 만들기"
+      description="계정을 만든 뒤 로그인 페이지에서 바로 NeoSquare에 접속할 수 있습니다."
     >
       <form className="app-form" onSubmit={handleSignup}>
         <label className="app-field">
-          <span>Nickname</span>
+          <span>닉네임</span>
           <input
             className="app-input"
             type="text"
             name="nickname"
             value={form.nickname}
             onChange={handleChange}
-            placeholder="How should others see you?"
+            placeholder="어떻게 표시될지 입력하세요"
             required
           />
         </label>
         <label className="app-field">
-          <span>Email</span>
+          <span>이메일</span>
           <input
             className="app-input"
             type="email"
@@ -77,23 +77,23 @@ export default function SignupPage() {
           />
         </label>
         <label className="app-field">
-          <span>Password</span>
+          <span>비밀번호</span>
           <input
             className="app-input"
             type="password"
             name="password"
             value={form.password}
             onChange={handleChange}
-            placeholder="Create a password"
+            placeholder="비밀번호를 만들어 주세요"
             required
           />
         </label>
         <div className="app-actions">
           <button type="submit" className="primary-button" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing up...' : 'Sign up'}
+            {isSubmitting ? '가입 중...' : '회원가입'}
           </button>
           <Link className="text-link" to="/login">
-            Back to login
+            로그인으로 돌아가기
           </Link>
         </div>
       </form>

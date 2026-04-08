@@ -2,18 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 
 function getMediaErrorMessage(error) {
   if (error?.name === 'NotAllowedError') {
-    return 'Camera or microphone permission was denied.';
+    return '카메라 또는 마이크 권한이 거부되었습니다.';
   }
 
   if (error?.name === 'NotFoundError') {
-    return 'No camera or microphone device was found.';
+    return '사용 가능한 카메라 또는 마이크를 찾을 수 없습니다.';
   }
 
   if (error?.name === 'NotReadableError') {
-    return 'Camera or microphone is already in use.';
+    return '카메라 또는 마이크가 이미 사용 중입니다.';
   }
 
-  return 'Failed to prepare local camera and microphone.';
+  return '로컬 카메라와 마이크를 준비하지 못했습니다.';
 }
 
 function stopStreamTracks(stream) {
@@ -28,7 +28,7 @@ export function useSessionMedia() {
   const [cameraOn, setCameraOn] = useState(false);
   const [microphoneOn, setMicrophoneOn] = useState(false);
   const [statusMessage, setStatusMessage] = useState(
-    'Start the video call to prepare your local camera and microphone.'
+    '영상 연결을 시작하면 로컬 카메라와 마이크를 준비합니다.'
   );
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -50,21 +50,21 @@ export function useSessionMedia() {
       typeof navigator.mediaDevices.getUserMedia !== 'function'
     ) {
       setConnectionStatus('error');
-      setErrorMessage('This browser does not support camera and microphone access.');
-      setStatusMessage('Local media is unavailable in this environment.');
+      setErrorMessage('이 브라우저는 카메라와 마이크 접근을 지원하지 않습니다.');
+      setStatusMessage('현재 환경에서는 로컬 미디어를 사용할 수 없습니다.');
       return false;
     }
 
     if (streamRef.current) {
       setConnectionStatus('ready');
       setErrorMessage('');
-      setStatusMessage('Local preview is already ready.');
+      setStatusMessage('로컬 미리보기가 이미 준비되어 있습니다.');
       return streamRef.current;
     }
 
     setConnectionStatus('preparing');
     setErrorMessage('');
-    setStatusMessage('Requesting camera and microphone access...');
+    setStatusMessage('카메라와 마이크 권한을 요청하는 중입니다...');
 
     try {
       const nextStream = await navigator.mediaDevices.getUserMedia({
@@ -82,7 +82,7 @@ export function useSessionMedia() {
       setCameraOn(Boolean(videoTrack?.enabled));
       setMicrophoneOn(Boolean(audioTrack?.enabled));
       setConnectionStatus('ready');
-      setStatusMessage('Local preview ready. Waiting for remote connection.');
+      setStatusMessage('로컬 미리보기가 준비되었습니다. 상대 연결을 기다리는 중입니다.');
       return nextStream;
     } catch (error) {
       releaseCurrentStream();
@@ -91,7 +91,7 @@ export function useSessionMedia() {
       setMicrophoneOn(false);
       setConnectionStatus('error');
       setErrorMessage(getMediaErrorMessage(error));
-      setStatusMessage('Local media could not be prepared.');
+      setStatusMessage('로컬 미디어를 준비하지 못했습니다.');
       return null;
     }
   }
@@ -100,7 +100,7 @@ export function useSessionMedia() {
     const videoTrack = streamRef.current?.getVideoTracks()[0];
 
     if (!videoTrack) {
-      setStatusMessage('Start the video call first to control the camera.');
+      setStatusMessage('먼저 영상 연결을 시작해야 카메라를 제어할 수 있습니다.');
       return false;
     }
 
@@ -108,8 +108,8 @@ export function useSessionMedia() {
     setCameraOn(videoTrack.enabled);
     setStatusMessage(
       videoTrack.enabled
-        ? 'Camera is on for local preview.'
-        : 'Camera is off for local preview.'
+        ? '로컬 미리보기에서 카메라가 켜졌습니다.'
+        : '로컬 미리보기에서 카메라가 꺼졌습니다.'
     );
     return videoTrack.enabled;
   }
@@ -118,7 +118,7 @@ export function useSessionMedia() {
     const audioTrack = streamRef.current?.getAudioTracks()[0];
 
     if (!audioTrack) {
-      setStatusMessage('Start the video call first to control the microphone.');
+      setStatusMessage('먼저 영상 연결을 시작해야 마이크를 제어할 수 있습니다.');
       return false;
     }
 
@@ -126,8 +126,8 @@ export function useSessionMedia() {
     setMicrophoneOn(audioTrack.enabled);
     setStatusMessage(
       audioTrack.enabled
-        ? 'Microphone is on for local preview.'
-        : 'Microphone is muted for local preview.'
+        ? '로컬 미리보기에서 마이크가 켜졌습니다.'
+        : '로컬 미리보기에서 마이크가 음소거되었습니다.'
     );
     return audioTrack.enabled;
   }
@@ -139,7 +139,7 @@ export function useSessionMedia() {
     setMicrophoneOn(false);
     setConnectionStatus('not_connected');
     setErrorMessage('');
-    setStatusMessage('Local media stopped.');
+    setStatusMessage('로컬 미디어를 종료했습니다.');
   }
 
   useEffect(() => {
