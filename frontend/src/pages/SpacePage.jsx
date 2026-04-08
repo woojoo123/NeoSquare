@@ -5,6 +5,11 @@ import { getMe } from '../api/auth';
 import { createMentoringRequest } from '../api/mentoring';
 import { createReservation } from '../api/reservations';
 import { getSpace } from '../api/spaces';
+import {
+  createStudySession,
+  getStudySessionsBySpace,
+  joinStudySession,
+} from '../api/study';
 import AppLayout from '../components/AppLayout';
 import SpaceGame from '../components/SpaceGame';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
@@ -51,31 +56,6 @@ function buildStudyRecruitmentMessage(topic, note) {
   return `${STUDY_RECRUIT_PREFIX} ${topicPart}${notePart}`;
 }
 
-function parseStudyRecruitmentMessage(message) {
-  if (!message?.content?.startsWith(STUDY_RECRUIT_PREFIX)) {
-    return null;
-  }
-
-  const rawBody = message.content.slice(STUDY_RECRUIT_PREFIX.length).trim();
-  const [rawTopic = '', rawNote = ''] = rawBody.split('|').map((value) => value.trim());
-  const topic = rawTopic.replace(/^주제:\s*/u, '').trim();
-  const note = rawNote.replace(/^메모:\s*/u, '').trim();
-
-  if (!topic) {
-    return null;
-  }
-
-  return {
-    id: message.id,
-    senderId: message.senderId,
-    nickname: message.nickname,
-    topic,
-    note,
-    isMine: message.isMine,
-    timestamp: message.timestamp,
-  };
-}
-
 function formatChatTimestamp(value) {
   if (!value) {
     return '';
@@ -91,6 +71,26 @@ function formatChatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatStudySessionStatus(status) {
+  if (status === 'ACTIVE') {
+    return '진행 중';
+  }
+
+  if (status === 'COMPLETED') {
+    return '종료됨';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatStudyParticipantCount(count) {
+  if (!Number.isFinite(count)) {
+    return '참가자 수 없음';
+  }
+
+  return `${count}명 참여 중`;
 }
 
 export default function SpacePage() {
@@ -112,8 +112,12 @@ export default function SpacePage() {
   const [chatInput, setChatInput] = useState('');
   const [studyTopic, setStudyTopic] = useState('');
   const [studyNote, setStudyNote] = useState('');
+  const [studyStatus, setStudyStatus] = useState('idle');
   const [studyNotice, setStudyNotice] = useState('');
   const [studyError, setStudyError] = useState('');
+  const [studySessions, setStudySessions] = useState([]);
+  const [studySessionsStatus, setStudySessionsStatus] = useState('idle');
+  const [studySessionsError, setStudySessionsError] = useState('');
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -138,13 +142,9 @@ export default function SpacePage() {
     [remoteUsers, selectedParticipantId]
   );
   const spaceDefinition = getLobbyZoneDefinition(space?.type);
-  const studyRecruitments = useMemo(
-    () =>
-      [...chatMessages]
-        .map(parseStudyRecruitmentMessage)
-        .filter(Boolean)
-        .reverse(),
-    [chatMessages]
+  const joinedStudySessions = useMemo(
+    () => studySessions.filter((studySession) => studySession.joined),
+    [studySessions]
   );
 
   useEffect(() => {
@@ -209,6 +209,50 @@ export default function SpacePage() {
       isMounted = false;
     };
   }, [clearAuth, navigate, setCurrentUser, spaceId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadStudySessions() {
+      if (!space?.id || space.type !== 'STUDY') {
+        if (isMounted) {
+          setStudySessions([]);
+          setStudySessionsStatus('idle');
+          setStudySessionsError('');
+        }
+        return;
+      }
+
+      setStudySessionsStatus('loading');
+      setStudySessionsError('');
+
+      try {
+        const response = await getStudySessionsBySpace(space.id);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setStudySessions(response);
+        setStudySessionsStatus('loaded');
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setStudySessionsStatus('error');
+        setStudySessionsError(
+          error?.response?.data?.message || error.message || '스터디 세션 목록을 불러오지 못했습니다.'
+        );
+      }
+    }
+
+    loadStudySessions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [space?.id, space?.type]);
 
   const selectParticipant = (participant) => {
     if (!participant?.userId) {
@@ -321,7 +365,7 @@ export default function SpacePage() {
     }
   };
 
-  const handleCreateStudyRecruitment = (event) => {
+  const handleCreateStudySession = async (event) => {
     event.preventDefault();
 
     if (!studyTopic.trim()) {
@@ -330,37 +374,78 @@ export default function SpacePage() {
       return;
     }
 
-    const didSend = sendChatMessage(buildStudyRecruitmentMessage(studyTopic, studyNote));
-
-    if (!didSend) {
-      setStudyError('스터디 모집 메시지를 전송하지 못했습니다.');
+    if (!space?.id) {
+      setStudyError('스터디 공간 정보가 아직 준비되지 않았습니다.');
       setStudyNotice('');
       return;
     }
 
-    setStudyTopic('');
-    setStudyNote('');
+    setStudyStatus('saving');
+    setStudyNotice('');
     setStudyError('');
-    setStudyNotice('스터디 모집을 등록했습니다.');
+
+    try {
+      const createdStudySession = await createStudySession({
+        spaceId: Number(space.id),
+        title: studyTopic.trim(),
+        description: studyNote.trim(),
+      });
+
+      setStudySessions((previousSessions) => [
+        createdStudySession,
+        ...previousSessions.filter((studySession) => studySession.id !== createdStudySession.id),
+      ]);
+
+      const didBroadcast = sendChatMessage(buildStudyRecruitmentMessage(studyTopic, studyNote));
+
+      setStudyTopic('');
+      setStudyNote('');
+      setStudyStatus('saved');
+      setStudyError('');
+      setStudyNotice(
+        didBroadcast
+          ? '스터디 세션을 만들고 공간 채팅에도 모집 메시지를 남겼습니다.'
+          : '스터디 세션을 만들었습니다. 현재 스터디 목록에서 바로 입장할 수 있습니다.'
+      );
+    } catch (error) {
+      setStudyStatus('error');
+      setStudyError(
+        error?.response?.data?.message || error.message || '스터디 세션 생성에 실패했습니다.'
+      );
+    }
   };
 
-  const handleJoinStudyRecruitment = (recruitment) => {
-    if (!recruitment) {
+  const handleJoinStudySession = async (studySession) => {
+    if (!studySession?.id) {
       return;
     }
 
-    const matchingParticipant = remoteUsers.find(
-      (user) => String(user.userId) === String(recruitment.senderId)
-    );
+    try {
+      const joinedStudySession = await joinStudySession(studySession.id);
+      setStudySessions((previousSessions) =>
+        previousSessions.map((currentSession) =>
+          currentSession.id === joinedStudySession.id ? joinedStudySession : currentSession
+        )
+      );
+      navigate(`/study/sessions/${joinedStudySession.id}`, {
+        state: { studySession: joinedStudySession },
+      });
+    } catch (error) {
+      setStudyError(
+        error?.response?.data?.message || error.message || '스터디 세션 참가에 실패했습니다.'
+      );
+      setStudyNotice('');
+    }
+  };
 
-    if (matchingParticipant) {
-      selectParticipant(matchingParticipant);
+  const handleOpenStudySession = (studySession) => {
+    if (!studySession?.id) {
+      return;
     }
 
-    setChatInput(
-      `${recruitment.nickname}님, "${recruitment.topic}" 스터디에 함께 참여하고 싶어요.`
-    );
-    chatInputRef.current?.focus();
+    navigate(`/study/sessions/${studySession.id}`, {
+      state: { studySession },
+    });
   };
 
   return (
@@ -435,7 +520,7 @@ export default function SpacePage() {
             {space?.type === 'STUDY' ? (
               <div className="lobby-info-card">
                 <h2>스터디 모집 게시</h2>
-                <form className="mentoring-form" onSubmit={handleCreateStudyRecruitment}>
+                <form className="mentoring-form" onSubmit={handleCreateStudySession}>
                   <label className="app-field">
                     <span>스터디 주제</span>
                     <input
@@ -444,6 +529,7 @@ export default function SpacePage() {
                       value={studyTopic}
                       onChange={(event) => setStudyTopic(event.target.value)}
                       placeholder="예: React 상태관리, 코딩테스트, 포트폴리오 리뷰"
+                      disabled={studyStatus === 'saving'}
                     />
                   </label>
                   <label className="app-field">
@@ -454,14 +540,29 @@ export default function SpacePage() {
                       onChange={(event) => setStudyNote(event.target.value)}
                       rows={3}
                       placeholder="진행 방식이나 목표를 간단히 적어 주세요."
+                      disabled={studyStatus === 'saving'}
                     />
                   </label>
                   <button type="submit" className="primary-button">
-                    스터디 모집 올리기
+                    {studyStatus === 'saving' ? '스터디 세션 생성 중...' : '스터디 세션 만들기'}
                   </button>
                 </form>
                 {studyNotice ? <p className="app-success">{studyNotice}</p> : null}
                 {studyError ? <p className="app-error">{studyError}</p> : null}
+                {joinedStudySessions.length > 0 ? (
+                  <div className="space-selected-actions">
+                    {joinedStudySessions.slice(0, 2).map((studySession) => (
+                      <button
+                        key={studySession.id}
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => handleOpenStudySession(studySession)}
+                      >
+                        {studySession.title} 입장
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -575,37 +676,53 @@ export default function SpacePage() {
               <section className="space-study-board">
                 <div className="space-stage-header">
                   <div>
-                    <h2>현재 스터디 모집</h2>
+                    <h2>현재 진행 중인 스터디 세션</h2>
                     <p className="app-note">
-                      같은 공간 채팅에 올라온 스터디 모집 메시지를 카드로 정리해서 보여줍니다.
+                      이 공간에서 생성된 실제 스터디 세션을 서버 상태 기준으로 보여줍니다.
                     </p>
                   </div>
                 </div>
 
-                {studyRecruitments.length === 0 ? (
-                  <p className="app-note">아직 올라온 스터디 모집이 없습니다.</p>
+                {studySessionsStatus === 'loading' ? (
+                  <p className="app-note">스터디 세션 목록을 불러오는 중입니다...</p>
+                ) : studySessionsError ? (
+                  <p className="app-error">{studySessionsError}</p>
+                ) : studySessions.length === 0 ? (
+                  <p className="app-note">아직 진행 중인 스터디 세션이 없습니다.</p>
                 ) : (
                   <ul className="space-study-list">
-                    {studyRecruitments.map((recruitment) => (
-                      <li key={recruitment.id} className="space-study-card">
+                    {studySessions.map((studySession) => (
+                      <li key={studySession.id} className="space-study-card">
                         <div className="space-study-card__meta">
-                          <strong>{recruitment.topic}</strong>
+                          <strong>{studySession.title}</strong>
                           <span>
-                            {recruitment.isMine ? '내 모집' : recruitment.nickname} ·{' '}
-                            {formatChatTimestamp(recruitment.timestamp)}
+                            {studySession.joined ? '참여 중' : studySession.hostLabel} ·{' '}
+                            {formatChatTimestamp(studySession.createdAt)}
                           </span>
                         </div>
-                        <p>
-                          {recruitment.note || '추가 메모 없이 바로 대화를 시작할 수 있습니다.'}
-                        </p>
+                        <p>{studySession.description || '설명 없이 바로 함께 공부를 시작할 수 있습니다.'}</p>
+                        <div className="space-study-card__meta">
+                          <span>{formatStudySessionStatus(studySession.status)}</span>
+                          <span>{formatStudyParticipantCount(studySession.participantCount)}</span>
+                        </div>
                         <div className="space-selected-actions">
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() => handleJoinStudyRecruitment(recruitment)}
-                          >
-                            참여 의사 보내기
-                          </button>
+                          {studySession.joined ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => handleOpenStudySession(studySession)}
+                            >
+                              세션 입장
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => handleJoinStudySession(studySession)}
+                            >
+                              참여하기
+                            </button>
+                          )}
                         </div>
                       </li>
                     ))}

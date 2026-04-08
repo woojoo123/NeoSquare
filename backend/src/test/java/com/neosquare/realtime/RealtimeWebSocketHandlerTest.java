@@ -35,15 +35,18 @@ class RealtimeWebSocketHandlerTest {
     private RealtimeWebSocketHandler realtimeWebSocketHandler;
     private MentoringSessionSignalingService mentoringSessionSignalingService;
     private RealtimeSessionRegistry realtimeSessionRegistry;
+    private SessionChatRoutingService sessionChatRoutingService;
 
     @BeforeEach
     void setUp() {
         mentoringSessionSignalingService = mock(MentoringSessionSignalingService.class);
         realtimeSessionRegistry = new RealtimeSessionRegistry();
+        sessionChatRoutingService = mock(SessionChatRoutingService.class);
         realtimeWebSocketHandler = new RealtimeWebSocketHandler(
                 objectMapper,
                 mentoringSessionSignalingService,
-                realtimeSessionRegistry
+                realtimeSessionRegistry,
+                sessionChatRoutingService
         );
     }
 

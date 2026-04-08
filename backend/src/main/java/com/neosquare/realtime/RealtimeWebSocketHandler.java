@@ -24,15 +24,18 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MentoringSessionSignalingService mentoringSessionSignalingService;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
+    private final SessionChatRoutingService sessionChatRoutingService;
 
     public RealtimeWebSocketHandler(
             ObjectMapper objectMapper,
             MentoringSessionSignalingService mentoringSessionSignalingService,
-            RealtimeSessionRegistry realtimeSessionRegistry
+            RealtimeSessionRegistry realtimeSessionRegistry,
+            SessionChatRoutingService sessionChatRoutingService
     ) {
         this.objectMapper = objectMapper;
         this.mentoringSessionSignalingService = mentoringSessionSignalingService;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
+        this.sessionChatRoutingService = sessionChatRoutingService;
     }
 
     @Override
@@ -100,7 +103,19 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     normalizedMessage.senderId()
             );
 
-            if (isSpaceRealtimeEvent(normalizedMessage.type())) {
+            if (sessionChatRoutingService.supports(normalizedMessage)) {
+                SignalRouteResult routeResult = sessionChatRoutingService.routeChatMessage(normalizedMessage);
+
+                for (WebSocketSession targetSession : routeResult.targetSessions()) {
+                    if (targetSession.getId().equals(session.getId())) {
+                        continue;
+                    }
+
+                    sendMessage(targetSession, routeResult.outboundMessage());
+                }
+            } else if (sessionChatRoutingService.hasScopedChat(normalizedMessage)) {
+                throw new IllegalArgumentException("Unsupported chat scope.");
+            } else if (isSpaceRealtimeEvent(normalizedMessage.type())) {
                 handleSpaceRealtimeMessage(session, normalizedMessage);
             }
 

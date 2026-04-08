@@ -22,6 +22,10 @@ import com.neosquare.notification.InvalidNotificationStateException;
 import com.neosquare.notification.NotificationAccessDeniedException;
 import com.neosquare.notification.NotificationNotFoundException;
 import com.neosquare.space.SpaceNotFoundException;
+import com.neosquare.study.InvalidStudySessionRequestException;
+import com.neosquare.study.InvalidStudySessionStateException;
+import com.neosquare.study.StudySessionAccessDeniedException;
+import com.neosquare.study.StudySessionNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -85,6 +89,18 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SpaceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleSpaceNotFoundException(SpaceNotFoundException exception) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(StudySessionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleStudySessionNotFoundException(
+            StudySessionNotFoundException exception
+    ) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.NOT_FOUND,
                 exception.getMessage()
@@ -209,6 +225,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
+    @ExceptionHandler(StudySessionAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleStudySessionAccessDeniedException(
+            StudySessionAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
     @ExceptionHandler(MentoringReservationAccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleMentoringReservationAccessDeniedException(
             MentoringReservationAccessDeniedException exception
@@ -221,9 +249,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
+    @ExceptionHandler(InvalidStudySessionRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidStudySessionRequestException(
+            InvalidStudySessionRequestException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
     @ExceptionHandler(InvalidNotificationStateException.class)
     public ResponseEntity<ErrorResponse> handleInvalidNotificationStateException(
             InvalidNotificationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidStudySessionStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidStudySessionStateException(
+            InvalidStudySessionStateException exception
     ) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.CONFLICT,

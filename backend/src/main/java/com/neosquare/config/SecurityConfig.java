@@ -54,6 +54,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/spaces").permitAll()
                         .requestMatchers("/api/spaces/*").permitAll()
                         .requestMatchers("/api/mentoring/**").authenticated()
+                        .requestMatchers("/api/study/**").authenticated()
                         .requestMatchers("/api/notifications/**").authenticated()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
