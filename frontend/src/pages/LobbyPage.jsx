@@ -615,6 +615,8 @@ export default function LobbyPage() {
   const [currentZoneId, setCurrentZoneId] = useState('MAIN');
   const [playerPosition, setPlayerPosition] = useState(null);
   const [zoneMoveRequest, setZoneMoveRequest] = useState(null);
+  const [activeLobbyPanel, setActiveLobbyPanel] = useState('interact');
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [selectedMentorId, setSelectedMentorId] = useState('');
   const [mentoringMessage, setMentoringMessage] = useState('');
   const [mentoringFeedback, setMentoringFeedback] = useState('');
@@ -627,13 +629,6 @@ export default function LobbyPage() {
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const chatMessagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
-  const lobbyStageRef = useRef(null);
-  const chatPanelRef = useRef(null);
-  const mentoringFormRef = useRef(null);
-  const reservationFormRef = useRef(null);
-  const sentRequestsSectionRef = useRef(null);
-  const myReservationsSectionRef = useRef(null);
-  const receivedReservationsSectionRef = useRef(null);
   const primarySpace = spaces[0] || null;
   const {
     connectionStatus,
@@ -658,20 +653,15 @@ export default function LobbyPage() {
     navigate('/login', { replace: true });
   };
 
-  const scrollToSection = (sectionRef) => {
-    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const focusZone = (zoneId) => {
     setZoneMoveRequest({
       zoneId,
       requestedAt: Date.now(),
     });
-    scrollToSection(lobbyStageRef);
   };
 
   const focusChatComposer = (nextMessage = '') => {
-    scrollToSection(chatPanelRef);
+    setIsChatDrawerOpen(true);
 
     if (nextMessage && !chatInput.trim()) {
       setChatInput(nextMessage);
@@ -688,12 +678,11 @@ export default function LobbyPage() {
     }
 
     setSelectedMentorId(String(user.userId));
+    setActiveLobbyPanel('interact');
 
     if (!mentoringMessage.trim()) {
       setMentoringMessage(`${user.label}님, 잠깐 멘토링 가능하실까요?`);
     }
-
-    scrollToSection(mentoringFormRef);
   };
 
   const prepareReservationTarget = (user) => {
@@ -702,12 +691,11 @@ export default function LobbyPage() {
     }
 
     setSelectedReservationMentorId(String(user.userId));
+    setActiveLobbyPanel('interact');
 
     if (!reservationMessage.trim()) {
       setReservationMessage(`${user.label}님과 시간을 맞춰 멘토링을 진행하고 싶어요.`);
     }
-
-    scrollToSection(reservationFormRef);
   };
 
   const openMentoringSession = (request) => {
@@ -768,17 +756,17 @@ export default function LobbyPage() {
     }
 
     if (notification.actionType === 'view_my_reservations') {
-      scrollToSection(myReservationsSectionRef);
+      setActiveLobbyPanel('activity');
       return;
     }
 
     if (notification.actionType === 'view_received_reservations') {
-      scrollToSection(receivedReservationsSectionRef);
+      setActiveLobbyPanel('activity');
       return;
     }
 
     if (notification.actionType === 'view_requests') {
-      scrollToSection(sentRequestsSectionRef);
+      setActiveLobbyPanel('activity');
     }
   };
 
@@ -1333,338 +1321,513 @@ export default function LobbyPage() {
     }
   }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
 
+  useEffect(() => {
+    if (feedbackPrompt) {
+      setActiveLobbyPanel('feedback');
+    }
+  }, [feedbackPrompt]);
+
   const isFeedbackLocked =
     feedbackStatus === 'saving' ||
     (Boolean(feedbackPrompt) && feedbackStatus === 'saved');
+  const currentZonePopulation = zoneUserCounts[currentZoneId] || 0;
+  const pendingRequestCount = receivedRequests.filter((request) => request.status === 'PENDING').length;
+  const pendingReservationCount = receivedReservations.filter(
+    (reservation) => reservation.status === 'PENDING'
+  ).length;
+  const activeSessionCount =
+    sentRequests.filter((request) => request.status === 'ACCEPTED').length +
+    reservations.filter((reservation) => reservation.status === 'ACCEPTED').length;
+  const openNotificationCount = lobbyNotifications.length;
 
-  return (
-    <AppLayout
-      eyebrow="로비"
-      title="NeoSquare 로비"
-      description="현재 로그인한 사용자가 프로필, 공간, 요청, 예약, 알림 상태를 한 번에 확인할 수 있는 메인 공간입니다."
-      panelClassName="app-panel--wide"
-    >
-      <div className="app-actions">
-        <button type="button" className="primary-button" onClick={handleLogout}>
-          로그아웃
+  const renderContextActions = () => {
+    if (currentZoneId === 'MAIN') {
+      return (
+        <div className="lobby-context-actions">
+          <button type="button" className="primary-button" onClick={() => focusZone('STUDY')}>
+            스터디 라운지로 이동
+          </button>
+          <button type="button" className="secondary-button" onClick={() => focusZone('MENTORING')}>
+            멘토링 존으로 이동
+          </button>
+          {currentZoneSpace ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => openSpace(currentZoneSpace)}
+            >
+              현재 공간 입장
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (currentZoneId === 'STUDY') {
+      return (
+        <div className="lobby-context-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => focusChatComposer('같이 스터디하실 분 계신가요?')}
+          >
+            스터디 메시지 쓰기
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setActiveLobbyPanel('activity')}
+          >
+            스터디 활동 보기
+          </button>
+          {currentZoneSpace ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => openSpace(currentZoneSpace)}
+            >
+              공간 입장
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className="lobby-context-actions">
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => setActiveLobbyPanel('interact')}
+        >
+          멘토링 요청 열기
         </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setActiveLobbyPanel('interact')}
+        >
+          예약 제안 열기
+        </button>
+        {currentZoneSpace ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => openSpace(currentZoneSpace)}
+          >
+            공간 입장
+          </button>
+        ) : null}
       </div>
-      {lobbyNotice ? <p className="app-success">{lobbyNotice}</p> : null}
-      {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
-      <div className="lobby-layout">
-        <section className="lobby-sidebar">
-          <div className="lobby-info-card">
-            <h2>현재 사용자</h2>
-            {currentUser ? (
-              <>
-                <strong>{currentUser.nickname}</strong>
-                <span>{currentUser.email}</span>
-              </>
-            ) : (
-              <p className="app-note">사용자 정보를 불러오는 중입니다...</p>
-            )}
-          </div>
+    );
+  };
 
-          <div className="lobby-info-card">
-            <h2>로비 상태</h2>
+  const renderContextBody = () => {
+    if (currentZoneId === 'MAIN') {
+      return (
+        <div className="lobby-context-body">
+          <ul className="lobby-zone-stat-list">
+            <li>
+              <strong>메인 광장</strong>
+              <span>{zoneUserCounts.MAIN}명</span>
+            </li>
+            <li>
+              <strong>스터디 라운지</strong>
+              <span>{zoneUserCounts.STUDY}명</span>
+            </li>
+            <li>
+              <strong>멘토링 존</strong>
+              <span>{zoneUserCounts.MENTORING}명</span>
+            </li>
+          </ul>
+          <p className="app-note">
+            광장은 다음 행동을 정하는 허브입니다. 사람을 확인하고 스터디 라운지나
+            멘토링 존으로 이동해 보세요.
+          </p>
+        </div>
+      );
+    }
+
+    if (currentZoneId === 'STUDY') {
+      return (
+        <div className="lobby-context-body">
+          <h3 className="lobby-context-subtitle">같이 스터디할 사람</h3>
+          {usersInCurrentZone.length === 0 ? (
             <p className="app-note">
-              메타버스 로비 화면과 내 캐릭터 이동은 이 페이지에서만 활성화됩니다.
+              아직 같은 라운지에 다른 사용자가 없습니다. 채팅으로 먼저 사람을 모아보세요.
             </p>
-            <p className="app-note">
-              이용 가능한 공간 수: {isLoading ? '불러오는 중...' : spaces.length}
-            </p>
-            <p className="app-note">
-              실시간 연결 기준 공간: {primarySpace ? primarySpace.name : '선택된 공간이 없습니다'}
-            </p>
-          </div>
-
-          <div className="lobby-info-card">
-            <h2>알림</h2>
-            {hasUnreadServerNotifications ? (
-              <div className="mentoring-request-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={handleReadAllNotifications}
-                  disabled={isReadingAllNotifications}
-                >
-                  {isReadingAllNotifications ? '읽음 처리 중...' : '모두 읽음 처리'}
-                </button>
-              </div>
-            ) : null}
-            {notificationError ? <p className="app-error">{notificationError}</p> : null}
-            {lobbyNotifications.length === 0 ? (
-              <p className="app-note">지금 확인할 중요한 알림이 없습니다.</p>
-            ) : (
-              <ul className="mentoring-request-list">
-                {lobbyNotifications.map((notification) => (
-                  <li key={notification.id} className="mentoring-request-card">
-                    <strong>{notification.title}</strong>
-                    <span>{formatNotificationTypeLabel(notification.type)}</span>
-                    <p>{notification.message}</p>
-                    <div className="mentoring-request-actions">
-                      <button
-                        type="button"
-                        className="primary-button"
-                        onClick={() => handleNotificationAction(notification)}
-                        disabled={activeNotificationId === notification.id}
-                      >
-                        {activeNotificationId === notification.id ? '처리 중...' : notification.actionLabel}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => handleDismissNotification(notification)}
-                        disabled={activeNotificationId === notification.id}
-                      >
-                        {notification.source === 'server' ? '읽음 처리' : '닫기'}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {feedbackPrompt ? (
-            <div className="lobby-info-card">
-              <h2>이번 세션 피드백 남기기</h2>
-              <p className="app-note">
-                세션 #{feedbackPrompt.requestId} · {feedbackPrompt.counterpartName}
-              </p>
-              <p className="app-note">내 역할: {formatParticipantRole(feedbackPrompt.role)}</p>
-              {feedbackPrompt.requestMessage ? (
-                <p className="app-note">
-                  요청 요약: {feedbackPrompt.requestMessage}
-                </p>
-              ) : null}
-              <p className="app-note">
-                {feedbackPrompt.sessionSource === 'reservation'
-                  ? '예약 기반 세션 피드백도 서버에 저장되며, 아래 히스토리에서 다시 확인할 수 있습니다.'
-                  : '요청 기반 세션 피드백은 서버에 저장되며, 아래 히스토리에서도 다시 확인할 수 있습니다.'}
-              </p>
-
-              <form className="mentoring-form" onSubmit={handleFeedbackSubmit}>
-                <label className="app-field">
-                  <span>평점</span>
-                  <select
-                    className="app-input"
-                    value={feedbackRating}
-                    onChange={(event) => setFeedbackRating(event.target.value)}
-                    disabled={isFeedbackLocked}
+          ) : (
+            <ul className="lobby-presence-list">
+              {usersInCurrentZone.slice(0, 4).map((user) => (
+                <li key={user.userId} className="lobby-presence-card">
+                  <div>
+                    <strong>{user.label}</strong>
+                    <p>같은 스터디 라운지에 있습니다.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => focusChatComposer(`${user.label}님, 같이 스터디하실래요?`)}
                   >
-                    <option value="5">5 - 매우 만족</option>
-                    <option value="4">4 - 만족</option>
-                    <option value="3">3 - 보통</option>
-                    <option value="2">2 - 아쉬움</option>
-                    <option value="1">1 - 불만족</option>
-                  </select>
-                </label>
+                    채팅으로 부르기
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    }
 
-                <label className="app-field">
-                  <span>세션 요약</span>
-                  <textarea
-                    className="app-input mentoring-textarea"
-                    placeholder="이번 멘토링 세션에서 다룬 내용을 짧게 정리해 주세요."
-                    value={feedbackSummary}
-                    onChange={(event) => setFeedbackSummary(event.target.value)}
-                    rows={2}
-                    disabled={isFeedbackLocked}
-                  />
-                </label>
-
-                <label className="app-field">
-                  <span>피드백</span>
-                  <textarea
-                    className="app-input mentoring-textarea"
-                    placeholder="세션이 어땠는지 짧은 후기를 남겨 주세요."
-                    value={feedbackMessage}
-                    onChange={(event) => setFeedbackMessage(event.target.value)}
-                    rows={3}
-                    disabled={isFeedbackLocked}
-                  />
-                </label>
-
-                <div className="mentoring-request-actions">
-                  <button type="submit" className="primary-button" disabled={isFeedbackLocked}>
-                    {feedbackStatus === 'saving'
-                      ? '저장 중...'
-                      : feedbackStatus === 'saved'
-                        ? '저장 완료'
-                        : '피드백 저장'}
+    return (
+      <div className="lobby-context-body">
+        <h3 className="lobby-context-subtitle">바로 상호작용할 사람</h3>
+        {relevantInteractionUsers.length === 0 ? (
+          <p className="app-note">
+            아직 이 구역이나 근처에 다른 사용자가 없습니다. 상대가 들어오면 바로 요청하거나
+            예약할 수 있습니다.
+          </p>
+        ) : (
+          <ul className="lobby-presence-list">
+            {relevantInteractionUsers.slice(0, 4).map((user) => (
+              <li key={user.userId} className="lobby-presence-card">
+                <div>
+                  <strong>{user.label}</strong>
+                  <p>{getLobbyZoneForPosition(user.x, user.y).label}에 있습니다.</p>
+                </div>
+                <div className="lobby-presence-card__actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => prepareMentoringTarget(user)}
+                  >
+                    요청 준비
                   </button>
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={handleDismissFeedback}
-                    disabled={feedbackStatus === 'saving'}
+                    onClick={() => prepareReservationTarget(user)}
                   >
-                    닫기
+                    예약 준비
                   </button>
                 </div>
-              </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
 
-              {feedbackNotice ? <p className="app-success">{feedbackNotice}</p> : null}
-              {feedbackError ? <p className="app-error">{feedbackError}</p> : null}
-            </div>
-          ) : null}
+  const renderInteractionPanel = () => (
+    <div className="lobby-panel-stack">
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>멘토링 요청</h3>
+            <p className="app-note">현재 접속 중인 사용자에게 바로 요청을 보낼 수 있습니다.</p>
+          </div>
+        </div>
+        <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
+          <label className="app-field">
+            <span>대상 선택</span>
+            <select
+              className="app-input"
+              value={selectedMentorId}
+              onChange={(event) => setSelectedMentorId(event.target.value)}
+              disabled={mentorOptions.length === 0 || isSubmittingRequest}
+            >
+              {mentorOptions.length === 0 ? (
+                <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
+              ) : null}
+              {mentorOptions.map((mentor) => (
+                <option key={mentor.userId} value={mentor.userId}>
+                  {mentor.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <div className="lobby-info-card">
-            <h2>최근 세션 피드백</h2>
-            {feedbackHistory.length === 0 ? (
-              <p className="app-note">아직 저장된 세션 피드백이 없습니다.</p>
-            ) : (
+          <label className="app-field">
+            <span>메시지</span>
+            <textarea
+              className="app-input mentoring-textarea"
+              placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
+              value={mentoringMessage}
+              onChange={(event) => setMentoringMessage(event.target.value)}
+              rows={3}
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={mentorOptions.length === 0 || isSubmittingRequest}
+          >
+            {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
+          </button>
+        </form>
+        {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
+        {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
+      </section>
+
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>멘토링 예약</h3>
+            <p className="app-note">지금 보이는 사용자를 기준으로 나중 멘토링 시간을 제안합니다.</p>
+          </div>
+        </div>
+        <form className="mentoring-form" onSubmit={handleReservationSubmit}>
+          <label className="app-field">
+            <span>예약 대상</span>
+            <select
+              className="app-input"
+              value={selectedReservationMentorId}
+              onChange={(event) => setSelectedReservationMentorId(event.target.value)}
+              disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+            >
+              {mentorOptions.length === 0 ? (
+                <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
+              ) : null}
+              {mentorOptions.map((mentor) => (
+                <option key={mentor.userId} value={mentor.userId}>
+                  {mentor.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="app-field">
+            <span>예약 시간</span>
+            <input
+              type="datetime-local"
+              className="app-input"
+              value={reservationDateTime}
+              onChange={(event) => setReservationDateTime(event.target.value)}
+              disabled={reservationStatus === 'saving'}
+            />
+          </label>
+
+          <label className="app-field">
+            <span>메시지</span>
+            <textarea
+              className="app-input mentoring-textarea"
+              placeholder="예: 포트폴리오 리뷰를 같이 보고 싶어요."
+              value={reservationMessage}
+              onChange={(event) => setReservationMessage(event.target.value)}
+              rows={3}
+              disabled={reservationStatus === 'saving'}
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+          >
+            {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
+          </button>
+        </form>
+        {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
+        {reservationError ? <p className="app-error">{reservationError}</p> : null}
+      </section>
+    </div>
+  );
+
+  const renderActivityPanel = () => (
+    <div className="lobby-panel-stack">
+      <section className="lobby-panel-summary-grid">
+        <article className="lobby-mini-stat">
+          <span>받은 요청</span>
+          <strong>{pendingRequestCount}건</strong>
+        </article>
+        <article className="lobby-mini-stat">
+          <span>받은 예약</span>
+          <strong>{pendingReservationCount}건</strong>
+        </article>
+        <article className="lobby-mini-stat">
+          <span>진행 가능 세션</span>
+          <strong>{activeSessionCount}건</strong>
+        </article>
+      </section>
+
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>받은 멘토링 요청</h3>
+            <p className="app-note">로비 안에서 받은 요청을 처리하고 바로 세션으로 이어집니다.</p>
+          </div>
+        </div>
+        {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
+        {receivedRequests.length === 0 ? (
+          <p className="app-note">
+            아직 받은 멘토링 요청이 없습니다. 멘토링 존에서 먼저 사람을 만나보세요.
+          </p>
+        ) : (
+          <ul className="mentoring-request-list">
+            {receivedRequests.map((request) => {
+              const isPending = request.status === 'PENDING';
+              const isProcessing = activeRequestActionId === request.id;
+
+              return (
+                <li key={request.id} className="mentoring-request-card">
+                  <strong>{request.requesterLabel}</strong>
+                  <span>{formatRequestStatus(request.status)}</span>
+                  <p>{request.message || '메시지가 없습니다.'}</p>
+                  {isPending || request.status === 'ACCEPTED' ? (
+                    <div className="mentoring-request-actions">
+                      {isPending ? (
+                        <>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => handleMentoringDecision(request.id, 'accept')}
+                            disabled={isProcessing}
+                          >
+                            {isProcessing ? '처리 중...' : '수락'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleMentoringDecision(request.id, 'reject')}
+                            disabled={isProcessing}
+                          >
+                            거절
+                          </button>
+                        </>
+                      ) : null}
+                      {request.status === 'ACCEPTED' ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => openMentoringSession(request)}
+                        >
+                          세션 입장
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>받은 예약</h3>
+            <p className="app-note">받은 예약은 여기서 바로 수락하거나 거절할 수 있습니다.</p>
+          </div>
+        </div>
+        {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
+        {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
+        {receivedReservations.length === 0 ? (
+          <p className="app-note">
+            아직 받은 예약이 없습니다. 멘토링 존에서 대화를 시작해 보세요.
+          </p>
+        ) : (
+          <ul className="mentoring-request-list">
+            {receivedReservations.map((reservation) => {
+              const reservationEntryState = getReservationEntryState(
+                reservation.reservedAt,
+                reservationClock
+              );
+              const isPending = reservation.status === 'PENDING';
+              const canEnterReservation =
+                reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
+              const isProcessing = activeReceivedReservationActionId === reservation.id;
+
+              return (
+                <li key={reservation.id} className="mentoring-request-card">
+                  <strong>{reservation.requesterLabel || '알 수 없는 요청자'}</strong>
+                  <span>{formatReservationStatus(reservation.status)}</span>
+                  <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
+                  <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
+                  {reservation.status === 'ACCEPTED' ? <p>{reservationEntryState.label}</p> : null}
+                  {isPending || canEnterReservation ? (
+                    <div className="mentoring-request-actions">
+                      {canEnterReservation ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => openReservationSession(reservation)}
+                        >
+                          세션 입장
+                        </button>
+                      ) : null}
+                      {isPending ? (
+                        <>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() =>
+                              handleReceivedReservationDecision(reservation.id, 'accept')
+                            }
+                            disabled={isProcessing}
+                          >
+                            {isProcessing ? '처리 중...' : '수락'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() =>
+                              handleReceivedReservationDecision(reservation.id, 'reject')
+                            }
+                            disabled={isProcessing}
+                          >
+                            거절
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>내 활동</h3>
+            <p className="app-note">내가 보낸 요청과 예약, 바로 입장 가능한 세션을 확인합니다.</p>
+          </div>
+        </div>
+        {sentRequests.length === 0 && reservations.length === 0 ? (
+          <p className="app-note">
+            아직 진행 중인 요청이나 예약이 없습니다. 사람을 만나 먼저 대화를 시작해 보세요.
+          </p>
+        ) : (
+          <>
+            {sentRequests.length > 0 ? (
               <ul className="mentoring-request-list">
-                {feedbackHistory.map((feedbackItem) => (
-                  <li
-                    key={feedbackItem.id ?? `${feedbackItem.sessionSource}-${feedbackItem.requestId}`}
-                    className="mentoring-request-card"
-                  >
-                    <strong>{feedbackItem.counterpartName || '세션 상대'}</strong>
-                    <span>
-                      {formatSessionSourceLabel(feedbackItem.sessionSource)}
-                    </span>
-                    <p>{formatHistorySessionLabel(feedbackItem)}</p>
-                    <p>저장 시각: {formatFeedbackTimestamp(feedbackItem.submittedAt)}</p>
-                    {feedbackItem.reservedAt ? (
-                      <p>예약 시간: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
+                {sentRequests.map((request) => (
+                  <li key={request.id} className="mentoring-request-card">
+                    <strong>{request.mentorLabel}</strong>
+                    <span>{formatRequestStatus(request.status)}</span>
+                    <p>{request.message || '메시지가 없습니다.'}</p>
+                    {request.status === 'ACCEPTED' ? (
+                      <div className="mentoring-request-actions">
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => openMentoringSession(request)}
+                        >
+                          세션 입장
+                        </button>
+                      </div>
                     ) : null}
-                    <p>평점: {feedbackItem.rating || 0}/5</p>
-                    <p>{feedbackItem.summary || '저장된 세션 요약이 없습니다.'}</p>
-                    <p>{feedbackItem.feedback || '저장된 피드백 메모가 없습니다.'}</p>
                   </li>
                 ))}
               </ul>
-            )}
-          </div>
-
-          <div className="lobby-info-card">
-            <h2>실시간 연결 상태</h2>
-            <p className="app-note">상태: {formatRealtimeConnectionStatus(connectionStatus)}</p>
-            {connectionStatus === 'reconnecting' ? (
-              <p className="app-note">자동 재연결 시도: {Math.max(reconnectAttempt, 1)}회</p>
             ) : null}
-            <p className="app-note">
-              마지막 이벤트: {lastMessage?.type || '서버 응답을 기다리는 중입니다...'}
-            </p>
-            {lastError ? <p className="app-error">{lastError}</p> : null}
-            {lastMessage ? (
-              <pre className="lobby-realtime-message">
-                {JSON.stringify(lastMessage, null, 2)}
-              </pre>
-            ) : null}
-          </div>
 
-          <div className="lobby-info-card" ref={mentoringFormRef}>
-            <h2>멘토링 요청</h2>
-            <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
-              <label className="app-field">
-                <span>멘토 대상</span>
-                <select
-                  className="app-input"
-                  value={selectedMentorId}
-                  onChange={(event) => setSelectedMentorId(event.target.value)}
-                  disabled={mentorOptions.length === 0 || isSubmittingRequest}
-                >
-                  {mentorOptions.length === 0 ? (
-                    <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
-                  ) : null}
-                  {mentorOptions.map((mentor) => (
-                    <option key={mentor.userId} value={mentor.userId}>
-                      {mentor.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="app-field">
-                <span>메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
-                  value={mentoringMessage}
-                  onChange={(event) => setMentoringMessage(event.target.value)}
-                  rows={3}
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={mentorOptions.length === 0 || isSubmittingRequest}
-              >
-                {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
-              </button>
-            </form>
-            {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
-            {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
-          </div>
-
-          <div className="lobby-info-card" ref={reservationFormRef}>
-            <h2>멘토링 예약</h2>
-            <p className="app-note">
-              현재 로비에 있는 참가자를 예약 대상으로 선택할 수 있습니다.
-            </p>
-            <form className="mentoring-form" onSubmit={handleReservationSubmit}>
-              <label className="app-field">
-                <span>예약 대상</span>
-                <select
-                  className="app-input"
-                  value={selectedReservationMentorId}
-                  onChange={(event) => setSelectedReservationMentorId(event.target.value)}
-                  disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-                >
-                  {mentorOptions.length === 0 ? (
-                    <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
-                  ) : null}
-                  {mentorOptions.map((mentor) => (
-                    <option key={mentor.userId} value={mentor.userId}>
-                      {mentor.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="app-field">
-                <span>예약 시간</span>
-                <input
-                  type="datetime-local"
-                  className="app-input"
-                  value={reservationDateTime}
-                  onChange={(event) => setReservationDateTime(event.target.value)}
-                  disabled={reservationStatus === 'saving'}
-                />
-              </label>
-
-              <label className="app-field">
-                <span>메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  placeholder="예: 나중에 포트폴리오 리뷰를 받고 싶어요."
-                  value={reservationMessage}
-                  onChange={(event) => setReservationMessage(event.target.value)}
-                  rows={3}
-                  disabled={reservationStatus === 'saving'}
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-              >
-                {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
-              </button>
-            </form>
-            {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
-            {reservationError ? <p className="app-error">{reservationError}</p> : null}
-          </div>
-
-          <div className="lobby-info-card" ref={myReservationsSectionRef}>
-            <h2>내 예약</h2>
-            {reservations.length === 0 ? (
-              <p className="app-note">아직 생성한 멘토링 예약이 없습니다.</p>
-            ) : (
+            {reservations.length > 0 ? (
               <ul className="mentoring-request-list">
                 {reservations.map((reservation) => {
                   const reservationEntryState = getReservationEntryState(
@@ -1713,481 +1876,503 @@ export default function LobbyPage() {
                   );
                 })}
               </ul>
-            )}
-          </div>
-
-          <div className="lobby-info-card" ref={receivedReservationsSectionRef}>
-            <h2>받은 예약</h2>
-            {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
-            {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
-            {receivedReservations.length === 0 ? (
-              <p className="app-note">아직 받은 예약이 없습니다.</p>
-            ) : (
-              <ul className="mentoring-request-list">
-                {receivedReservations.map((reservation) => {
-                  const reservationEntryState = getReservationEntryState(
-                    reservation.reservedAt,
-                    reservationClock
-                  );
-                  const isPending = reservation.status === 'PENDING';
-                  const canEnterReservation =
-                    reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
-                  const isProcessing = activeReceivedReservationActionId === reservation.id;
-
-                  return (
-                    <li key={reservation.id} className="mentoring-request-card">
-                      <strong>{reservation.requesterLabel || '알 수 없는 요청자'}</strong>
-                      <span>{formatReservationStatus(reservation.status)}</span>
-                      <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
-                      <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
-                      {reservation.status === 'ACCEPTED' ? (
-                        <p>{reservationEntryState.label}</p>
-                      ) : null}
-                      {isPending || canEnterReservation ? (
-                        <div className="mentoring-request-actions">
-                          {canEnterReservation ? (
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => openReservationSession(reservation)}
-                            >
-                              세션 입장
-                            </button>
-                          ) : null}
-                          {isPending ? (
-                            <>
-                              <button
-                                type="button"
-                                className="primary-button"
-                                onClick={() =>
-                                  handleReceivedReservationDecision(reservation.id, 'accept')
-                                }
-                                disabled={isProcessing}
-                              >
-                                {isProcessing ? '처리 중...' : '수락'}
-                              </button>
-                              <button
-                                type="button"
-                                className="secondary-button"
-                                onClick={() =>
-                                  handleReceivedReservationDecision(reservation.id, 'reject')
-                                }
-                                disabled={isProcessing}
-                              >
-                                거절
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          <div className="lobby-info-card" ref={sentRequestsSectionRef}>
-            <h2>보낸 멘토링 요청</h2>
-            {sentRequests.length === 0 ? (
-              <p className="app-note">아직 보낸 멘토링 요청이 없습니다.</p>
-            ) : (
-              <ul className="mentoring-request-list">
-                {sentRequests.map((request) => (
-                  <li key={request.id} className="mentoring-request-card">
-                    <strong>{request.mentorLabel}</strong>
-                    <span>{formatRequestStatus(request.status)}</span>
-                    <p>{request.message || '메시지가 없습니다.'}</p>
-                    {request.status === 'ACCEPTED' ? (
-                      <div className="mentoring-request-actions">
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => openMentoringSession(request)}
-                        >
-                          세션 입장
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="lobby-info-card">
-            <h2>받은 멘토링 요청</h2>
-            {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
-            {receivedRequests.length === 0 ? (
-              <p className="app-note">아직 받은 멘토링 요청이 없습니다.</p>
-            ) : (
-              <ul className="mentoring-request-list">
-                {receivedRequests.map((request) => {
-                  const isPending = request.status === 'PENDING';
-                  const isProcessing = activeRequestActionId === request.id;
-
-                  return (
-                    <li key={request.id} className="mentoring-request-card">
-                      <strong>{request.requesterLabel}</strong>
-                      <span>{formatRequestStatus(request.status)}</span>
-                      <p>{request.message || '메시지가 없습니다.'}</p>
-                      {isPending || request.status === 'ACCEPTED' ? (
-                        <div className="mentoring-request-actions">
-                          {isPending ? (
-                            <>
-                              <button
-                                type="button"
-                                className="primary-button"
-                                onClick={() => handleMentoringDecision(request.id, 'accept')}
-                                disabled={isProcessing}
-                              >
-                                {isProcessing ? '처리 중...' : '수락'}
-                              </button>
-                              <button
-                                type="button"
-                                className="secondary-button"
-                                onClick={() => handleMentoringDecision(request.id, 'reject')}
-                                disabled={isProcessing}
-                              >
-                                거절
-                              </button>
-                            </>
-                          ) : null}
-                          {request.status === 'ACCEPTED' ? (
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => openMentoringSession(request)}
-                            >
-                              세션 입장
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          <section className="app-section">
-            <h2>이용 가능한 공간</h2>
-            <p className="app-note">
-              공간 카드를 누르면 로비 안의 해당 구역으로 바로 이동합니다.
-            </p>
-            {isLoading ? <p className="app-note">공간 정보를 불러오는 중입니다...</p> : null}
-            {!isLoading && spaces.length === 0 ? (
-              <p className="app-note">아직 이용 가능한 공간이 없습니다.</p>
             ) : null}
-            {!isLoading && spaces.length > 0 ? (
-              <ul className="space-list">
-                {spaces.map((space) => {
-                  const isActiveSpace = currentZoneId === space.type;
+          </>
+        )}
+      </section>
+    </div>
+  );
 
-                  return (
-                    <li
-                      key={space.id}
-                      className={`space-card ${isActiveSpace ? 'space-card--active' : ''}`}
-                    >
-                      <div className="space-card__body">
-                        <strong>{formatLobbySpaceLabel(space.type) || space.name}</strong>
-                        <span>
-                          최대 {space.maxCapacity}명 · 현재 {zoneUserCounts[space.type] || 0}명 접속 중
-                        </span>
-                        <p>{getLobbyZoneDefinition(space.type).description || space.description}</p>
-                      </div>
-                      <div className="space-card__actions">
-                        <button
-                          type="button"
-                          className={isActiveSpace ? 'secondary-button' : 'primary-button'}
-                          onClick={() => focusZone(space.type)}
-                        >
-                          {isActiveSpace ? '현재 구역' : formatLobbySpaceActionLabel(space.type)}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => openSpace(space)}
-                        >
-                          공간 입장
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-          </section>
-        </section>
+  const renderNotificationPanel = () => (
+    <div className="lobby-panel-stack">
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>알림 센터</h3>
+            <p className="app-note">수락된 요청과 예약, 바로 입장 가능한 세션을 한 번에 봅니다.</p>
+          </div>
+          {hasUnreadServerNotifications ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleReadAllNotifications}
+              disabled={isReadingAllNotifications}
+            >
+              {isReadingAllNotifications ? '읽음 처리 중...' : '모두 읽음'}
+            </button>
+          ) : null}
+        </div>
+        {notificationError ? <p className="app-error">{notificationError}</p> : null}
+        {lobbyNotifications.length === 0 ? (
+          <p className="app-note">
+            새 알림이 없습니다. 스터디 라운지나 멘토링 존에서 사람들과 먼저 연결해 보세요.
+          </p>
+        ) : (
+          <ul className="mentoring-request-list">
+            {lobbyNotifications.map((notification) => (
+              <li key={notification.id} className="mentoring-request-card">
+                <strong>{notification.title}</strong>
+                <span>{formatNotificationTypeLabel(notification.type)}</span>
+                <p>{notification.message}</p>
+                <div className="mentoring-request-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => handleNotificationAction(notification)}
+                    disabled={activeNotificationId === notification.id}
+                  >
+                    {activeNotificationId === notification.id ? '처리 중...' : notification.actionLabel}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => handleDismissNotification(notification)}
+                    disabled={activeNotificationId === notification.id}
+                  >
+                    {notification.source === 'server' ? '읽음 처리' : '닫기'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
 
-        <section className="lobby-stage" ref={lobbyStageRef}>
-          <div className="lobby-stage-header">
+  const renderFeedbackPanel = () => (
+    <div className="lobby-panel-stack">
+      {feedbackPrompt ? (
+        <section className="lobby-panel-section">
+          <div className="lobby-panel-section__header">
             <div>
-              <h2>메타버스 로비</h2>
+              <h3>이번 세션 피드백</h3>
               <p className="app-note">
-                방향키로 구역을 이동하고, 현재 위치에 맞는 액션을 바로 실행해 보세요.
+                {feedbackPrompt.counterpartName} 님과의 {formatSessionSourceLabel(feedbackPrompt.sessionSource)} 후기를 남깁니다.
               </p>
             </div>
-            <div className="lobby-zone-tabs">
-              {['MAIN', 'STUDY', 'MENTORING'].map((zoneId) => (
-                <button
-                  key={zoneId}
-                  type="button"
-                  className={
-                    currentZoneId === zoneId ? 'secondary-button' : 'secondary-button ghost-button'
-                  }
-                  onClick={() => focusZone(zoneId)}
-                >
-                  {getLobbyZoneDefinition(zoneId).label}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="lobby-stage-insights">
-            <article className="lobby-zone-card">
-              <span className="lobby-zone-card__eyebrow">현재 위치</span>
-              <h3>{currentZone.label}</h3>
-              <p>{currentZone.description}</p>
-              <p className="app-note">{currentZone.helperText}</p>
-              <div className="lobby-zone-actions">
-                {currentZoneId === 'MAIN' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => focusZone('STUDY')}
-                    >
-                      스터디 라운지로 이동
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => focusZone('MENTORING')}
-                    >
-                      멘토링 존으로 이동
-                    </button>
-                    {currentZoneSpace ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => openSpace(currentZoneSpace)}
-                      >
-                        메인 광장 입장
-                      </button>
-                    ) : null}
-                  </>
+          <p className="app-note">세션 #{feedbackPrompt.requestId}</p>
+          <p className="app-note">내 역할: {formatParticipantRole(feedbackPrompt.role)}</p>
+          {feedbackPrompt.requestMessage ? (
+            <p className="app-note">요청 요약: {feedbackPrompt.requestMessage}</p>
+          ) : null}
+
+          <form className="mentoring-form" onSubmit={handleFeedbackSubmit}>
+            <label className="app-field">
+              <span>평점</span>
+              <select
+                className="app-input"
+                value={feedbackRating}
+                onChange={(event) => setFeedbackRating(event.target.value)}
+                disabled={isFeedbackLocked}
+              >
+                <option value="5">5 - 매우 만족</option>
+                <option value="4">4 - 만족</option>
+                <option value="3">3 - 보통</option>
+                <option value="2">2 - 아쉬움</option>
+                <option value="1">1 - 불만족</option>
+              </select>
+            </label>
+
+            <label className="app-field">
+              <span>세션 요약</span>
+              <textarea
+                className="app-input mentoring-textarea"
+                placeholder="이번 세션에서 다룬 내용을 짧게 정리해 주세요."
+                value={feedbackSummary}
+                onChange={(event) => setFeedbackSummary(event.target.value)}
+                rows={2}
+                disabled={isFeedbackLocked}
+              />
+            </label>
+
+            <label className="app-field">
+              <span>피드백</span>
+              <textarea
+                className="app-input mentoring-textarea"
+                placeholder="세션이 어땠는지 짧은 후기를 남겨 주세요."
+                value={feedbackMessage}
+                onChange={(event) => setFeedbackMessage(event.target.value)}
+                rows={3}
+                disabled={isFeedbackLocked}
+              />
+            </label>
+
+            <div className="mentoring-request-actions">
+              <button type="submit" className="primary-button" disabled={isFeedbackLocked}>
+                {feedbackStatus === 'saving'
+                  ? '저장 중...'
+                  : feedbackStatus === 'saved'
+                    ? '저장 완료'
+                    : '피드백 저장'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleDismissFeedback}
+                disabled={feedbackStatus === 'saving'}
+              >
+                닫기
+              </button>
+            </div>
+          </form>
+
+          {feedbackNotice ? <p className="app-success">{feedbackNotice}</p> : null}
+          {feedbackError ? <p className="app-error">{feedbackError}</p> : null}
+        </section>
+      ) : null}
+
+      <section className="lobby-panel-section">
+        <div className="lobby-panel-section__header">
+          <div>
+            <h3>최근 세션 기록</h3>
+            <p className="app-note">내가 남긴 요청/예약 세션 피드백을 최근 순서대로 확인합니다.</p>
+          </div>
+        </div>
+        {feedbackHistory.length === 0 ? (
+          <p className="app-note">
+            아직 저장된 세션 피드백이 없습니다. 세션을 마친 뒤 기록이 이곳에 쌓입니다.
+          </p>
+        ) : (
+          <ul className="mentoring-request-list">
+            {feedbackHistory.slice(0, 6).map((feedbackItem) => (
+              <li
+                key={feedbackItem.id ?? `${feedbackItem.sessionSource}-${feedbackItem.requestId}`}
+                className="mentoring-request-card"
+              >
+                <strong>{feedbackItem.counterpartName || '세션 상대'}</strong>
+                <span>{formatSessionSourceLabel(feedbackItem.sessionSource)}</span>
+                <p>{formatHistorySessionLabel(feedbackItem)}</p>
+                <p>저장 시각: {formatFeedbackTimestamp(feedbackItem.submittedAt)}</p>
+                {feedbackItem.reservedAt ? (
+                  <p>예약 시간: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
                 ) : null}
-                {currentZoneId === 'STUDY' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => focusChatComposer('같이 스터디하실 분 계신가요?')}
-                    >
-                      스터디 메시지 쓰기
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => focusZone('MAIN')}
-                    >
-                      광장으로 돌아가기
-                    </button>
-                    {currentZoneSpace ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => openSpace(currentZoneSpace)}
-                      >
-                        스터디 라운지 입장
-                      </button>
-                    ) : null}
-                  </>
-                ) : null}
-                {currentZoneId === 'MENTORING' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => scrollToSection(mentoringFormRef)}
-                    >
-                      멘토링 요청 폼 열기
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => scrollToSection(reservationFormRef)}
-                    >
-                      예약 제안 폼 열기
-                    </button>
-                    {currentZoneSpace ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => openSpace(currentZoneSpace)}
-                      >
-                        멘토링 존 입장
-                      </button>
-                    ) : null}
-                  </>
+                <p>평점: {feedbackItem.rating || 0}/5</p>
+                <p>{feedbackItem.summary || '저장된 세션 요약이 없습니다.'}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+
+  const renderActiveLobbyPanel = () => {
+    if (activeLobbyPanel === 'notifications') {
+      return renderNotificationPanel();
+    }
+
+    if (activeLobbyPanel === 'activity') {
+      return renderActivityPanel();
+    }
+
+    if (activeLobbyPanel === 'feedback') {
+      return renderFeedbackPanel();
+    }
+
+    return renderInteractionPanel();
+  };
+
+  return (
+    <AppLayout
+      panelClassName="app-panel--wide lobby-page-shell"
+      headerHidden
+    >
+      <header className="lobby-topbar">
+        <div className="lobby-topbar__brand">
+          <span className="lobby-topbar__eyebrow">NeoSquare</span>
+          <h1>사람을 만나고, 이동하고, 바로 연결되는 로비</h1>
+          <p>
+            로비는 행동을 시작하는 화면입니다. 사람을 보고, 구역을 이동하고, 요청이나
+            스터디를 바로 시작하세요.
+          </p>
+        </div>
+
+        <div className="lobby-topbar__status">
+          <span className="lobby-status-pill">현재 위치 · {currentZone.label}</span>
+          <span className="lobby-status-pill">실시간 접속 · {mentorOptions.length}명</span>
+          <span className="lobby-status-pill">
+            연결 상태 · {formatRealtimeConnectionStatus(connectionStatus)}
+          </span>
+          {connectionStatus === 'reconnecting' ? (
+            <span className="lobby-status-pill lobby-status-pill--warn">
+              재연결 시도 {Math.max(reconnectAttempt, 1)}회
+            </span>
+          ) : null}
+        </div>
+
+        <div className="lobby-topbar__actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setActiveLobbyPanel('notifications')}
+          >
+            알림 {openNotificationCount > 0 ? `${openNotificationCount}` : ''}
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setActiveLobbyPanel('activity')}
+          >
+            활동 {pendingRequestCount + pendingReservationCount > 0 ? `${pendingRequestCount + pendingReservationCount}` : ''}
+          </button>
+          <div className="lobby-topbar__user">
+            {currentUser ? (
+              <>
+                <strong>{currentUser.nickname}</strong>
+                <span>{currentUser.email}</span>
+              </>
+            ) : (
+              <span>사용자 불러오는 중...</span>
+            )}
+          </div>
+          <button type="button" className="primary-button" onClick={handleLogout}>
+            로그아웃
+          </button>
+        </div>
+      </header>
+
+      <div className="lobby-banner-stack">
+        {lobbyNotice ? <p className="app-success">{lobbyNotice}</p> : null}
+        {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
+        {lastError ? <p className="app-error">{lastError}</p> : null}
+        {feedbackPrompt ? (
+          <div className="lobby-inline-banner">
+            <div>
+              <strong>세션 피드백을 남길 차례입니다.</strong>
+              <span>
+                {feedbackPrompt.counterpartName} 님과의 {formatSessionSourceLabel(feedbackPrompt.sessionSource)} 세션 기록을 저장하세요.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setActiveLobbyPanel('feedback')}
+            >
+              피드백 열기
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="lobby-dashboard">
+        <section className="lobby-main-stage">
+          <section className="lobby-stage lobby-stage--focused">
+            <div className="lobby-stage-header lobby-stage-header--focused">
+              <div>
+                <span className="lobby-zone-card__eyebrow">메타버스 로비</span>
+                <h2>{currentZone.label}에서 무엇을 할지 정해 보세요</h2>
+                <p className="app-note">{currentZone.helperText}</p>
+              </div>
+              <div className="lobby-zone-tabs">
+                {['MAIN', 'STUDY', 'MENTORING'].map((zoneId) => (
+                  <button
+                    key={zoneId}
+                    type="button"
+                    className={
+                      currentZoneId === zoneId ? 'secondary-button' : 'secondary-button ghost-button'
+                    }
+                    onClick={() => focusZone(zoneId)}
+                  >
+                    {getLobbyZoneDefinition(zoneId).label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <LobbyGame
+              playerLabel={currentUser?.nickname || '나'}
+              onPlayerMove={sendUserMove}
+              onZoneChange={setCurrentZoneId}
+              onPlayerContextChange={(context) => {
+                setCurrentZoneId(context.zoneId);
+                setPlayerPosition({
+                  x: context.x,
+                  y: context.y,
+                });
+              }}
+              remoteEvent={remoteEvent}
+              zoneMoveRequest={zoneMoveRequest}
+            />
+
+            <div className="lobby-stage-footer">
+              <article className="lobby-stage-summary-card">
+                <span className="lobby-zone-card__eyebrow">현재 구역</span>
+                <strong>{currentZone.label}</strong>
+                <p>{currentZone.description}</p>
+                <span>
+                  이 구역 접속 {currentZonePopulation}명 · 이용 가능한 공간 {isLoading ? '...' : spaces.length}개
+                </span>
+              </article>
+
+              <div className="lobby-quick-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => focusChatComposer('안녕하세요! 같이 이야기해보실래요?')}
+                >
+                  공개 채팅 열기
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    focusZone('MENTORING');
+                    setActiveLobbyPanel('interact');
+                  }}
+                >
+                  멘토링 요청
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    focusZone('MENTORING');
+                    setActiveLobbyPanel('interact');
+                  }}
+                >
+                  예약 제안
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setActiveLobbyPanel('activity')}
+                >
+                  활동 보기
+                </button>
+                {currentZoneSpace ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => openSpace(currentZoneSpace)}
+                  >
+                    공간 입장
+                  </button>
                 ) : null}
               </div>
-            </article>
+            </div>
+          </section>
 
-            <article className="lobby-zone-card">
-              <span className="lobby-zone-card__eyebrow">구역 상호작용</span>
-              {currentZoneId === 'MAIN' ? (
-                <>
-                  <h3>지금 어디로 갈지 정해 보세요</h3>
-                  <ul className="lobby-zone-stat-list">
-                    <li>
-                      <strong>메인 광장</strong>
-                      <span>{zoneUserCounts.MAIN}명</span>
-                    </li>
-                    <li>
-                      <strong>스터디 라운지</strong>
-                      <span>{zoneUserCounts.STUDY}명</span>
-                    </li>
-                    <li>
-                      <strong>멘토링 존</strong>
-                      <span>{zoneUserCounts.MENTORING}명</span>
-                    </li>
-                  </ul>
-                  <p className="app-note">
-                    광장은 흐름을 고르는 허브입니다. 스터디 대화를 열거나 멘토링을 준비할 구역으로 이동해 보세요.
-                  </p>
-                </>
-              ) : null}
-
-              {currentZoneId === 'STUDY' ? (
-                <>
-                  <h3>같이 스터디할 사람</h3>
-                  {usersInCurrentZone.length === 0 ? (
-                    <p className="app-note">
-                      아직 같은 라운지에 잡힌 사용자가 없습니다. 공개 채팅으로 먼저 모집해 보세요.
-                    </p>
-                  ) : (
-                    <ul className="lobby-presence-list">
-                      {usersInCurrentZone.slice(0, 4).map((user) => (
-                        <li key={user.userId} className="lobby-presence-card">
-                          <div>
-                            <strong>{user.label}</strong>
-                            <p>같은 스터디 라운지에 있습니다.</p>
-                          </div>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() =>
-                              focusChatComposer(`${user.label}님, 같이 스터디하실래요?`)
-                            }
-                          >
-                            채팅으로 부르기
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : null}
-
-              {currentZoneId === 'MENTORING' ? (
-                <>
-                  <h3>가까운 사람에게 바로 제안하기</h3>
-                  {relevantInteractionUsers.length === 0 ? (
-                    <p className="app-note">
-                      아직 이 구역이나 근처에 다른 사용자가 없습니다. 상대가 접속하면 바로 요청하거나 예약할 수 있습니다.
-                    </p>
-                  ) : (
-                    <ul className="lobby-presence-list">
-                      {relevantInteractionUsers.slice(0, 4).map((user) => (
-                        <li key={user.userId} className="lobby-presence-card">
-                          <div>
-                            <strong>{user.label}</strong>
-                            <p>{getLobbyZoneForPosition(user.x, user.y).label}에 있습니다.</p>
-                          </div>
-                          <div className="lobby-presence-card__actions">
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => prepareMentoringTarget(user)}
-                            >
-                              요청 준비
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => prepareReservationTarget(user)}
-                            >
-                              예약 준비
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : null}
-            </article>
-          </div>
-          <LobbyGame
-            playerLabel={currentUser?.nickname || '나'}
-            onPlayerMove={sendUserMove}
-            onZoneChange={setCurrentZoneId}
-            onPlayerContextChange={(context) => {
-              setCurrentZoneId(context.zoneId);
-              setPlayerPosition({
-                x: context.x,
-                y: context.y,
-              });
-            }}
-            remoteEvent={remoteEvent}
-            zoneMoveRequest={zoneMoveRequest}
-          />
-          <section className="lobby-chat-panel" ref={chatPanelRef}>
-            <div className="lobby-chat-header">
+          <section className={`lobby-chat-drawer ${isChatDrawerOpen ? 'lobby-chat-drawer--open' : ''}`}>
+            <div className="lobby-chat-drawer__header">
               <div>
-                <h3>로비 채팅</h3>
+                <h3>공개 채팅</h3>
                 <p className="app-note">
-                  스터디 라운지에서는 이 채팅으로 바로 사람을 모을 수 있습니다.
+                  스터디 라운지에서는 이 채팅으로 사람을 모으고, 광장에서는 가볍게 말을 걸 수 있습니다.
                 </p>
               </div>
-            </div>
-
-            <div className="lobby-chat-messages">
-              {chatMessages.length === 0 ? (
-                <p className="app-note">아직 채팅 메시지가 없습니다.</p>
-              ) : (
-                chatMessages.map((message) => (
-                  <article
-                    key={message.id}
-                    className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
-                  >
-                    <span className="chat-message__meta">
-                      {message.isMine ? '나' : message.nickname}
-                    </span>
-                    <p>{message.content}</p>
-                  </article>
-                ))
-              )}
-              <div ref={chatMessagesEndRef} />
-            </div>
-
-            <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
-              <input
-                ref={chatInputRef}
-                type="text"
-                className="app-input"
-                placeholder="메시지를 입력하세요"
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-              />
-              <button type="submit" className="primary-button">
-                전송
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setIsChatDrawerOpen((currentValue) => !currentValue)}
+              >
+                {isChatDrawerOpen ? '접기' : '열기'}
               </button>
-            </form>
+            </div>
+
+            {isChatDrawerOpen ? (
+              <>
+                <div className="lobby-chat-messages">
+                  {chatMessages.length === 0 ? (
+                    <p className="app-note">아직 채팅 메시지가 없습니다. 먼저 말을 걸어보세요.</p>
+                  ) : (
+                    chatMessages.map((message) => (
+                      <article
+                        key={message.id}
+                        className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
+                      >
+                        <span className="chat-message__meta">
+                          {message.isMine ? '나' : message.nickname}
+                        </span>
+                        <p>{message.content}</p>
+                      </article>
+                    ))
+                  )}
+                  <div ref={chatMessagesEndRef} />
+                </div>
+
+                <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    className="app-input"
+                    placeholder="메시지를 입력하세요"
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                  />
+                  <button type="submit" className="primary-button">
+                    전송
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="lobby-chat-drawer__preview">
+                {chatMessages.length > 0 ? (
+                  <p>
+                    최근 메시지 ·{' '}
+                    {chatMessages[chatMessages.length - 1].isMine
+                      ? '나'
+                      : chatMessages[chatMessages.length - 1].nickname}
+                    : {chatMessages[chatMessages.length - 1].content}
+                  </p>
+                ) : (
+                  <p>아직 채팅이 시작되지 않았습니다.</p>
+                )}
+              </div>
+            )}
           </section>
         </section>
+
+        <aside className="lobby-context-panel">
+          <section className="lobby-context-card">
+            <span className="lobby-zone-card__eyebrow">현재 위치</span>
+            <h2>{currentZone.label}</h2>
+            <p>{currentZone.description}</p>
+            <div className="lobby-context-meta">
+              <span>이 구역 접속 {currentZonePopulation}명</span>
+              <span>근처 사용자 {nearbyUsers.length}명</span>
+              <span>최근 이벤트 {lastMessage?.type || '대기 중'}</span>
+            </div>
+            {renderContextActions()}
+            {renderContextBody()}
+          </section>
+
+          <section className="lobby-side-panel">
+            <div className="lobby-side-panel__tabs">
+              <button
+                type="button"
+                className={activeLobbyPanel === 'interact' ? 'primary-button' : 'secondary-button'}
+                onClick={() => setActiveLobbyPanel('interact')}
+              >
+                상호작용
+              </button>
+              <button
+                type="button"
+                className={activeLobbyPanel === 'activity' ? 'primary-button' : 'secondary-button'}
+                onClick={() => setActiveLobbyPanel('activity')}
+              >
+                활동
+              </button>
+              <button
+                type="button"
+                className={activeLobbyPanel === 'notifications' ? 'primary-button' : 'secondary-button'}
+                onClick={() => setActiveLobbyPanel('notifications')}
+              >
+                알림
+              </button>
+              <button
+                type="button"
+                className={activeLobbyPanel === 'feedback' ? 'primary-button' : 'secondary-button'}
+                onClick={() => setActiveLobbyPanel('feedback')}
+              >
+                기록
+              </button>
+            </div>
+
+            <div className="lobby-side-panel__content">{renderActiveLobbyPanel()}</div>
+          </section>
+        </aside>
       </div>
     </AppLayout>
   );

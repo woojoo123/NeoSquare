@@ -4,15 +4,20 @@ export default function AppLayout({
   description,
   children,
   panelClassName = '',
+  headerHidden = false,
 }) {
   const panelClassNames = ['app-panel', panelClassName].filter(Boolean).join(' ');
 
   return (
     <main className="app-shell">
       <section className={panelClassNames}>
-        <p className="app-eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        <p>{description}</p>
+        {!headerHidden ? (
+          <>
+            <p className="app-eyebrow">{eyebrow}</p>
+            <h1>{title}</h1>
+            <p>{description}</p>
+          </>
+        ) : null}
         {children}
       </section>
     </main>
