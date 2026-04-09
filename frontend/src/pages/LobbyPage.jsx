@@ -386,6 +386,10 @@ function formatRealtimeConnectionStatus(status) {
     return '연결 중';
   }
 
+  if (status === 'reconnecting') {
+    return '재연결 중';
+  }
+
   if (status === 'connected') {
     return '연결됨';
   }
@@ -638,6 +642,7 @@ export default function LobbyPage() {
     remoteEvent,
     remoteUsers,
     chatMessages,
+    reconnectAttempt,
     sendChatMessage,
     sendUserMove,
   } =
@@ -1536,6 +1541,9 @@ export default function LobbyPage() {
           <div className="lobby-info-card">
             <h2>실시간 연결 상태</h2>
             <p className="app-note">상태: {formatRealtimeConnectionStatus(connectionStatus)}</p>
+            {connectionStatus === 'reconnecting' ? (
+              <p className="app-note">자동 재연결 시도: {Math.max(reconnectAttempt, 1)}회</p>
+            ) : null}
             <p className="app-note">
               마지막 이벤트: {lastMessage?.type || '서버 응답을 기다리는 중입니다...'}
             </p>

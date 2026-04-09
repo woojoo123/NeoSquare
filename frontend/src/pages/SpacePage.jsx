@@ -33,6 +33,10 @@ function formatRealtimeConnectionStatus(status) {
     return '연결 중';
   }
 
+  if (status === 'reconnecting') {
+    return '재연결 중';
+  }
+
   if (status === 'connected') {
     return '연결됨';
   }
@@ -128,6 +132,7 @@ export default function SpacePage() {
     remoteEvent,
     remoteUsers,
     chatMessages,
+    reconnectAttempt,
     sendChatMessage,
     sendUserMove,
   } = useLobbyRealtime({
@@ -475,6 +480,9 @@ export default function SpacePage() {
               <p className="app-note">
                 현재 연결 상태: {formatRealtimeConnectionStatus(connectionStatus)}
               </p>
+              {connectionStatus === 'reconnecting' ? (
+                <p className="app-note">자동 재연결 시도: {Math.max(reconnectAttempt, 1)}회</p>
+              ) : null}
               {lastError ? <p className="app-error">{lastError}</p> : null}
             </div>
 

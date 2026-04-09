@@ -6,6 +6,8 @@ const MOVE_DISTANCE_THRESHOLD = 12;
 const MOVE_DISTANCE_THRESHOLD_SQUARED = MOVE_DISTANCE_THRESHOLD * MOVE_DISTANCE_THRESHOLD;
 const REMOTE_EVENT_TYPES = new Set(['user_enter', 'user_move', 'user_leave']);
 const CHAT_MESSAGE_LIMIT = 80;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 5000;
 
 function toNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -114,12 +116,14 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
   const [remoteEvent, setRemoteEvent] = useState(null);
   const [remoteUsers, setRemoteUsers] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const socketRef = useRef(null);
   const hasEnteredRef = useRef(false);
   const lastMoveSentAtRef = useRef(0);
   const lastMovePositionRef = useRef(null);
   const currentPositionRef = useRef(null);
   const remoteEventSequenceRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
 
   function sendUserMove(position) {
     if (!position) {
@@ -224,17 +228,93 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       setRemoteEvent(null);
       setRemoteUsers([]);
       setChatMessages([]);
+      setReconnectAttempt(0);
       socketRef.current = null;
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
       currentPositionRef.current = null;
       remoteEventSequenceRef.current = 0;
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       return undefined;
     }
 
     let isDisposed = false;
     let socket;
+    let reconnectAttemptCount = 0;
+    const intentionalCloseSockets = new WeakSet();
+
+    function clearReconnectTimer() {
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    }
+
+    function resetPresenceState() {
+      setRemoteEvent(null);
+      setRemoteUsers([]);
+      hasEnteredRef.current = false;
+      lastMoveSentAtRef.current = 0;
+      lastMovePositionRef.current = null;
+      remoteEventSequenceRef.current = 0;
+    }
+
+    function closeSocket(targetSocket, { sendLeave = false } = {}) {
+      if (!targetSocket) {
+        return;
+      }
+
+      intentionalCloseSockets.add(targetSocket);
+
+      if (
+        sendLeave &&
+        targetSocket.readyState === WebSocket.OPEN &&
+        hasEnteredRef.current &&
+        spaceId
+      ) {
+        try {
+          targetSocket.send(
+            JSON.stringify({
+              type: 'user_leave',
+              senderId: userId,
+              payload: {
+                spaceId,
+              },
+            })
+          );
+        } catch (error) {
+          console.warn('Failed to send lobby leave event before closing socket:', error);
+        }
+      }
+
+      targetSocket.close();
+    }
+
+    function scheduleReconnect(reason) {
+      if (isDisposed || reconnectTimeoutRef.current) {
+        return;
+      }
+
+      reconnectAttemptCount += 1;
+      setReconnectAttempt(reconnectAttemptCount);
+
+      const delay = Math.min(
+        RECONNECT_BASE_DELAY_MS * (2 ** Math.max(0, reconnectAttemptCount - 1)),
+        RECONNECT_MAX_DELAY_MS
+      );
+
+      resetPresenceState();
+      setConnectionStatus('reconnecting');
+      setLastError(reason || `실시간 연결이 끊겼습니다. ${Math.round(delay / 1000)}초 후 다시 시도합니다.`);
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        reconnectTimeoutRef.current = null;
+        connectSocket();
+      }, delay);
+    }
 
     function handleIncomingMessage(event) {
       try {
@@ -299,6 +379,10 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
           !hasEnteredRef.current &&
           socket?.readyState === WebSocket.OPEN
         ) {
+          reconnectAttemptCount = 0;
+          setReconnectAttempt(0);
+          setConnectionStatus('connected');
+          setLastError('');
           socket.send(
             JSON.stringify({
               type: 'user_enter',
@@ -323,68 +407,80 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       }
     }
 
-    try {
-      setConnectionStatus('connecting');
-      setLastMessage(null);
-      setLastError('');
-      setRemoteEvent(null);
-      setRemoteUsers([]);
-      setChatMessages([]);
-      hasEnteredRef.current = false;
-      lastMoveSentAtRef.current = 0;
-      lastMovePositionRef.current = null;
-      remoteEventSequenceRef.current = 0;
-      socket = new WebSocket(getAuthenticatedWebSocketUrl());
-      socketRef.current = socket;
-    } catch (error) {
-      setConnectionStatus('error');
-      setLastError('실시간 연결을 만들지 못했습니다.');
-      console.error('Failed to create WebSocket connection:', error);
-      return undefined;
+    function connectSocket() {
+      try {
+        setConnectionStatus(reconnectAttemptCount > 0 ? 'reconnecting' : 'connecting');
+        setLastMessage(null);
+        setLastError(reconnectAttemptCount > 0 ? '실시간 연결을 다시 시도하는 중입니다.' : '');
+        if (reconnectAttemptCount > 0) {
+          resetPresenceState();
+        } else {
+          setRemoteEvent(null);
+          setRemoteUsers([]);
+          setChatMessages([]);
+          hasEnteredRef.current = false;
+          lastMoveSentAtRef.current = 0;
+          lastMovePositionRef.current = null;
+          remoteEventSequenceRef.current = 0;
+        }
+        socket = new WebSocket(getAuthenticatedWebSocketUrl());
+        socketRef.current = socket;
+      } catch (error) {
+        setConnectionStatus('error');
+        setLastError('실시간 연결을 만들지 못했습니다.');
+        console.error('Failed to create WebSocket connection:', error);
+        return;
+      }
+
+      socket.onopen = () => {
+        if (isDisposed) {
+          return;
+        }
+
+        setConnectionStatus(reconnectAttemptCount > 0 ? 'reconnecting' : 'connected');
+      };
+
+      socket.onmessage = handleIncomingMessage;
+
+      socket.onerror = () => {
+        if (isDisposed) {
+          return;
+        }
+
+        setConnectionStatus('reconnecting');
+        setLastError('실시간 연결 중 오류가 발생했습니다. 자동으로 다시 연결합니다.');
+      };
+
+      socket.onclose = () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+
+        if (isDisposed) {
+          return;
+        }
+
+        if (intentionalCloseSockets.has(socket)) {
+          return;
+        }
+
+        scheduleReconnect();
+      };
     }
 
-    socket.onopen = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('connected');
-    };
-
-    socket.onmessage = handleIncomingMessage;
-
-    socket.onerror = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('error');
-      setLastError('실시간 연결 중 오류가 발생했습니다.');
-    };
-
-    socket.onclose = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('disconnected');
-      socketRef.current = null;
-      hasEnteredRef.current = false;
-    };
+    connectSocket();
 
     return () => {
       isDisposed = true;
+      clearReconnectTimer();
+      setReconnectAttempt(0);
       socketRef.current = null;
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
       currentPositionRef.current = null;
       remoteEventSequenceRef.current = 0;
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.close();
-      } else {
-        socket?.close();
-      }
+      closeSocket(socket, { sendLeave: true });
     };
   }, [enabled, nickname, spaceId, userId]);
 
@@ -395,6 +491,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
     remoteEvent,
     remoteUsers,
     chatMessages,
+    reconnectAttempt,
     sendChatMessage,
     sendUserMove,
   };

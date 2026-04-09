@@ -65,6 +65,19 @@ class RealtimeSessionRegistryTest {
     }
 
     @Test
+    void findOpenSessionsPrunesClosedSessions() {
+        WebSocketSession closedSession = mock(WebSocketSession.class);
+        when(closedSession.getId()).thenReturn("session-closed");
+        when(closedSession.isOpen()).thenReturn(false);
+
+        realtimeSessionRegistry.bindSession(closedSession, 14L);
+        realtimeSessionRegistry.updateSessionPresence(closedSession, 7L, 30.0, 40.0);
+
+        assertThat(realtimeSessionRegistry.findOpenSessions(14L)).isEmpty();
+        assertThat(realtimeSessionRegistry.findOpenSessionsInSpace(7L)).isEmpty();
+    }
+
+    @Test
     void updateSessionPresenceRequiresBoundSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn("session-4");
