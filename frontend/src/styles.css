@@ -769,6 +769,10 @@ select {
   gap: 8px;
 }
 
+.lobby-zone-tab {
+  min-height: 44px;
+}
+
 .ghost-button {
   background: #ffffff;
 }
@@ -1033,6 +1037,10 @@ select {
   justify-content: flex-end;
 }
 
+.lobby-topbar__button {
+  justify-content: center;
+}
+
 .lobby-topbar__user {
   min-width: 180px;
   padding: 11px 14px;
@@ -1201,6 +1209,15 @@ select {
   align-content: start;
 }
 
+.lobby-quick-action {
+  min-width: 148px;
+  justify-content: center;
+}
+
+.lobby-quick-action--primary {
+  min-width: 176px;
+}
+
 .lobby-chat-drawer {
   padding: 20px;
   overflow: hidden;
@@ -1221,6 +1238,10 @@ select {
 .lobby-chat-drawer__header h3 {
   margin: 0;
   font-size: 1.05rem;
+}
+
+.lobby-chat-drawer__toggle {
+  white-space: nowrap;
 }
 
 .lobby-chat-drawer__preview {
@@ -1305,6 +1326,11 @@ select {
   padding: 6px;
   border-radius: 18px;
   background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+}
+
+.lobby-side-panel__tab {
+  flex: 1 1 calc(50% - 8px);
+  justify-content: center;
 }
 
 .lobby-side-panel__content {
@@ -1548,6 +1574,45 @@ select {
     width: min(100%, 100%);
   }
 
+  .lobby-topbar {
+    padding: 20px 22px;
+    gap: 16px;
+  }
+
+  .lobby-topbar__brand h1 {
+    font-size: 1.9rem;
+  }
+
+  .lobby-topbar__brand p {
+    max-width: none;
+  }
+
+  .lobby-topbar__status {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .lobby-topbar__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .lobby-topbar__user {
+    grid-column: 1 / -1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .lobby-topbar__button,
+  .lobby-status-pill {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
   .lobby-layout {
     grid-template-columns: 1fr;
   }
@@ -1568,6 +1633,27 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .lobby-stage--focused {
+    padding: 20px;
+  }
+
+  .lobby-stage-header--focused h2 {
+    font-size: 1.7rem;
+  }
+
+  .lobby-zone-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .lobby-zone-tab {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    white-space: normal;
+  }
+
   .lobby-game-shell,
   .lobby-game-container {
     min-height: 420px;
@@ -1580,6 +1666,31 @@ select {
 
   .lobby-chat-form {
     grid-template-columns: 1fr;
+  }
+
+  .lobby-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lobby-quick-action {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .lobby-quick-action--primary {
+    grid-column: 1 / -1;
+  }
+
+  .lobby-context-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lobby-context-meta span {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
   }
 
   .session-card-grid {
@@ -1605,14 +1716,33 @@ select {
   }
 
   .lobby-context-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     position: static;
+  }
+
+  .lobby-side-panel {
+    grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 860px) {
   .lobby-page-shell {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .lobby-topbar {
     padding: 18px;
     border-radius: 24px;
+  }
+
+  .lobby-topbar__brand h1 {
+    font-size: 1.62rem;
+    line-height: 1.08;
+  }
+
+  .lobby-topbar__brand p {
+    font-size: 0.93rem;
   }
 
   .lobby-stage-header--focused,
@@ -1628,14 +1758,42 @@ select {
     grid-template-columns: 1fr;
   }
 
-  .lobby-status-pill,
-  .lobby-topbar__user {
-    width: 100%;
+  .lobby-topbar__status,
+  .lobby-topbar__actions,
+  .lobby-context-panel,
+  .lobby-context-meta,
+  .lobby-quick-actions,
+  .lobby-guide-card__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-zone-tabs {
+    grid-template-columns: 1fr;
   }
 
   .lobby-inline-banner {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .lobby-stage--focused,
+  .lobby-chat-drawer,
+  .lobby-context-card,
+  .lobby-guide-card,
+  .lobby-side-panel {
+    padding: 18px;
+  }
+
+  .lobby-side-panel__tabs {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+
+  .lobby-side-panel__tab {
+    flex-basis: 100%;
   }
 
   .lobby-guide-step {
@@ -1644,5 +1802,29 @@ select {
 
   .lobby-side-panel__content {
     max-height: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .lobby-page-shell {
+    padding: 12px;
+  }
+
+  .lobby-topbar__brand p {
+    display: none;
+  }
+
+  .lobby-topbar__status,
+  .lobby-topbar__actions,
+  .lobby-zone-tabs,
+  .lobby-quick-actions,
+  .lobby-guide-card__actions,
+  .lobby-context-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-page-shell .lobby-game-shell,
+  .lobby-page-shell .lobby-game-container {
+    min-height: 360px;
   }
 }

@@ -2601,14 +2601,14 @@ export default function LobbyPage() {
         <div className="lobby-topbar__actions">
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button lobby-topbar__button"
             onClick={() => setActiveLobbyPanel('notifications')}
           >
             알림 {openNotificationCount > 0 ? `${openNotificationCount}` : ''}
           </button>
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button lobby-topbar__button"
             onClick={() => openActivityPanel()}
           >
             활동 {pendingRequestCount + pendingReservationCount > 0 ? `${pendingRequestCount + pendingReservationCount}` : ''}
@@ -2623,7 +2623,11 @@ export default function LobbyPage() {
               <span>사용자 불러오는 중...</span>
             )}
           </div>
-          <button type="button" className="primary-button" onClick={handleLogout}>
+          <button
+            type="button"
+            className="primary-button lobby-topbar__button lobby-topbar__button--primary"
+            onClick={handleLogout}
+          >
             로그아웃
           </button>
         </div>
@@ -2675,7 +2679,9 @@ export default function LobbyPage() {
                     key={zoneId}
                     type="button"
                     className={
-                      currentZoneId === zoneId ? 'secondary-button' : 'secondary-button ghost-button'
+                      currentZoneId === zoneId
+                        ? 'secondary-button lobby-zone-tab'
+                        : 'secondary-button ghost-button lobby-zone-tab'
                     }
                     onClick={() => focusZone(zoneId)}
                   >
@@ -2715,14 +2721,14 @@ export default function LobbyPage() {
               <div className="lobby-quick-actions">
                 <button
                   type="button"
-                  className="primary-button"
+                  className="primary-button lobby-quick-action lobby-quick-action--primary"
                   onClick={() => focusChatComposer('안녕하세요! 같이 이야기해보실래요?')}
                 >
                   공개 채팅 열기
                 </button>
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="secondary-button lobby-quick-action"
                   onClick={() => {
                     focusZone('MENTORING');
                     openInteractionPanel('request');
@@ -2732,7 +2738,7 @@ export default function LobbyPage() {
                 </button>
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="secondary-button lobby-quick-action"
                   onClick={() => {
                     focusZone('MENTORING');
                     openInteractionPanel('reservation');
@@ -2742,7 +2748,7 @@ export default function LobbyPage() {
                 </button>
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="secondary-button lobby-quick-action"
                   onClick={() => openActivityPanel()}
                 >
                   활동 보기
@@ -2761,7 +2767,7 @@ export default function LobbyPage() {
               </div>
               <button
                 type="button"
-                className="secondary-button"
+                className="secondary-button lobby-chat-drawer__toggle"
                 onClick={() => setIsChatDrawerOpen((currentValue) => !currentValue)}
               >
                 {isChatDrawerOpen ? '접기' : '열기'}
@@ -2862,28 +2868,44 @@ export default function LobbyPage() {
             <div className="lobby-side-panel__tabs">
               <button
                 type="button"
-                className={activeLobbyPanel === 'interact' ? 'primary-button' : 'secondary-button'}
+                className={
+                  activeLobbyPanel === 'interact'
+                    ? 'primary-button lobby-side-panel__tab'
+                    : 'secondary-button lobby-side-panel__tab'
+                }
                 onClick={() => openInteractionPanel(activeInteractionMode)}
               >
                 상호작용
               </button>
               <button
                 type="button"
-                className={activeLobbyPanel === 'activity' ? 'primary-button' : 'secondary-button'}
+                className={
+                  activeLobbyPanel === 'activity'
+                    ? 'primary-button lobby-side-panel__tab'
+                    : 'secondary-button lobby-side-panel__tab'
+                }
                 onClick={() => openActivityPanel()}
               >
                 활동
               </button>
               <button
                 type="button"
-                className={activeLobbyPanel === 'notifications' ? 'primary-button' : 'secondary-button'}
+                className={
+                  activeLobbyPanel === 'notifications'
+                    ? 'primary-button lobby-side-panel__tab'
+                    : 'secondary-button lobby-side-panel__tab'
+                }
                 onClick={() => setActiveLobbyPanel('notifications')}
               >
                 알림
               </button>
               <button
                 type="button"
-                className={activeLobbyPanel === 'feedback' ? 'primary-button' : 'secondary-button'}
+                className={
+                  activeLobbyPanel === 'feedback'
+                    ? 'primary-button lobby-side-panel__tab'
+                    : 'secondary-button lobby-side-panel__tab'
+                }
                 onClick={() => setActiveLobbyPanel('feedback')}
               >
                 기록
