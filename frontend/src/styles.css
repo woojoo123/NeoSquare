@@ -1058,6 +1058,18 @@ select {
   color: #475569;
 }
 
+.lobby-inline-banner--warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.lobby-inline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .lobby-dashboard {
   margin-top: 20px;
   display: grid;

@@ -616,6 +616,8 @@ export default function LobbyPage() {
   const [playerPosition, setPlayerPosition] = useState(null);
   const [zoneMoveRequest, setZoneMoveRequest] = useState(null);
   const [activeLobbyPanel, setActiveLobbyPanel] = useState('interact');
+  const [activeInteractionMode, setActiveInteractionMode] = useState('request');
+  const [activeActivityTab, setActiveActivityTab] = useState('received_requests');
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [selectedMentorId, setSelectedMentorId] = useState('');
   const [mentoringMessage, setMentoringMessage] = useState('');
@@ -679,6 +681,7 @@ export default function LobbyPage() {
 
     setSelectedMentorId(String(user.userId));
     setActiveLobbyPanel('interact');
+    setActiveInteractionMode('request');
 
     if (!mentoringMessage.trim()) {
       setMentoringMessage(`${user.label}님, 잠깐 멘토링 가능하실까요?`);
@@ -692,6 +695,7 @@ export default function LobbyPage() {
 
     setSelectedReservationMentorId(String(user.userId));
     setActiveLobbyPanel('interact');
+    setActiveInteractionMode('reservation');
 
     if (!reservationMessage.trim()) {
       setReservationMessage(`${user.label}님과 시간을 맞춰 멘토링을 진행하고 싶어요.`);
@@ -757,16 +761,19 @@ export default function LobbyPage() {
 
     if (notification.actionType === 'view_my_reservations') {
       setActiveLobbyPanel('activity');
+      setActiveActivityTab('my_progress');
       return;
     }
 
     if (notification.actionType === 'view_received_reservations') {
       setActiveLobbyPanel('activity');
+      setActiveActivityTab('received_reservations');
       return;
     }
 
     if (notification.actionType === 'view_requests') {
       setActiveLobbyPanel('activity');
+      setActiveActivityTab('my_progress');
     }
   };
 
@@ -1398,14 +1405,20 @@ export default function LobbyPage() {
         <button
           type="button"
           className="primary-button"
-          onClick={() => setActiveLobbyPanel('interact')}
+          onClick={() => {
+            setActiveLobbyPanel('interact');
+            setActiveInteractionMode('request');
+          }}
         >
           멘토링 요청 열기
         </button>
         <button
           type="button"
           className="secondary-button"
-          onClick={() => setActiveLobbyPanel('interact')}
+          onClick={() => {
+            setActiveLobbyPanel('interact');
+            setActiveInteractionMode('reservation');
+          }}
         >
           예약 제안 열기
         </button>
@@ -1524,113 +1537,130 @@ export default function LobbyPage() {
       <section className="lobby-panel-section">
         <div className="lobby-panel-section__header">
           <div>
-            <h3>멘토링 요청</h3>
+            <h3>상호작용 시작</h3>
+            <p className="app-note">한 번에 하나의 액션만 열어서 더 가볍게 처리합니다.</p>
+          </div>
+        </div>
+        <div className="lobby-inline-tabs">
+          <button
+            type="button"
+            className={activeInteractionMode === 'request' ? 'primary-button' : 'secondary-button'}
+            onClick={() => setActiveInteractionMode('request')}
+          >
+            멘토링 요청
+          </button>
+          <button
+            type="button"
+            className={activeInteractionMode === 'reservation' ? 'primary-button' : 'secondary-button'}
+            onClick={() => setActiveInteractionMode('reservation')}
+          >
+            예약 제안
+          </button>
+        </div>
+
+        {activeInteractionMode === 'request' ? (
+          <>
             <p className="app-note">현재 접속 중인 사용자에게 바로 요청을 보낼 수 있습니다.</p>
-          </div>
-        </div>
-        <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
-          <label className="app-field">
-            <span>대상 선택</span>
-            <select
-              className="app-input"
-              value={selectedMentorId}
-              onChange={(event) => setSelectedMentorId(event.target.value)}
-              disabled={mentorOptions.length === 0 || isSubmittingRequest}
-            >
-              {mentorOptions.length === 0 ? (
-                <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
-              ) : null}
-              {mentorOptions.map((mentor) => (
-                <option key={mentor.userId} value={mentor.userId}>
-                  {mentor.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
+              <label className="app-field">
+                <span>대상 선택</span>
+                <select
+                  className="app-input"
+                  value={selectedMentorId}
+                  onChange={(event) => setSelectedMentorId(event.target.value)}
+                  disabled={mentorOptions.length === 0 || isSubmittingRequest}
+                >
+                  {mentorOptions.length === 0 ? (
+                    <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
+                  ) : null}
+                  {mentorOptions.map((mentor) => (
+                    <option key={mentor.userId} value={mentor.userId}>
+                      {mentor.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label className="app-field">
-            <span>메시지</span>
-            <textarea
-              className="app-input mentoring-textarea"
-              placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
-              value={mentoringMessage}
-              onChange={(event) => setMentoringMessage(event.target.value)}
-              rows={3}
-            />
-          </label>
+              <label className="app-field">
+                <span>메시지</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
+                  value={mentoringMessage}
+                  onChange={(event) => setMentoringMessage(event.target.value)}
+                  rows={3}
+                />
+              </label>
 
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={mentorOptions.length === 0 || isSubmittingRequest}
-          >
-            {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
-          </button>
-        </form>
-        {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
-        {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
-      </section>
-
-      <section className="lobby-panel-section">
-        <div className="lobby-panel-section__header">
-          <div>
-            <h3>멘토링 예약</h3>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={mentorOptions.length === 0 || isSubmittingRequest}
+              >
+                {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
+              </button>
+            </form>
+            {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
+            {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
+          </>
+        ) : (
+          <>
             <p className="app-note">지금 보이는 사용자를 기준으로 나중 멘토링 시간을 제안합니다.</p>
-          </div>
-        </div>
-        <form className="mentoring-form" onSubmit={handleReservationSubmit}>
-          <label className="app-field">
-            <span>예약 대상</span>
-            <select
-              className="app-input"
-              value={selectedReservationMentorId}
-              onChange={(event) => setSelectedReservationMentorId(event.target.value)}
-              disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-            >
-              {mentorOptions.length === 0 ? (
-                <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
-              ) : null}
-              {mentorOptions.map((mentor) => (
-                <option key={mentor.userId} value={mentor.userId}>
-                  {mentor.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <form className="mentoring-form" onSubmit={handleReservationSubmit}>
+              <label className="app-field">
+                <span>예약 대상</span>
+                <select
+                  className="app-input"
+                  value={selectedReservationMentorId}
+                  onChange={(event) => setSelectedReservationMentorId(event.target.value)}
+                  disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+                >
+                  {mentorOptions.length === 0 ? (
+                    <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
+                  ) : null}
+                  {mentorOptions.map((mentor) => (
+                    <option key={mentor.userId} value={mentor.userId}>
+                      {mentor.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label className="app-field">
-            <span>예약 시간</span>
-            <input
-              type="datetime-local"
-              className="app-input"
-              value={reservationDateTime}
-              onChange={(event) => setReservationDateTime(event.target.value)}
-              disabled={reservationStatus === 'saving'}
-            />
-          </label>
+              <label className="app-field">
+                <span>예약 시간</span>
+                <input
+                  type="datetime-local"
+                  className="app-input"
+                  value={reservationDateTime}
+                  onChange={(event) => setReservationDateTime(event.target.value)}
+                  disabled={reservationStatus === 'saving'}
+                />
+              </label>
 
-          <label className="app-field">
-            <span>메시지</span>
-            <textarea
-              className="app-input mentoring-textarea"
-              placeholder="예: 포트폴리오 리뷰를 같이 보고 싶어요."
-              value={reservationMessage}
-              onChange={(event) => setReservationMessage(event.target.value)}
-              rows={3}
-              disabled={reservationStatus === 'saving'}
-            />
-          </label>
+              <label className="app-field">
+                <span>메시지</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  placeholder="예: 포트폴리오 리뷰를 같이 보고 싶어요."
+                  value={reservationMessage}
+                  onChange={(event) => setReservationMessage(event.target.value)}
+                  rows={3}
+                  disabled={reservationStatus === 'saving'}
+                />
+              </label>
 
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-          >
-            {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
-          </button>
-        </form>
-        {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
-        {reservationError ? <p className="app-error">{reservationError}</p> : null}
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
+              >
+                {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
+              </button>
+            </form>
+            {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
+            {reservationError ? <p className="app-error">{reservationError}</p> : null}
+          </>
+        )}
       </section>
     </div>
   );
@@ -1655,203 +1685,121 @@ export default function LobbyPage() {
       <section className="lobby-panel-section">
         <div className="lobby-panel-section__header">
           <div>
-            <h3>받은 멘토링 요청</h3>
-            <p className="app-note">로비 안에서 받은 요청을 처리하고 바로 세션으로 이어집니다.</p>
+            <h3>활동 관리</h3>
+            <p className="app-note">받은 액션과 내가 진행 중인 흐름을 나눠서 확인합니다.</p>
           </div>
         </div>
-        {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
-        {receivedRequests.length === 0 ? (
-          <p className="app-note">
-            아직 받은 멘토링 요청이 없습니다. 멘토링 존에서 먼저 사람을 만나보세요.
-          </p>
-        ) : (
-          <ul className="mentoring-request-list">
-            {receivedRequests.map((request) => {
-              const isPending = request.status === 'PENDING';
-              const isProcessing = activeRequestActionId === request.id;
-
-              return (
-                <li key={request.id} className="mentoring-request-card">
-                  <strong>{request.requesterLabel}</strong>
-                  <span>{formatRequestStatus(request.status)}</span>
-                  <p>{request.message || '메시지가 없습니다.'}</p>
-                  {isPending || request.status === 'ACCEPTED' ? (
-                    <div className="mentoring-request-actions">
-                      {isPending ? (
-                        <>
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() => handleMentoringDecision(request.id, 'accept')}
-                            disabled={isProcessing}
-                          >
-                            {isProcessing ? '처리 중...' : '수락'}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => handleMentoringDecision(request.id, 'reject')}
-                            disabled={isProcessing}
-                          >
-                            거절
-                          </button>
-                        </>
-                      ) : null}
-                      {request.status === 'ACCEPTED' ? (
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => openMentoringSession(request)}
-                        >
-                          세션 입장
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="lobby-panel-section">
-        <div className="lobby-panel-section__header">
-          <div>
-            <h3>받은 예약</h3>
-            <p className="app-note">받은 예약은 여기서 바로 수락하거나 거절할 수 있습니다.</p>
-          </div>
+        <div className="lobby-inline-tabs">
+          <button
+            type="button"
+            className={activeActivityTab === 'received_requests' ? 'primary-button' : 'secondary-button'}
+            onClick={() => setActiveActivityTab('received_requests')}
+          >
+            받은 요청
+          </button>
+          <button
+            type="button"
+            className={activeActivityTab === 'received_reservations' ? 'primary-button' : 'secondary-button'}
+            onClick={() => setActiveActivityTab('received_reservations')}
+          >
+            받은 예약
+          </button>
+          <button
+            type="button"
+            className={activeActivityTab === 'my_progress' ? 'primary-button' : 'secondary-button'}
+            onClick={() => setActiveActivityTab('my_progress')}
+          >
+            내 진행
+          </button>
         </div>
-        {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
-        {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
-        {receivedReservations.length === 0 ? (
-          <p className="app-note">
-            아직 받은 예약이 없습니다. 멘토링 존에서 대화를 시작해 보세요.
-          </p>
-        ) : (
-          <ul className="mentoring-request-list">
-            {receivedReservations.map((reservation) => {
-              const reservationEntryState = getReservationEntryState(
-                reservation.reservedAt,
-                reservationClock
-              );
-              const isPending = reservation.status === 'PENDING';
-              const canEnterReservation =
-                reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
-              const isProcessing = activeReceivedReservationActionId === reservation.id;
 
-              return (
-                <li key={reservation.id} className="mentoring-request-card">
-                  <strong>{reservation.requesterLabel || '알 수 없는 요청자'}</strong>
-                  <span>{formatReservationStatus(reservation.status)}</span>
-                  <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
-                  <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
-                  {reservation.status === 'ACCEPTED' ? <p>{reservationEntryState.label}</p> : null}
-                  {isPending || canEnterReservation ? (
-                    <div className="mentoring-request-actions">
-                      {canEnterReservation ? (
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => openReservationSession(reservation)}
-                        >
-                          세션 입장
-                        </button>
-                      ) : null}
-                      {isPending ? (
-                        <>
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() =>
-                              handleReceivedReservationDecision(reservation.id, 'accept')
-                            }
-                            disabled={isProcessing}
-                          >
-                            {isProcessing ? '처리 중...' : '수락'}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() =>
-                              handleReceivedReservationDecision(reservation.id, 'reject')
-                            }
-                            disabled={isProcessing}
-                          >
-                            거절
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="lobby-panel-section">
-        <div className="lobby-panel-section__header">
-          <div>
-            <h3>내 활동</h3>
-            <p className="app-note">내가 보낸 요청과 예약, 바로 입장 가능한 세션을 확인합니다.</p>
-          </div>
-        </div>
-        {sentRequests.length === 0 && reservations.length === 0 ? (
-          <p className="app-note">
-            아직 진행 중인 요청이나 예약이 없습니다. 사람을 만나 먼저 대화를 시작해 보세요.
-          </p>
-        ) : (
+        {activeActivityTab === 'received_requests' ? (
           <>
-            {sentRequests.length > 0 ? (
+            {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
+            {receivedRequests.length === 0 ? (
+              <p className="app-note">
+                아직 받은 멘토링 요청이 없습니다. 멘토링 존에서 먼저 사람을 만나보세요.
+              </p>
+            ) : (
               <ul className="mentoring-request-list">
-                {sentRequests.map((request) => (
-                  <li key={request.id} className="mentoring-request-card">
-                    <strong>{request.mentorLabel}</strong>
-                    <span>{formatRequestStatus(request.status)}</span>
-                    <p>{request.message || '메시지가 없습니다.'}</p>
-                    {request.status === 'ACCEPTED' ? (
-                      <div className="mentoring-request-actions">
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => openMentoringSession(request)}
-                        >
-                          세션 입장
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+                {receivedRequests.map((request) => {
+                  const isPending = request.status === 'PENDING';
+                  const isProcessing = activeRequestActionId === request.id;
 
-            {reservations.length > 0 ? (
+                  return (
+                    <li key={request.id} className="mentoring-request-card">
+                      <strong>{request.requesterLabel}</strong>
+                      <span>{formatRequestStatus(request.status)}</span>
+                      <p>{request.message || '메시지가 없습니다.'}</p>
+                      {isPending || request.status === 'ACCEPTED' ? (
+                        <div className="mentoring-request-actions">
+                          {isPending ? (
+                            <>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() => handleMentoringDecision(request.id, 'accept')}
+                                disabled={isProcessing}
+                              >
+                                {isProcessing ? '처리 중...' : '수락'}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleMentoringDecision(request.id, 'reject')}
+                                disabled={isProcessing}
+                              >
+                                거절
+                              </button>
+                            </>
+                          ) : null}
+                          {request.status === 'ACCEPTED' ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => openMentoringSession(request)}
+                            >
+                              세션 입장
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        ) : null}
+
+        {activeActivityTab === 'received_reservations' ? (
+          <>
+            {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
+            {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
+            {receivedReservations.length === 0 ? (
+              <p className="app-note">
+                아직 받은 예약이 없습니다. 멘토링 존에서 대화를 시작해 보세요.
+              </p>
+            ) : (
               <ul className="mentoring-request-list">
-                {reservations.map((reservation) => {
+                {receivedReservations.map((reservation) => {
                   const reservationEntryState = getReservationEntryState(
                     reservation.reservedAt,
                     reservationClock
                   );
+                  const isPending = reservation.status === 'PENDING';
                   const canEnterReservation =
                     reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
-                  const isCancelable =
-                    reservation.status === 'PENDING' ||
-                    (reservation.status === 'ACCEPTED' &&
-                      reservationEntryState.status !== 'expired');
-                  const isProcessing = activeReservationActionId === reservation.id;
+                  const isProcessing = activeReceivedReservationActionId === reservation.id;
 
                   return (
                     <li key={reservation.id} className="mentoring-request-card">
-                      <strong>{reservation.mentorLabel}</strong>
+                      <strong>{reservation.requesterLabel || '알 수 없는 요청자'}</strong>
                       <span>{formatReservationStatus(reservation.status)}</span>
                       <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
                       <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
-                      {reservation.status === 'ACCEPTED' ? (
-                        <p>{reservationEntryState.label}</p>
-                      ) : null}
-                      {isCancelable || canEnterReservation ? (
+                      {reservation.status === 'ACCEPTED' ? <p>{reservationEntryState.label}</p> : null}
+                      {isPending || canEnterReservation ? (
                         <div className="mentoring-request-actions">
                           {canEnterReservation ? (
                             <button
@@ -1862,23 +1810,125 @@ export default function LobbyPage() {
                               세션 입장
                             </button>
                           ) : null}
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => handleReservationCancel(reservation.id)}
-                            disabled={isProcessing}
-                          >
-                            {isProcessing ? '취소 중...' : '취소'}
-                          </button>
+                          {isPending ? (
+                            <>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() =>
+                                  handleReceivedReservationDecision(reservation.id, 'accept')
+                                }
+                                disabled={isProcessing}
+                              >
+                                {isProcessing ? '처리 중...' : '수락'}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() =>
+                                  handleReceivedReservationDecision(reservation.id, 'reject')
+                                }
+                                disabled={isProcessing}
+                              >
+                                거절
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>
                   );
                 })}
               </ul>
-            ) : null}
+            )}
           </>
-        )}
+        ) : null}
+
+        {activeActivityTab === 'my_progress' ? (
+          <>
+            {sentRequests.length === 0 && reservations.length === 0 ? (
+              <p className="app-note">
+                아직 진행 중인 요청이나 예약이 없습니다. 사람을 만나 먼저 대화를 시작해 보세요.
+              </p>
+            ) : (
+              <>
+                {sentRequests.length > 0 ? (
+                  <ul className="mentoring-request-list">
+                    {sentRequests.map((request) => (
+                      <li key={request.id} className="mentoring-request-card">
+                        <strong>{request.mentorLabel}</strong>
+                        <span>{formatRequestStatus(request.status)}</span>
+                        <p>{request.message || '메시지가 없습니다.'}</p>
+                        {request.status === 'ACCEPTED' ? (
+                          <div className="mentoring-request-actions">
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => openMentoringSession(request)}
+                            >
+                              세션 입장
+                            </button>
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {reservations.length > 0 ? (
+                  <ul className="mentoring-request-list">
+                    {reservations.map((reservation) => {
+                      const reservationEntryState = getReservationEntryState(
+                        reservation.reservedAt,
+                        reservationClock
+                      );
+                      const canEnterReservation =
+                        reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
+                      const isCancelable =
+                        reservation.status === 'PENDING' ||
+                        (reservation.status === 'ACCEPTED' &&
+                          reservationEntryState.status !== 'expired');
+                      const isProcessing = activeReservationActionId === reservation.id;
+
+                      return (
+                        <li key={reservation.id} className="mentoring-request-card">
+                          <strong>{reservation.mentorLabel}</strong>
+                          <span>{formatReservationStatus(reservation.status)}</span>
+                          <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
+                          <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
+                          {reservation.status === 'ACCEPTED' ? (
+                            <p>{reservationEntryState.label}</p>
+                          ) : null}
+                          {isCancelable || canEnterReservation ? (
+                            <div className="mentoring-request-actions">
+                              {canEnterReservation ? (
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  onClick={() => openReservationSession(reservation)}
+                                >
+                                  세션 입장
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleReservationCancel(reservation.id)}
+                                disabled={isProcessing}
+                              >
+                                {isProcessing ? '취소 중...' : '취소'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </>
+            )}
+          </>
+        ) : null}
       </section>
     </div>
   );
@@ -2091,10 +2141,8 @@ export default function LobbyPage() {
 
         <div className="lobby-topbar__status">
           <span className="lobby-status-pill">현재 위치 · {currentZone.label}</span>
-          <span className="lobby-status-pill">실시간 접속 · {mentorOptions.length}명</span>
-          <span className="lobby-status-pill">
-            연결 상태 · {formatRealtimeConnectionStatus(connectionStatus)}
-          </span>
+          <span className="lobby-status-pill">이 구역 접속 · {currentZonePopulation}명</span>
+          <span className="lobby-status-pill">근처 사용자 · {nearbyUsers.length}명</span>
           {connectionStatus === 'reconnecting' ? (
             <span className="lobby-status-pill lobby-status-pill--warn">
               재연결 시도 {Math.max(reconnectAttempt, 1)}회
@@ -2137,6 +2185,14 @@ export default function LobbyPage() {
         {lobbyNotice ? <p className="app-success">{lobbyNotice}</p> : null}
         {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
         {lastError ? <p className="app-error">{lastError}</p> : null}
+        {connectionStatus === 'reconnecting' ? (
+          <div className="lobby-inline-banner lobby-inline-banner--warn">
+            <div>
+              <strong>실시간 연결을 다시 잡는 중입니다.</strong>
+              <span>잠시 후 자동으로 복구됩니다. 이동과 채팅이 잠깐 늦을 수 있습니다.</span>
+            </div>
+          </div>
+        ) : null}
         {feedbackPrompt ? (
           <div className="lobby-inline-banner">
             <div>
@@ -2220,6 +2276,7 @@ export default function LobbyPage() {
                   onClick={() => {
                     focusZone('MENTORING');
                     setActiveLobbyPanel('interact');
+                    setActiveInteractionMode('request');
                   }}
                 >
                   멘토링 요청
@@ -2230,6 +2287,7 @@ export default function LobbyPage() {
                   onClick={() => {
                     focusZone('MENTORING');
                     setActiveLobbyPanel('interact');
+                    setActiveInteractionMode('reservation');
                   }}
                 >
                   예약 제안
@@ -2241,15 +2299,6 @@ export default function LobbyPage() {
                 >
                   활동 보기
                 </button>
-                {currentZoneSpace ? (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => openSpace(currentZoneSpace)}
-                  >
-                    공간 입장
-                  </button>
-                ) : null}
               </div>
             </div>
           </section>
@@ -2332,7 +2381,7 @@ export default function LobbyPage() {
             <div className="lobby-context-meta">
               <span>이 구역 접속 {currentZonePopulation}명</span>
               <span>근처 사용자 {nearbyUsers.length}명</span>
-              <span>최근 이벤트 {lastMessage?.type || '대기 중'}</span>
+              <span>열린 알림 {openNotificationCount}건</span>
             </div>
             {renderContextActions()}
             {renderContextBody()}
