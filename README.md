@@ -193,8 +193,8 @@ npm run build
 
 포함되는 더미 데이터:
 - 보낸 요청 / 받은 요청 / 수락된 요청 / 종료된 요청 예시
-- 수락된 예약 / 대기 중 예약 예시
-- 요청 기반 세션 피드백 예시
+- 수락된 예약 / 대기 중 예약 / 종료된 예약 예시
+- 요청 기반 / 예약 기반 세션 피드백 예시
 - 요청 수락 / 예약 수락 알림 예시
 
 ### Frontend
@@ -203,12 +203,14 @@ npm run build
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `/api` | REST API base URL |
 | `VITE_WS_URL` | `/ws` 또는 same-host ws URL | WebSocket base URL |
+| `VITE_WEBRTC_ICE_SERVERS` | Google STUN 1개 기본값 사용 | WebRTC ICE server JSON 배열 |
 
 프론트와 백엔드를 다른 호스트로 띄우는 경우 예시:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8080/api
 VITE_WS_URL=ws://localhost:8080/ws
+VITE_WEBRTC_ICE_SERVERS='[{"urls":"stun:stun.l.google.com:19302"}]'
 ```
 
 ## 디렉터리 구조 요약

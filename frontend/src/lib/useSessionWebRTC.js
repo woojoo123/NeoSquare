@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
 
-const RTC_CONFIGURATION = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-};
-
+const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 const SIGNAL_EVENT_TYPES = ['webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate'];
 
 function toNumber(value) {
@@ -22,6 +19,72 @@ function toNumber(value) {
 
   return null;
 }
+
+function normalizeIceServerEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+
+  if (typeof entry === 'string') {
+    return {
+      urls: entry,
+    };
+  }
+
+  if (Array.isArray(entry)) {
+    return {
+      urls: entry.filter((value) => typeof value === 'string' && value.trim() !== ''),
+    };
+  }
+
+  if (typeof entry !== 'object') {
+    return null;
+  }
+
+  const urls = Array.isArray(entry.urls)
+    ? entry.urls.filter((value) => typeof value === 'string' && value.trim() !== '')
+    : typeof entry.urls === 'string'
+      ? entry.urls
+      : null;
+
+  if (!urls || (Array.isArray(urls) && urls.length === 0)) {
+    return null;
+  }
+
+  return {
+    urls,
+    username: typeof entry.username === 'string' ? entry.username : undefined,
+    credential: typeof entry.credential === 'string' ? entry.credential : undefined,
+  };
+}
+
+function resolveRtcConfiguration() {
+  const configuredIceServers = import.meta.env.VITE_WEBRTC_ICE_SERVERS;
+
+  if (!configuredIceServers) {
+    return {
+      iceServers: DEFAULT_ICE_SERVERS,
+    };
+  }
+
+  try {
+    const parsedIceServers = JSON.parse(configuredIceServers);
+    const normalizedIceServers = (Array.isArray(parsedIceServers) ? parsedIceServers : [parsedIceServers])
+      .map(normalizeIceServerEntry)
+      .filter(Boolean);
+
+    return {
+      iceServers: normalizedIceServers.length > 0 ? normalizedIceServers : DEFAULT_ICE_SERVERS,
+    };
+  } catch (error) {
+    console.warn('Failed to parse VITE_WEBRTC_ICE_SERVERS. Falling back to default STUN.', error);
+    return {
+      iceServers: DEFAULT_ICE_SERVERS,
+    };
+  }
+}
+
+const RTC_CONFIGURATION = resolveRtcConfiguration();
 
 function normalizeSignalMessage(message, requestId) {
   if (!SIGNAL_EVENT_TYPES.includes(message?.type)) {
@@ -67,6 +130,14 @@ function normalizeSignalControlMessage(message) {
 }
 
 function getConnectionErrorMessage(error) {
+  if (error?.name === 'InvalidStateError') {
+    return '영상 연결 상태가 이미 변경되었습니다. 다시 시도해 주세요.';
+  }
+
+  if (error?.name === 'OperationError') {
+    return '브라우저가 영상 연결 설정을 완료하지 못했습니다.';
+  }
+
   return error?.message || '영상 연결을 준비하지 못했습니다.';
 }
 
@@ -86,6 +157,7 @@ export function useSessionWebRTC({
   const remoteStreamRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);
   const socketClosingRef = useRef(false);
+  const enabledRef = useRef(enabled);
   const [connectionStatus, setConnectionStatus] = useState('not_connected');
   const [statusMessage, setStatusMessage] = useState(
     '로컬 미디어가 준비되면 통화를 시작할 수 있습니다.'
@@ -96,6 +168,7 @@ export function useSessionWebRTC({
   const [canRetry, setCanRetry] = useState(false);
 
   localStreamRef.current = localStream;
+  enabledRef.current = enabled;
 
   function setStatus(nextStatus, nextMessage, options = {}) {
     setConnectionStatus(nextStatus);
@@ -110,6 +183,31 @@ export function useSessionWebRTC({
 
     remoteStreamRef.current = null;
     setHasRemoteStream(false);
+  }
+
+  function closeSignalingSocket({ resetRequestedStart = false } = {}) {
+    const socket = socketRef.current;
+
+    if (resetRequestedStart) {
+      startRequestedRef.current = false;
+    }
+
+    isSocketReadyRef.current = false;
+
+    if (!socket) {
+      socketRef.current = null;
+      return;
+    }
+
+    socketRef.current = null;
+
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socketClosingRef.current = true;
+      socket.close();
+      return;
+    }
+
+    socketClosingRef.current = false;
   }
 
   function cleanupPeerConnection(nextStatus = 'not_connected', nextMessage = '영상 연결 대기 중입니다.') {
@@ -267,7 +365,9 @@ export function useSessionWebRTC({
       } else if (state === 'failed') {
         clearRemoteStream();
         setErrorMessage('영상 연결에 실패했습니다.');
-        setStatus('error', '연결에 실패했습니다.', { canRetry: true });
+        setStatus('error', '연결에 실패했습니다. 필요하면 다시 시도해 주세요.', {
+          canRetry: true,
+        });
       } else if (state === 'closed') {
         clearRemoteStream();
         setStatus('not_connected', '연결이 종료되었습니다.');
@@ -279,7 +379,9 @@ export function useSessionWebRTC({
 
       if (state === 'failed') {
         setErrorMessage('ICE 연결에 실패했습니다.');
-        setStatus('error', 'ICE 연결에 실패했습니다.', { canRetry: true });
+        setStatus('error', 'ICE 연결에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.', {
+          canRetry: true,
+        });
       }
     };
 
@@ -390,6 +492,149 @@ export function useSessionWebRTC({
     }
   }
 
+  async function handleIncomingMessage(event) {
+    try {
+      const parsedMessage = JSON.parse(event.data);
+
+      if (parsedMessage.type === 'ws_connected') {
+        isSocketReadyRef.current = true;
+        setErrorMessage('');
+
+        if (startRequestedRef.current && localStreamRef.current) {
+          if (isInitiator) {
+            await createOffer(localStreamRef.current);
+          } else {
+            setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
+          }
+        }
+
+        return;
+      }
+
+      const controlMessage = normalizeSignalControlMessage(parsedMessage);
+
+      if (controlMessage) {
+        setLastSignalType(controlMessage.receivedType);
+
+        if (controlMessage.type === 'ws_ack') {
+          if (controlMessage.receivedType === 'webrtc_offer') {
+            setStatus('signaling', '연결 제안 전송이 확인되었습니다. 응답을 기다리는 중입니다...');
+          } else if (controlMessage.receivedType === 'webrtc_answer') {
+            setStatus('connecting', '연결 응답 전송이 확인되었습니다. 상대 영상과 연결 중입니다...');
+          }
+
+          return;
+        }
+
+        if (controlMessage.type === 'ws_error') {
+          setErrorMessage(controlMessage.message);
+
+          if (controlMessage.message.includes('not connected')) {
+            setStatus(
+              'disconnected',
+              '상대 참가자가 아직 이 세션에 접속하지 않았습니다.',
+              { canRetry: true }
+            );
+          } else {
+            setStatus('error', controlMessage.message || '영상 연결 신호 처리에 실패했습니다.', {
+              canRetry: true,
+            });
+          }
+
+          return;
+        }
+      }
+
+      const signal = normalizeSignalMessage(parsedMessage, requestId);
+
+      if (!signal || signal.senderId === userId) {
+        return;
+      }
+
+      setLastSignalType(signal.type);
+
+      if (signal.type === 'webrtc_offer') {
+        await createAnswer(signal);
+        return;
+      }
+
+      if (signal.type === 'webrtc_answer') {
+        await applyAnswer(signal);
+        return;
+      }
+
+      if (signal.type === 'webrtc_ice_candidate') {
+        await applyIceCandidate(signal);
+      }
+    } catch (error) {
+      setErrorMessage('시그널링 메시지를 해석하지 못했습니다.');
+      setStatus('error', '시그널링 메시지를 해석하지 못했습니다.', { canRetry: true });
+    }
+  }
+
+  function openSignalingSocket() {
+    if (!enabledRef.current || !requestId || !userId) {
+      return null;
+    }
+
+    const currentSocket = socketRef.current;
+
+    if (
+      currentSocket &&
+      (currentSocket.readyState === WebSocket.OPEN || currentSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      return currentSocket;
+    }
+
+    closeSignalingSocket();
+
+    try {
+      const nextSocket = new WebSocket(getAuthenticatedWebSocketUrl());
+      socketRef.current = nextSocket;
+      isSocketReadyRef.current = false;
+
+      nextSocket.onmessage = (event) => {
+        handleIncomingMessage(event);
+      };
+
+      nextSocket.onerror = () => {
+        setErrorMessage('영상 연결 통신 오류가 발생했습니다.');
+        setStatus('error', '영상 연결 통신 오류가 발생했습니다.', { canRetry: true });
+      };
+
+      nextSocket.onclose = () => {
+        if (socketRef.current === nextSocket) {
+          socketRef.current = null;
+        }
+
+        isSocketReadyRef.current = false;
+
+        if (socketClosingRef.current) {
+          socketClosingRef.current = false;
+          return;
+        }
+
+        if (!enabledRef.current) {
+          return;
+        }
+
+        if (startRequestedRef.current) {
+          setStatus('disconnected', '시그널링 소켓이 종료되었습니다. 다시 시도해 주세요.', {
+            canRetry: true,
+          });
+        } else {
+          setStatus('not_connected', '시그널링 소켓이 종료되었습니다.');
+        }
+      };
+
+      return nextSocket;
+    } catch (error) {
+      setErrorMessage('시그널링 소켓을 열지 못했습니다.');
+      setStatus('error', '시그널링 소켓을 열지 못했습니다.', { canRetry: true });
+      return null;
+    }
+  }
+
   async function startConnection(streamOverride) {
     const activeStream = streamOverride || localStreamRef.current;
     startRequestedRef.current = true;
@@ -412,6 +657,13 @@ export function useSessionWebRTC({
 
     ensurePeerConnection(activeStream);
 
+    const socket = openSignalingSocket();
+
+    if (!socket) {
+      setStatus('error', '시그널링 소켓을 다시 열지 못했습니다.', { canRetry: true });
+      return false;
+    }
+
     if (!isSocketReadyRef.current) {
       setStatus('preparing', '시그널링 소켓을 여는 중입니다...');
       return true;
@@ -425,162 +677,33 @@ export function useSessionWebRTC({
     return true;
   }
 
-  function stopConnection() {
-    startRequestedRef.current = false;
-    setErrorMessage('');
+  async function retryConnection(streamOverride) {
     setLastSignalType('');
+    setErrorMessage('');
+    cleanupPeerConnection('not_connected', '영상 연결을 다시 준비하는 중입니다...');
+    return startConnection(streamOverride || localStreamRef.current);
+  }
+
+  function stopConnection() {
+    setLastSignalType('');
+    setErrorMessage('');
+    closeSignalingSocket({ resetRequestedStart: true });
     cleanupPeerConnection('not_connected', '영상 연결을 중지했습니다.');
   }
 
   useEffect(() => {
     if (!enabled || !requestId || !userId) {
-      socketClosingRef.current = true;
-      socketRef.current?.close();
-      socketClosingRef.current = false;
-      startRequestedRef.current = false;
+      closeSignalingSocket({ resetRequestedStart: true });
       cleanupPeerConnection('not_connected', '영상 연결 대기 중입니다.');
       setErrorMessage('');
       setLastSignalType('');
-      isSocketReadyRef.current = false;
-      socketRef.current = null;
       return undefined;
     }
 
-    let isDisposed = false;
-    const socket = new WebSocket(getAuthenticatedWebSocketUrl());
-    socketRef.current = socket;
-    isSocketReadyRef.current = false;
-
-    async function handleIncomingMessage(event) {
-      try {
-        const parsedMessage = JSON.parse(event.data);
-
-        if (isDisposed) {
-          return;
-        }
-
-        if (parsedMessage.type === 'ws_connected') {
-          isSocketReadyRef.current = true;
-
-          if (startRequestedRef.current && localStreamRef.current) {
-            if (isInitiator) {
-              await createOffer(localStreamRef.current);
-            } else {
-              setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
-            }
-          }
-
-          return;
-        }
-
-        const controlMessage = normalizeSignalControlMessage(parsedMessage);
-
-        if (controlMessage) {
-          setLastSignalType(controlMessage.receivedType);
-
-          if (controlMessage.type === 'ws_ack') {
-            if (controlMessage.receivedType === 'webrtc_offer') {
-              setStatus('signaling', '연결 제안 전송이 확인되었습니다. 응답을 기다리는 중입니다...');
-            } else if (controlMessage.receivedType === 'webrtc_answer') {
-              setStatus('connecting', '연결 응답 전송이 확인되었습니다. 상대 영상과 연결 중입니다...');
-            }
-
-            return;
-          }
-
-          if (controlMessage.type === 'ws_error') {
-            setErrorMessage(controlMessage.message);
-
-            if (controlMessage.message.includes('not connected')) {
-              setStatus(
-                'disconnected',
-                '상대 참가자가 아직 이 세션에 접속하지 않았습니다.',
-                { canRetry: true }
-              );
-            } else {
-              setStatus('error', controlMessage.message || '영상 연결 신호 처리에 실패했습니다.', {
-                canRetry: true,
-              });
-            }
-
-            return;
-          }
-        }
-
-        const signal = normalizeSignalMessage(parsedMessage, requestId);
-
-        if (!signal || signal.senderId === userId) {
-          return;
-        }
-
-        setLastSignalType(signal.type);
-
-        if (signal.type === 'webrtc_offer') {
-          await createAnswer(signal);
-          return;
-        }
-
-        if (signal.type === 'webrtc_answer') {
-          await applyAnswer(signal);
-          return;
-        }
-
-        if (signal.type === 'webrtc_ice_candidate') {
-          await applyIceCandidate(signal);
-        }
-      } catch (error) {
-        if (isDisposed) {
-          return;
-        }
-
-        setErrorMessage('시그널링 메시지를 해석하지 못했습니다.');
-        setStatus('error', '시그널링 메시지를 해석하지 못했습니다.', { canRetry: true });
-      }
-    }
-
-    socket.onmessage = (event) => {
-      handleIncomingMessage(event);
-    };
-
-    socket.onerror = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setErrorMessage('영상 연결 통신 오류가 발생했습니다.');
-      setStatus('error', '영상 연결 통신 오류가 발생했습니다.', { canRetry: true });
-    };
-
-    socket.onclose = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      isSocketReadyRef.current = false;
-      socketRef.current = null;
-
-      if (socketClosingRef.current) {
-        socketClosingRef.current = false;
-        return;
-      }
-
-      if (startRequestedRef.current) {
-        setStatus('disconnected', '시그널링 소켓이 종료되었습니다. 다시 시도해 주세요.', {
-          canRetry: true,
-        });
-      } else {
-        setStatus('not_connected', '시그널링 소켓이 종료되었습니다.');
-      }
-    };
+    openSignalingSocket();
 
     return () => {
-      isDisposed = true;
-      socketClosingRef.current = true;
-      isSocketReadyRef.current = false;
-      socketRef.current = null;
-      socket.close();
-      socketClosingRef.current = false;
-      startRequestedRef.current = false;
+      closeSignalingSocket({ resetRequestedStart: true });
       cleanupPeerConnection('not_connected', '영상 연결 대기 중입니다.');
       setLastSignalType('');
       setErrorMessage('');
@@ -600,6 +723,9 @@ export function useSessionWebRTC({
       } else if (!peerRef.current?.remoteDescription) {
         setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
       }
+    } else {
+      openSignalingSocket();
+      setStatus('preparing', '시그널링 소켓을 여는 중입니다...');
     }
   }, [isInitiator, localStream]);
 
@@ -612,6 +738,7 @@ export function useSessionWebRTC({
     lastSignalType,
     canRetry,
     startConnection,
+    retryConnection,
     stopConnection,
   };
 }

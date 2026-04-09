@@ -5,12 +5,24 @@ function getMediaErrorMessage(error) {
     return '카메라 또는 마이크 권한이 거부되었습니다.';
   }
 
+  if (error?.name === 'SecurityError') {
+    return '보안 설정 때문에 카메라 또는 마이크에 접근할 수 없습니다.';
+  }
+
   if (error?.name === 'NotFoundError') {
     return '사용 가능한 카메라 또는 마이크를 찾을 수 없습니다.';
   }
 
   if (error?.name === 'NotReadableError') {
     return '카메라 또는 마이크가 이미 사용 중입니다.';
+  }
+
+  if (error?.name === 'OverconstrainedError') {
+    return '현재 장치 조건으로는 카메라 또는 마이크를 준비할 수 없습니다.';
+  }
+
+  if (error?.name === 'AbortError') {
+    return '카메라 또는 마이크 준비가 중단되었습니다. 다시 시도해 주세요.';
   }
 
   return '로컬 카메라와 마이크를 준비하지 못했습니다.';
@@ -31,6 +43,22 @@ export function useSessionMedia() {
     '영상 연결을 시작하면 로컬 카메라와 마이크를 준비합니다.'
   );
   const [errorMessage, setErrorMessage] = useState('');
+
+  function bindTrackState(track, type) {
+    if (!track) {
+      return;
+    }
+
+    track.onended = () => {
+      if (type === 'video') {
+        setCameraOn(false);
+        setStatusMessage('카메라 입력이 종료되었습니다. 필요하면 다시 준비해 주세요.');
+      } else {
+        setMicrophoneOn(false);
+        setStatusMessage('마이크 입력이 종료되었습니다. 필요하면 다시 준비해 주세요.');
+      }
+    };
+  }
 
   function releaseCurrentStream() {
     if (localVideoRef.current) {
@@ -79,10 +107,14 @@ export function useSessionMedia() {
       const videoTrack = nextStream.getVideoTracks()[0] || null;
       const audioTrack = nextStream.getAudioTracks()[0] || null;
 
+      bindTrackState(videoTrack, 'video');
+      bindTrackState(audioTrack, 'audio');
+
       setCameraOn(Boolean(videoTrack?.enabled));
       setMicrophoneOn(Boolean(audioTrack?.enabled));
       setConnectionStatus('ready');
       setStatusMessage('로컬 미리보기가 준비되었습니다. 상대 연결을 기다리는 중입니다.');
+      setErrorMessage('');
       return nextStream;
     } catch (error) {
       releaseCurrentStream();
@@ -154,6 +186,30 @@ export function useSessionMedia() {
   useEffect(() => {
     return () => {
       releaseCurrentStream();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.addEventListener !== 'function'
+    ) {
+      return undefined;
+    }
+
+    function handleDeviceChange() {
+      if (!streamRef.current) {
+        return;
+      }
+
+      setStatusMessage('카메라 또는 마이크 장치 상태가 변경되었습니다. 필요하면 다시 준비해 주세요.');
+    }
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     };
   }, []);
 

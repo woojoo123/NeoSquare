@@ -216,7 +216,9 @@ export default function MentoringSessionPage() {
     statusMessage: webrtcStatusMessage,
     errorMessage: webrtcErrorMessage,
     lastSignalType,
+    canRetry,
     startConnection,
+    retryConnection,
     stopConnection,
   } = useSessionWebRTC({
     enabled: Boolean(hasRealtimeSessionId && sessionRequest?.id && currentUser?.id),
@@ -395,6 +397,26 @@ export default function MentoringSessionPage() {
     }
   };
 
+  const handleRetryVideoCall = async () => {
+    setActionMessage('');
+    setSessionExitStatus('idle');
+
+    const preparedStream = hasLocalPreview ? localStream : await startLocalPreview();
+
+    if (!preparedStream) {
+      return;
+    }
+
+    if (isReservationSession) {
+      setActionMessage(
+        '로컬 미리보기를 다시 준비했습니다. 예약 세션용 실시간 연결은 추후 보강될 예정입니다.'
+      );
+      return;
+    }
+
+    await retryConnection(preparedStream);
+  };
+
   const handleEndSession = async () => {
     if (
       sessionExitStatus === 'ending' ||
@@ -522,7 +544,20 @@ export default function MentoringSessionPage() {
               ? '상대 연결에 실패했습니다. 다시 시도해 주세요.'
               : videoCallStatus === 'preparing'
                 ? '상대 연결을 준비하는 중입니다.'
-                : '상대 미연결';
+              : '상대 미연결';
+
+  const primaryVideoActionLabel =
+    mediaErrorMessage && !hasLocalPreview
+      ? '권한 다시 요청'
+      : isReservationSession
+        ? hasLocalPreview
+          ? '로컬 미리보기 다시 준비'
+          : '로컬 미리보기 시작'
+        : canRetry || videoCallStatus === 'error' || videoCallStatus === 'disconnected'
+          ? '연결 다시 시도'
+          : hasLocalPreview
+            ? '영상 연결 시작'
+            : '카메라/마이크 준비';
 
   return (
     <AppLayout
@@ -612,6 +647,11 @@ export default function MentoringSessionPage() {
               {actionMessage}
             </p>
           ) : null}
+          {canRetry && !isReservationSession ? (
+            <p className="app-note">
+              연결이 끊기면 같은 버튼으로 시그널링 소켓과 피어 연결을 다시 시도할 수 있습니다.
+            </p>
+          ) : null}
 
           <section className="session-workspace">
             <section
@@ -690,7 +730,11 @@ export default function MentoringSessionPage() {
                 <button
                   type="button"
                   className="primary-button"
-                  onClick={handleStartVideoCall}
+                  onClick={
+                    canRetry || videoCallStatus === 'error' || videoCallStatus === 'disconnected'
+                      ? handleRetryVideoCall
+                      : handleStartVideoCall
+                  }
                   disabled={
                     sessionExitStatus === 'ending' ||
                     videoCallStatus === 'preparing' ||
@@ -699,15 +743,9 @@ export default function MentoringSessionPage() {
                 >
                   {videoCallStatus === 'connected'
                     ? '영상 연결됨'
-                    : videoCallStatus === 'error' || videoCallStatus === 'disconnected'
-                      ? '다시 연결'
-                      : videoCallStatus === 'ready'
-                        ? '시그널링 시작'
-                        : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
-                          ? '연결 중...'
-                    : videoCallStatus === 'error'
-                      ? '다시 연결'
-                      : '영상 연결 시작'}
+                    : videoCallStatus === 'signaling' || videoCallStatus === 'connecting'
+                      ? '연결 중...'
+                      : primaryVideoActionLabel}
                 </button>
                 <button
                   type="button"
