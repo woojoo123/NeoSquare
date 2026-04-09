@@ -944,11 +944,46 @@ select {
 }
 
 .lobby-page-shell {
-  width: min(1520px, 100%);
-  padding: 24px;
+  width: min(1560px, 100%);
+  padding: 28px;
+  border-radius: 32px;
   background:
-    radial-gradient(circle at top left, rgba(219, 234, 254, 0.8), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    radial-gradient(circle at top left, rgba(191, 219, 254, 0.85), transparent 24%),
+    radial-gradient(circle at top right, rgba(226, 232, 240, 0.9), transparent 26%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 48%, #f8fbff 100%);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.08);
+}
+
+.lobby-page-shell .primary-button,
+.lobby-page-shell .secondary-button {
+  min-height: 44px;
+  font-weight: 700;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.lobby-page-shell .primary-button:not(:disabled):hover,
+.lobby-page-shell .secondary-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.lobby-page-shell .primary-button {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+}
+
+.lobby-page-shell .secondary-button {
+  border-color: #d6deea;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.lobby-page-shell .secondary-button:not(:disabled):hover {
+  border-color: #93c5fd;
+  box-shadow: 0 10px 22px rgba(148, 163, 184, 0.18);
 }
 
 .lobby-topbar {
@@ -956,23 +991,25 @@ select {
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.9fr) auto;
   gap: 18px;
   align-items: start;
-  padding: 18px 20px;
-  border: 1px solid #dbe4f0;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+  padding: 22px 24px;
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(239, 246, 255, 0.9));
+  box-shadow: 0 20px 42px rgba(15, 23, 42, 0.07);
 }
 
 .lobby-topbar__brand h1 {
   margin: 4px 0 8px;
-  font-size: 2.15rem;
-  line-height: 1.1;
+  font-size: 2.3rem;
+  line-height: 1.03;
+  letter-spacing: -0.03em;
 }
 
 .lobby-topbar__brand p {
   margin: 0;
   max-width: 56ch;
   color: #475569;
+  font-size: 1rem;
 }
 
 .lobby-topbar__eyebrow {
@@ -998,10 +1035,10 @@ select {
 
 .lobby-topbar__user {
   min-width: 180px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   border: 1px solid #dbe4f0;
-  border-radius: 16px;
-  background: #f8fbff;
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.92);
 }
 
 .lobby-topbar__user strong,
@@ -1021,7 +1058,8 @@ select {
   min-height: 38px;
   padding: 8px 14px;
   border-radius: 999px;
-  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  background: rgba(239, 246, 255, 0.92);
   color: #1d4ed8;
   font-size: 0.88rem;
   font-weight: 700;
@@ -1048,10 +1086,11 @@ select {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 14px 18px;
+  padding: 16px 18px;
   border: 1px solid #dbeafe;
-  border-radius: 18px;
-  background: #eff6ff;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
 }
 
 .lobby-inline-banner strong,
@@ -1077,40 +1116,46 @@ select {
 }
 
 .lobby-dashboard {
-  margin-top: 20px;
+  margin-top: 22px;
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 430px);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.62fr) minmax(360px, 430px);
+  gap: 24px;
   align-items: start;
 }
 
 .lobby-main-stage {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .lobby-stage--focused {
-  padding: 20px;
-  border-color: #dbe4f0;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+  padding: 24px;
+  border-color: rgba(147, 197, 253, 0.65);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top, rgba(219, 234, 254, 0.52), transparent 34%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow:
+    0 28px 64px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .lobby-stage-header--focused {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .lobby-stage-header--focused h2 {
-  margin: 8px 0 8px;
-  font-size: 1.8rem;
+  margin: 8px 0 10px;
+  font-size: 1.95rem;
   line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 .lobby-stage-footer {
-  margin-top: 18px;
+  margin-top: 20px;
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-  gap: 16px;
+  gap: 18px;
   align-items: start;
 }
 
@@ -1118,14 +1163,15 @@ select {
 .lobby-context-card,
 .lobby-side-panel,
 .lobby-chat-drawer {
-  border: 1px solid #dbe4f0;
-  border-radius: 20px;
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(219, 228, 240, 0.95);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .lobby-stage-summary-card {
-  padding: 18px;
+  padding: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
 }
 
 .lobby-stage-summary-card strong,
@@ -1151,13 +1197,18 @@ select {
 .lobby-quick-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   align-content: start;
 }
 
 .lobby-chat-drawer {
-  padding: 18px;
+  padding: 20px;
   overflow: hidden;
+}
+
+.lobby-chat-drawer--open {
+  border-color: rgba(147, 197, 253, 0.7);
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.08);
 }
 
 .lobby-chat-drawer__header {
@@ -1174,27 +1225,28 @@ select {
 
 .lobby-chat-drawer__preview {
   margin-top: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-radius: 16px;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
   color: #475569;
 }
 
 .lobby-context-panel {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   position: sticky;
   top: 24px;
 }
 
 .lobby-context-card,
 .lobby-side-panel {
-  padding: 18px;
+  padding: 20px;
 }
 
 .lobby-context-card h2 {
   margin: 6px 0 10px;
-  font-size: 1.45rem;
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
 }
 
 .lobby-context-card p {
@@ -1233,10 +1285,11 @@ select {
 }
 
 .lobby-selected-user-card {
-  padding: 16px;
+  padding: 18px;
   border: 1px solid #bfdbfe;
-  border-radius: 18px;
+  border-radius: 20px;
   background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .lobby-context-subtitle {
@@ -1249,25 +1302,28 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 6px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
 }
 
 .lobby-side-panel__content {
-  margin-top: 16px;
+  margin-top: 18px;
   max-height: calc(100vh - 260px);
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 6px;
 }
 
 .lobby-panel-stack {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .lobby-panel-section {
-  padding: 16px;
+  padding: 18px;
   border: 1px solid #e2e8f0;
-  border-radius: 18px;
-  background: #f8fafc;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
 }
 
 .lobby-panel-section__header {
@@ -1287,9 +1343,9 @@ select {
 }
 
 .lobby-empty-state {
-  padding: 18px;
+  padding: 20px;
   border: 1px dashed #cbd5e1;
-  border-radius: 16px;
+  border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
@@ -1322,10 +1378,11 @@ select {
 }
 
 .lobby-mini-stat {
-  padding: 14px;
+  padding: 16px;
   border: 1px solid #dbe4f0;
-  border-radius: 16px;
+  border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .lobby-mini-stat span,
@@ -1346,6 +1403,51 @@ select {
 
 .lobby-panel-section .mentoring-request-list {
   margin-top: 14px;
+}
+
+.lobby-page-shell .mentoring-request-card {
+  border-color: #dbe4f0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.lobby-page-shell .mentoring-request-card p + p {
+  margin-top: 6px;
+}
+
+.lobby-page-shell .lobby-chat-messages {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border: 1px solid #e2e8f0;
+}
+
+.lobby-page-shell .chat-message {
+  border-radius: 16px;
+  background: #eaf1f7;
+}
+
+.lobby-page-shell .chat-message--mine {
+  background: #dbeafe;
+}
+
+.lobby-page-shell .ghost-button {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.lobby-page-shell .lobby-game-shell {
+  border: 1px solid rgba(96, 165, 250, 0.36);
+  border-radius: 24px;
+  min-height: 620px;
+  box-shadow:
+    0 24px 48px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.lobby-page-shell .lobby-game-container {
+  min-height: 620px;
 }
 
 @media (max-width: 960px) {
@@ -1375,7 +1477,7 @@ select {
 
   .lobby-game-shell,
   .lobby-game-container {
-    min-height: 360px;
+    min-height: 420px;
   }
 
   .space-game-shell,
@@ -1417,6 +1519,7 @@ select {
 @media (max-width: 860px) {
   .lobby-page-shell {
     padding: 18px;
+    border-radius: 24px;
   }
 
   .lobby-stage-header--focused,
