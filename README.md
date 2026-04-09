@@ -4,6 +4,11 @@ NeoSquare는 메타버스 공간 안에서 사람들이 자유롭게 만나고, 
 
 Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSocket signaling, WebRTC 연결 준비, 세션 종료 후 피드백, 알림 흐름까지 하나의 서비스 흐름으로 묶는 것을 MVP 범위로 두고 있습니다.
 
+추가 문서:
+- 배포 / 실행 가이드: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- 시연 체크리스트: [docs/DEMO_CHECKLIST.md](docs/DEMO_CHECKLIST.md)
+- 포트폴리오 요약: [docs/PORTFOLIO.md](docs/PORTFOLIO.md)
+
 ## 주요 기능
 
 ### 1. 인증 및 로비 진입
