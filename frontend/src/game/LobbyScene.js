@@ -21,6 +21,7 @@ export default class LobbyScene extends Phaser.Scene {
     onSceneReady,
     onZoneChange,
     onPlayerContextChange,
+    onRemotePlayerSelect,
   } = {}) {
     super('LobbyScene');
     this.playerLabel = playerLabel;
@@ -28,6 +29,7 @@ export default class LobbyScene extends Phaser.Scene {
     this.onSceneReady = onSceneReady;
     this.onZoneChange = onZoneChange;
     this.onPlayerContextChange = onPlayerContextChange;
+    this.onRemotePlayerSelect = onRemotePlayerSelect;
     this.player = null;
     this.playerBody = null;
     this.playerName = null;
@@ -38,6 +40,7 @@ export default class LobbyScene extends Phaser.Scene {
     this.remotePlayers = new Map();
     this.currentZoneId = 'MAIN';
     this.lastReportedPosition = null;
+    this.selectedRemoteUserId = null;
   }
 
   create() {
@@ -90,6 +93,16 @@ export default class LobbyScene extends Phaser.Scene {
         color: '#cbd5e1',
       })
       .setScrollFactor(0);
+
+    this.input.on('gameobjectdown', (_, gameObject) => {
+      const selectedUserId = gameObject?.getData?.('remoteUserId');
+
+      if (!selectedUserId) {
+        return;
+      }
+
+      this.selectRemotePlayer(selectedUserId);
+    });
 
     this.zoneStatusTitle = this.add
       .text(28, 92, '', {
@@ -174,24 +187,26 @@ export default class LobbyScene extends Phaser.Scene {
       return;
     }
 
+    const remoteUserId = String(event.userId);
+
     if (event.type === 'user_enter') {
-      this.addRemotePlayer(event.userId, event.x, event.y, event.label);
+      this.addRemotePlayer(remoteUserId, event.x, event.y, event.label);
       return;
     }
 
     if (event.type === 'user_move') {
-      if (!this.remotePlayers.has(event.userId)) {
-        this.addRemotePlayer(event.userId, event.x, event.y, event.label);
+      if (!this.remotePlayers.has(remoteUserId)) {
+        this.addRemotePlayer(remoteUserId, event.x, event.y, event.label);
         return;
       }
 
-      this.updateRemotePlayerLabel(this.remotePlayers.get(event.userId)?.nameLabel, event.label);
-      this.moveRemotePlayer(event.userId, event.x, event.y);
+      this.updateRemotePlayerLabel(this.remotePlayers.get(remoteUserId)?.nameLabel, event.label);
+      this.moveRemotePlayer(remoteUserId, event.x, event.y);
       return;
     }
 
     if (event.type === 'user_leave') {
-      this.removeRemotePlayer(event.userId);
+      this.removeRemotePlayer(remoteUserId);
     }
   }
 
@@ -220,19 +235,22 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   addRemotePlayer(userId, x, y, label = '게스트') {
-    const existingRemotePlayer = this.remotePlayers.get(userId);
+    const remoteKey = String(userId);
+    const existingRemotePlayer = this.remotePlayers.get(remoteKey);
 
     if (existingRemotePlayer) {
       this.updateRemotePlayerLabel(existingRemotePlayer.nameLabel, label);
-      this.moveRemotePlayer(userId, x, y);
+      this.moveRemotePlayer(remoteKey, x, y);
       return;
     }
 
-    const position = this.resolveRemotePosition(userId, x, y);
+    const position = this.resolveRemotePosition(remoteKey, x, y);
     const remotePlayer = this.add.container(position.x, position.y);
     const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.22);
     const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, 0x94a3b8);
     body.setStrokeStyle(3, 0xe2e8f0, 0.8);
+    body.setData('remoteUserId', remoteKey);
+    body.setInteractive({ useHandCursor: true });
     const head = this.add.circle(0, -26, 12, 0xf8fafc);
     const nameLabel = this.add
       .text(0, 34, label, {
@@ -244,22 +262,26 @@ export default class LobbyScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
 
     remotePlayer.add([shadow, body, head, nameLabel]);
-    this.remotePlayers.set(userId, {
+    this.remotePlayers.set(remoteKey, {
       container: remotePlayer,
+      body,
       nameLabel,
     });
+
+    this.refreshRemoteSelection(remoteKey);
   }
 
   moveRemotePlayer(userId, x, y) {
-    const remotePlayer = this.remotePlayers.get(userId);
+    const remoteKey = String(userId);
+    const remotePlayer = this.remotePlayers.get(remoteKey);
 
     if (!remotePlayer) {
-      this.addRemotePlayer(userId, x, y);
+      this.addRemotePlayer(remoteKey, x, y);
       return;
     }
 
     const position = this.resolveRemotePosition(
-      userId,
+      remoteKey,
       x,
       y,
       remotePlayer.container.x,
@@ -269,14 +291,20 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   removeRemotePlayer(userId) {
-    const remotePlayer = this.remotePlayers.get(userId);
+    const remoteKey = String(userId);
+    const remotePlayer = this.remotePlayers.get(remoteKey);
 
     if (!remotePlayer) {
       return;
     }
 
     remotePlayer.container.destroy(true);
-    this.remotePlayers.delete(userId);
+    this.remotePlayers.delete(remoteKey);
+
+    if (String(this.selectedRemoteUserId) === remoteKey) {
+      this.selectedRemoteUserId = null;
+      this.onRemotePlayerSelect?.(null);
+    }
   }
 
   updateRemotePlayerLabel(nameLabel, label) {
@@ -312,6 +340,30 @@ export default class LobbyScene extends Phaser.Scene {
       x: 140 + ((seed * 137) % (WORLD_WIDTH - 280)),
       y: 140 + ((seed * 89) % (WORLD_HEIGHT - 280)),
     };
+  }
+
+  selectRemotePlayer(userId) {
+    const normalizedUserId = userId ? String(userId) : null;
+    const nextSelectedUserId =
+      normalizedUserId && this.remotePlayers.has(normalizedUserId) ? normalizedUserId : null;
+
+    this.selectedRemoteUserId = nextSelectedUserId;
+    this.remotePlayers.forEach((_, remoteUserId) => {
+      this.refreshRemoteSelection(remoteUserId);
+    });
+    this.onRemotePlayerSelect?.(nextSelectedUserId);
+  }
+
+  refreshRemoteSelection(userId) {
+    const remotePlayer = this.remotePlayers.get(userId);
+
+    if (!remotePlayer?.body) {
+      return;
+    }
+
+    const isSelected = String(this.selectedRemoteUserId) === String(userId);
+    remotePlayer.body.setFillStyle(isSelected ? 0x60a5fa : 0x94a3b8);
+    remotePlayer.body.setStrokeStyle(isSelected ? 4 : 3, isSelected ? 0xfef3c7 : 0xe2e8f0, 0.9);
   }
 
   emitPlayerContext(force = false) {

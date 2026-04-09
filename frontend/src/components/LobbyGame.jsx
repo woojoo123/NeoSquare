@@ -8,7 +8,9 @@ export default function LobbyGame({
   onPlayerMove,
   onZoneChange,
   onPlayerContextChange,
+  onRemotePlayerSelect,
   remoteEvent,
+  selectedRemoteUserId,
   zoneMoveRequest,
 }) {
   const containerRef = useRef(null);
@@ -17,6 +19,7 @@ export default function LobbyGame({
   const onPlayerMoveRef = useRef(onPlayerMove);
   const onZoneChangeRef = useRef(onZoneChange);
   const onPlayerContextChangeRef = useRef(onPlayerContextChange);
+  const onRemotePlayerSelectRef = useRef(onRemotePlayerSelect);
   const pendingRemoteEventsRef = useRef([]);
   const pendingZoneMoveRef = useRef(null);
 
@@ -31,6 +34,10 @@ export default function LobbyGame({
   useEffect(() => {
     onPlayerContextChangeRef.current = onPlayerContextChange;
   }, [onPlayerContextChange]);
+
+  useEffect(() => {
+    onRemotePlayerSelectRef.current = onRemotePlayerSelect;
+  }, [onRemotePlayerSelect]);
 
   useEffect(() => {
     if (!remoteEvent) {
@@ -57,6 +64,14 @@ export default function LobbyGame({
 
     sceneRef.current.movePlayerToZone(zoneMoveRequest.zoneId);
   }, [zoneMoveRequest]);
+
+  useEffect(() => {
+    if (!sceneRef.current) {
+      return;
+    }
+
+    sceneRef.current.selectRemotePlayer(selectedRemoteUserId ?? null);
+  }, [selectedRemoteUserId]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -87,6 +102,9 @@ export default function LobbyGame({
         onPlayerContextChange: (context) => {
           onPlayerContextChangeRef.current?.(context);
         },
+        onRemotePlayerSelect: (userId) => {
+          onRemotePlayerSelectRef.current?.(userId);
+        },
         onSceneReady: (scene) => {
           sceneRef.current = scene;
 
@@ -99,6 +117,8 @@ export default function LobbyGame({
             scene.movePlayerToZone(pendingZoneMoveRef.current.zoneId);
             pendingZoneMoveRef.current = null;
           }
+
+          scene.selectRemotePlayer(selectedRemoteUserId ?? null);
         },
       });
 
@@ -138,7 +158,7 @@ export default function LobbyGame({
       }
       gameRef.current = null;
     };
-  }, [playerLabel]);
+  }, [playerLabel, selectedRemoteUserId]);
 
   return (
     <div className="lobby-game-shell">

@@ -619,6 +619,7 @@ export default function LobbyPage() {
   const [activeInteractionMode, setActiveInteractionMode] = useState('request');
   const [activeActivityTab, setActiveActivityTab] = useState('received_requests');
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [selectedRemoteUserId, setSelectedRemoteUserId] = useState(null);
   const [selectedMentorId, setSelectedMentorId] = useState('');
   const [mentoringMessage, setMentoringMessage] = useState('');
   const [mentoringFeedback, setMentoringFeedback] = useState('');
@@ -679,6 +680,7 @@ export default function LobbyPage() {
       return;
     }
 
+    setSelectedRemoteUserId(String(user.userId));
     setSelectedMentorId(String(user.userId));
     setActiveLobbyPanel('interact');
     setActiveInteractionMode('request');
@@ -693,6 +695,7 @@ export default function LobbyPage() {
       return;
     }
 
+    setSelectedRemoteUserId(String(user.userId));
     setSelectedReservationMentorId(String(user.userId));
     setActiveLobbyPanel('interact');
     setActiveInteractionMode('reservation');
@@ -851,6 +854,8 @@ export default function LobbyPage() {
       : currentZoneId === 'STUDY'
         ? usersInCurrentZone
         : nearbyUsers;
+  const selectedRemoteUser =
+    mentorOptions.find((user) => String(user.userId) === String(selectedRemoteUserId)) || null;
   const lobbyNotifications = buildLobbyNotifications({
     serverNotifications,
     sentRequests,
@@ -1309,6 +1314,7 @@ export default function LobbyPage() {
     if (!mentorOptions.length) {
       setSelectedMentorId('');
       setSelectedReservationMentorId('');
+      setSelectedRemoteUserId(null);
       return;
     }
 
@@ -1326,7 +1332,14 @@ export default function LobbyPage() {
     if (!selectedReservationMentorId || !hasSelectedReservationMentor) {
       setSelectedReservationMentorId(String(mentorOptions[0].userId));
     }
-  }, [mentorOptions, selectedMentorId, selectedReservationMentorId]);
+
+    if (
+      selectedRemoteUserId &&
+      !mentorOptions.some((mentor) => String(mentor.userId) === String(selectedRemoteUserId))
+    ) {
+      setSelectedRemoteUserId(null);
+    }
+  }, [mentorOptions, selectedMentorId, selectedRemoteUserId, selectedReservationMentorId]);
 
   useEffect(() => {
     if (feedbackPrompt) {
@@ -1348,6 +1361,34 @@ export default function LobbyPage() {
   const openNotificationCount = lobbyNotifications.length;
 
   const renderContextActions = () => {
+    if (selectedRemoteUser) {
+      return (
+        <div className="lobby-context-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => prepareMentoringTarget(selectedRemoteUser)}
+          >
+            멘토링 요청
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => prepareReservationTarget(selectedRemoteUser)}
+          >
+            예약 제안
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => focusChatComposer(`${selectedRemoteUser.label}님, 잠깐 이야기 가능할까요?`)}
+          >
+            채팅으로 말 걸기
+          </button>
+        </div>
+      );
+    }
+
     if (currentZoneId === 'MAIN') {
       return (
         <div className="lobby-context-actions">
@@ -1436,6 +1477,31 @@ export default function LobbyPage() {
   };
 
   const renderContextBody = () => {
+    if (selectedRemoteUser) {
+      return (
+        <div className="lobby-context-body">
+          <div className="lobby-selected-user-card">
+            <span className="lobby-zone-card__eyebrow">선택 정보</span>
+            <h3 className="lobby-context-subtitle">{selectedRemoteUser.label}</h3>
+            <p>{getLobbyZoneForPosition(selectedRemoteUser.x, selectedRemoteUser.y).label}에서 활동 중입니다.</p>
+            <div className="lobby-context-meta">
+              <span>거리 {Math.round(calculateDistance(playerPosition, selectedRemoteUser))}px</span>
+              <span>상호작용 준비 완료</span>
+            </div>
+            <div className="lobby-context-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setSelectedRemoteUserId(null)}
+              >
+                선택 해제
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (currentZoneId === 'MAIN') {
       return (
         <div className="lobby-context-body">
@@ -1472,18 +1538,34 @@ export default function LobbyPage() {
           ) : (
             <ul className="lobby-presence-list">
               {usersInCurrentZone.slice(0, 4).map((user) => (
-                <li key={user.userId} className="lobby-presence-card">
+                <li
+                  key={user.userId}
+                  className={`lobby-presence-card ${
+                    String(selectedRemoteUserId) === String(user.userId)
+                      ? 'lobby-presence-card--selected'
+                      : ''
+                  }`}
+                >
                   <div>
                     <strong>{user.label}</strong>
                     <p>같은 스터디 라운지에 있습니다.</p>
                   </div>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => focusChatComposer(`${user.label}님, 같이 스터디하실래요?`)}
-                  >
-                    채팅으로 부르기
-                  </button>
+                  <div className="lobby-presence-card__actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setSelectedRemoteUserId(String(user.userId))}
+                    >
+                      사용자 보기
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => focusChatComposer(`${user.label}님, 같이 스터디하실래요?`)}
+                    >
+                      채팅으로 부르기
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1503,12 +1585,26 @@ export default function LobbyPage() {
         ) : (
           <ul className="lobby-presence-list">
             {relevantInteractionUsers.slice(0, 4).map((user) => (
-              <li key={user.userId} className="lobby-presence-card">
+              <li
+                key={user.userId}
+                className={`lobby-presence-card ${
+                  String(selectedRemoteUserId) === String(user.userId)
+                    ? 'lobby-presence-card--selected'
+                    : ''
+                }`}
+              >
                 <div>
                   <strong>{user.label}</strong>
                   <p>{getLobbyZoneForPosition(user.x, user.y).label}에 있습니다.</p>
                 </div>
                 <div className="lobby-presence-card__actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setSelectedRemoteUserId(String(user.userId))}
+                  >
+                    사용자 보기
+                  </button>
                   <button
                     type="button"
                     className="primary-button"
@@ -2248,7 +2344,9 @@ export default function LobbyPage() {
                   y: context.y,
                 });
               }}
+              onRemotePlayerSelect={setSelectedRemoteUserId}
               remoteEvent={remoteEvent}
+              selectedRemoteUserId={selectedRemoteUserId}
               zoneMoveRequest={zoneMoveRequest}
             />
 
@@ -2375,9 +2473,15 @@ export default function LobbyPage() {
 
         <aside className="lobby-context-panel">
           <section className="lobby-context-card">
-            <span className="lobby-zone-card__eyebrow">현재 위치</span>
-            <h2>{currentZone.label}</h2>
-            <p>{currentZone.description}</p>
+            <span className="lobby-zone-card__eyebrow">
+              {selectedRemoteUser ? '선택한 사람' : '현재 위치'}
+            </span>
+            <h2>{selectedRemoteUser ? selectedRemoteUser.label : currentZone.label}</h2>
+            <p>
+              {selectedRemoteUser
+                ? `${getLobbyZoneForPosition(selectedRemoteUser.x, selectedRemoteUser.y).label}에 있는 사용자입니다. 지금 바로 대화를 시작하거나 멘토링을 제안할 수 있습니다.`
+                : currentZone.description}
+            </p>
             <div className="lobby-context-meta">
               <span>이 구역 접속 {currentZonePopulation}명</span>
               <span>근처 사용자 {nearbyUsers.length}명</span>
