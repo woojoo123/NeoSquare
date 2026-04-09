@@ -763,20 +763,17 @@ export default function LobbyPage() {
     }
 
     if (notification.actionType === 'view_my_reservations') {
-      setActiveLobbyPanel('activity');
-      setActiveActivityTab('my_progress');
+      openActivityPanel('my_progress');
       return;
     }
 
     if (notification.actionType === 'view_received_reservations') {
-      setActiveLobbyPanel('activity');
-      setActiveActivityTab('received_reservations');
+      openActivityPanel('received_reservations');
       return;
     }
 
     if (notification.actionType === 'view_requests') {
-      setActiveLobbyPanel('activity');
-      setActiveActivityTab('my_progress');
+      openActivityPanel('my_progress');
     }
   };
 
@@ -822,6 +819,28 @@ export default function LobbyPage() {
       },
     });
   };
+
+  function openInteractionPanel(mode = 'request') {
+    setActiveLobbyPanel('interact');
+    setActiveInteractionMode(mode);
+  }
+
+  function getRecommendedActivityTab() {
+    if (pendingRequestCount > 0) {
+      return 'received_requests';
+    }
+
+    if (pendingReservationCount > 0) {
+      return 'received_reservations';
+    }
+
+    return 'my_progress';
+  }
+
+  function openActivityPanel(preferredTab) {
+    setActiveLobbyPanel('activity');
+    setActiveActivityTab(preferredTab || getRecommendedActivityTab());
+  }
 
   const mentorOptions = remoteUsers.filter((user) => user.userId !== currentUser?.id);
   const currentZone = getLobbyZoneDefinition(currentZoneId);
@@ -949,6 +968,10 @@ export default function LobbyPage() {
       await refreshMentoringRequests();
       setMentoringMessage('');
       setMentoringFeedback('멘토링 요청을 보냈습니다.');
+      setLobbyNotice(
+        '멘토링 요청을 보냈습니다. 상대 계정에서는 받은 요청 탭에서 바로 확인할 수 있습니다.'
+      );
+      openActivityPanel('my_progress');
     } catch (error) {
       const message =
         error?.response?.data?.message || error.message || '멘토링 요청 전송에 실패했습니다.';
@@ -989,6 +1012,10 @@ export default function LobbyPage() {
       setReservationDateTime(getDefaultReservationDateTime());
       setReservationStatus('saved');
       setReservationNotice('예약을 생성했습니다.');
+      setLobbyNotice(
+        '예약 제안을 보냈습니다. 상대 계정에서는 받은 예약 탭에서 바로 확인할 수 있습니다.'
+      );
+      openActivityPanel('my_progress');
     } catch (error) {
       setReservationStatus('error');
       setReservationError(
@@ -1031,6 +1058,12 @@ export default function LobbyPage() {
       setReceivedReservationNotice(
         decision === 'accept' ? '예약을 수락했습니다.' : '예약을 거절했습니다.'
       );
+      setLobbyNotice(
+        decision === 'accept'
+          ? '예약을 수락했습니다. 예약 시간이 되면 활동이나 알림에서 세션 입장이 열립니다.'
+          : '예약을 거절했습니다.'
+      );
+      openActivityPanel('received_reservations');
     } catch (error) {
       setReceivedReservationError(
         error?.response?.data?.message ||
@@ -1054,6 +1087,12 @@ export default function LobbyPage() {
       }
 
       await refreshMentoringRequests();
+      setLobbyNotice(
+        decision === 'accept'
+          ? '멘토링 요청을 수락했습니다. 이제 활동 패널에서 바로 세션에 입장할 수 있습니다.'
+          : '멘토링 요청을 거절했습니다.'
+      );
+      openActivityPanel('received_requests');
     } catch (error) {
       const message =
         error?.response?.data?.message ||
@@ -1355,10 +1394,140 @@ export default function LobbyPage() {
   const pendingReservationCount = receivedReservations.filter(
     (reservation) => reservation.status === 'PENDING'
   ).length;
+  const outgoingActionCount = sentRequests.length + reservations.length;
+  const incomingActionCount = receivedRequests.length + receivedReservations.length;
   const activeSessionCount =
     sentRequests.filter((request) => request.status === 'ACCEPTED').length +
-    reservations.filter((reservation) => reservation.status === 'ACCEPTED').length;
+    receivedRequests.filter((request) => request.status === 'ACCEPTED').length +
+    reservations.filter((reservation) => reservation.status === 'ACCEPTED').length +
+    receivedReservations.filter((reservation) => reservation.status === 'ACCEPTED').length;
   const openNotificationCount = lobbyNotifications.length;
+  const hasInteractionHistory = outgoingActionCount + incomingActionCount > 0;
+  const hasSessionHistory = feedbackHistory.length > 0 || Boolean(feedbackPrompt);
+  const quickStartGuide = (() => {
+    if (hasSessionHistory) {
+      return {
+        title: '세션 기록까지 이어지는 흐름이 준비되어 있습니다',
+        description:
+          '요청, 예약, 세션 종료, 피드백 저장까지 서버 기준으로 이어집니다. 기록 탭에서 최근 세션 요약도 다시 확인할 수 있습니다.',
+        primaryAction: {
+          label: '기록 보기',
+          onClick: () => setActiveLobbyPanel('feedback'),
+        },
+        secondaryAction: {
+          label: '활동 보기',
+          onClick: () => openActivityPanel(),
+        },
+      };
+    }
+
+    if (activeSessionCount > 0 || openNotificationCount > 0) {
+      return {
+        title: '이제 세션에 입장할 수 있습니다',
+        description:
+          '수락된 요청이나 예약이 생겼습니다. 활동 패널이나 알림에서 세션 입장 버튼을 눌러 바로 이어가세요.',
+        primaryAction: {
+          label: '활동 보기',
+          onClick: () => openActivityPanel('my_progress'),
+        },
+        secondaryAction: {
+          label: '알림 보기',
+          onClick: () => setActiveLobbyPanel('notifications'),
+        },
+      };
+    }
+
+    if (pendingRequestCount > 0 || pendingReservationCount > 0) {
+      return {
+        title: '받은 액션을 먼저 처리해 보세요',
+        description:
+          '상대 계정이 이미 연결을 시작했습니다. 받은 요청이나 예약을 수락하면 바로 세션 흐름으로 이어집니다.',
+        primaryAction: {
+          label: pendingRequestCount > 0 ? '받은 요청 보기' : '받은 예약 보기',
+          onClick: () =>
+            openActivityPanel(
+              pendingRequestCount > 0 ? 'received_requests' : 'received_reservations'
+            ),
+        },
+        secondaryAction: {
+          label: '알림 보기',
+          onClick: () => setActiveLobbyPanel('notifications'),
+        },
+      };
+    }
+
+    if (outgoingActionCount > 0) {
+      return {
+        title: '이제 상대 계정에서 수락만 기다리면 됩니다',
+        description:
+          '보낸 요청이나 예약은 내 진행 탭에서 계속 볼 수 있습니다. 다른 브라우저나 시크릿 창에서 상대 계정으로 받은 액션을 확인해 보세요.',
+        primaryAction: {
+          label: '내 진행 보기',
+          onClick: () => openActivityPanel('my_progress'),
+        },
+        secondaryAction: {
+          label: '공개 채팅 열기',
+          onClick: () => focusChatComposer('안녕하세요! 방금 요청을 보냈어요.'),
+        },
+      };
+    }
+
+    if (mentorOptions.length > 0) {
+      return {
+        title: '사람을 찾았습니다. 이제 연결을 시작해 보세요',
+        description:
+          '현재 로비에 보이는 사용자에게 바로 멘토링 요청을 보내거나 예약 시간을 제안할 수 있습니다.',
+        primaryAction: {
+          label: '멘토링 요청 열기',
+          onClick: () => openInteractionPanel('request'),
+        },
+        secondaryAction: {
+          label: '예약 제안 열기',
+          onClick: () => openInteractionPanel('reservation'),
+        },
+      };
+    }
+
+    return {
+      title: '두 번째 계정이 들어오면 바로 시연할 수 있습니다',
+      description:
+        '다른 브라우저나 시크릿 창에서 두 번째 계정으로 로그인하면 요청, 예약, 알림, 세션 입장 흐름을 바로 확인할 수 있습니다.',
+      primaryAction: {
+        label: currentZoneId === 'MAIN' ? '스터디 라운지로 이동' : '메인 광장으로 이동',
+        onClick: () => focusZone(currentZoneId === 'MAIN' ? 'STUDY' : 'MAIN'),
+      },
+      secondaryAction: {
+        label: '공개 채팅 열기',
+        onClick: () => focusChatComposer('안녕하세요! 같이 이야기해보실래요?'),
+      },
+    };
+  })();
+  const quickStartSteps = [
+    {
+      title: '1. 사람 찾기',
+      description:
+        mentorOptions.length > 0
+          ? `${mentorOptions.length}명의 사용자가 보입니다. 한 명을 선택해 상호작용을 시작할 수 있습니다.`
+          : '다른 브라우저나 시크릿 창에서 두 번째 계정으로 로그인하면 바로 보이기 시작합니다.',
+      status: mentorOptions.length > 0 ? 'done' : 'current',
+    },
+    {
+      title: '2. 연결 시작',
+      description: hasInteractionHistory
+        ? `요청·예약 흐름 ${outgoingActionCount + incomingActionCount}건이 연결되어 있습니다.`
+        : '멘토링 요청이나 예약 제안을 보내서 관계를 시작해 보세요.',
+      status: hasInteractionHistory ? 'done' : mentorOptions.length > 0 ? 'current' : 'locked',
+    },
+    {
+      title: '3. 세션 입장',
+      description: hasSessionHistory
+        ? '세션 종료 후 피드백과 기록까지 저장되는 흐름을 이미 확인했습니다.'
+        : hasInteractionHistory
+          ? '상대가 수락하면 활동 패널이나 알림에서 세션 입장 버튼이 열립니다.'
+          : '먼저 연결을 시작하면 세션 입장 흐름으로 자연스럽게 이어집니다.',
+      status: hasSessionHistory ? 'done' : hasInteractionHistory ? 'current' : 'locked',
+    },
+  ];
 
   const renderEmptyState = ({ title, description, actions = [] }) => (
     <div className="lobby-empty-state">
@@ -1445,7 +1614,7 @@ export default function LobbyPage() {
           <button
             type="button"
             className="secondary-button"
-            onClick={() => setActiveLobbyPanel('activity')}
+            onClick={() => openActivityPanel()}
           >
             스터디 활동 보기
           </button>
@@ -1467,20 +1636,14 @@ export default function LobbyPage() {
         <button
           type="button"
           className="primary-button"
-          onClick={() => {
-            setActiveLobbyPanel('interact');
-            setActiveInteractionMode('request');
-          }}
+          onClick={() => openInteractionPanel('request')}
         >
           멘토링 요청 열기
         </button>
         <button
           type="button"
           className="secondary-button"
-          onClick={() => {
-            setActiveLobbyPanel('interact');
-            setActiveInteractionMode('reservation');
-          }}
+          onClick={() => openInteractionPanel('reservation')}
         >
           예약 제안 열기
         </button>
@@ -2048,8 +2211,7 @@ export default function LobbyPage() {
                     label: '멘토링 요청 열기',
                     variant: 'primary',
                     onClick: () => {
-                      setActiveLobbyPanel('interact');
-                      setActiveInteractionMode('request');
+                      openInteractionPanel('request');
                       focusZone('MENTORING');
                     },
                   },
@@ -2311,14 +2473,11 @@ export default function LobbyPage() {
               {
                 label: '활동 보기',
                 variant: 'primary',
-                onClick: () => setActiveLobbyPanel('activity'),
+                onClick: () => openActivityPanel(),
               },
               {
                 label: '멘토링 요청 열기',
-                onClick: () => {
-                  setActiveLobbyPanel('interact');
-                  setActiveInteractionMode('request');
-                },
+                onClick: () => openInteractionPanel('request'),
               },
             ],
           })
@@ -2362,6 +2521,57 @@ export default function LobbyPage() {
     return renderInteractionPanel();
   };
 
+  const renderQuickStartPanel = () => (
+    <section className="lobby-guide-card">
+      <div className="lobby-guide-card__header">
+        <div>
+          <span className="lobby-zone-card__eyebrow">빠른 시작</span>
+          <h3>{quickStartGuide.title}</h3>
+          <p>{quickStartGuide.description}</p>
+        </div>
+        <div className="lobby-guide-card__actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={quickStartGuide.primaryAction.onClick}
+          >
+            {quickStartGuide.primaryAction.label}
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={quickStartGuide.secondaryAction.onClick}
+          >
+            {quickStartGuide.secondaryAction.label}
+          </button>
+        </div>
+      </div>
+
+      <ol className="lobby-guide-steps">
+        {quickStartSteps.map((step) => (
+          <li
+            key={step.title}
+            className={`lobby-guide-step lobby-guide-step--${step.status}`}
+          >
+            <div className="lobby-guide-step__status">
+              <span>
+                {step.status === 'done'
+                  ? '완료'
+                  : step.status === 'current'
+                    ? '지금'
+                    : '대기'}
+              </span>
+            </div>
+            <div className="lobby-guide-step__body">
+              <strong>{step.title}</strong>
+              <p>{step.description}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+
   return (
     <AppLayout
       panelClassName="app-panel--wide lobby-page-shell"
@@ -2399,7 +2609,7 @@ export default function LobbyPage() {
           <button
             type="button"
             className="secondary-button"
-            onClick={() => setActiveLobbyPanel('activity')}
+            onClick={() => openActivityPanel()}
           >
             활동 {pendingRequestCount + pendingReservationCount > 0 ? `${pendingRequestCount + pendingReservationCount}` : ''}
           </button>
@@ -2515,8 +2725,7 @@ export default function LobbyPage() {
                   className="secondary-button"
                   onClick={() => {
                     focusZone('MENTORING');
-                    setActiveLobbyPanel('interact');
-                    setActiveInteractionMode('request');
+                    openInteractionPanel('request');
                   }}
                 >
                   멘토링 요청
@@ -2526,8 +2735,7 @@ export default function LobbyPage() {
                   className="secondary-button"
                   onClick={() => {
                     focusZone('MENTORING');
-                    setActiveLobbyPanel('interact');
-                    setActiveInteractionMode('reservation');
+                    openInteractionPanel('reservation');
                   }}
                 >
                   예약 제안
@@ -2535,7 +2743,7 @@ export default function LobbyPage() {
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => setActiveLobbyPanel('activity')}
+                  onClick={() => openActivityPanel()}
                 >
                   활동 보기
                 </button>
@@ -2648,19 +2856,21 @@ export default function LobbyPage() {
             {renderContextBody()}
           </section>
 
+          {renderQuickStartPanel()}
+
           <section className="lobby-side-panel">
             <div className="lobby-side-panel__tabs">
               <button
                 type="button"
                 className={activeLobbyPanel === 'interact' ? 'primary-button' : 'secondary-button'}
-                onClick={() => setActiveLobbyPanel('interact')}
+                onClick={() => openInteractionPanel(activeInteractionMode)}
               >
                 상호작용
               </button>
               <button
                 type="button"
                 className={activeLobbyPanel === 'activity' ? 'primary-button' : 'secondary-button'}
-                onClick={() => setActiveLobbyPanel('activity')}
+                onClick={() => openActivityPanel()}
               >
                 활동
               </button>
