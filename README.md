@@ -7,6 +7,7 @@ Phaser 기반 로비, JWT 인증, 멘토링 요청/예약, 세션 진입, WebSoc
 추가 문서:
 - 배포 / 실행 가이드: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - 시연 체크리스트: [docs/DEMO_CHECKLIST.md](docs/DEMO_CHECKLIST.md)
+- 2계정 QA 체크리스트: [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md)
 - 포트폴리오 요약: [docs/PORTFOLIO.md](docs/PORTFOLIO.md)
 
 ## 주요 기능
