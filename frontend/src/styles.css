@@ -1286,6 +1286,35 @@ select {
   margin-top: 4px;
 }
 
+.lobby-empty-state {
+  padding: 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.lobby-empty-state strong,
+.lobby-empty-state p {
+  display: block;
+}
+
+.lobby-empty-state strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.lobby-empty-state p {
+  margin: 8px 0 0;
+  color: #475569;
+}
+
+.lobby-empty-state__actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .lobby-panel-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

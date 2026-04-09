@@ -1360,6 +1360,27 @@ export default function LobbyPage() {
     reservations.filter((reservation) => reservation.status === 'ACCEPTED').length;
   const openNotificationCount = lobbyNotifications.length;
 
+  const renderEmptyState = ({ title, description, actions = [] }) => (
+    <div className="lobby-empty-state">
+      <strong>{title}</strong>
+      <p>{description}</p>
+      {actions.length > 0 ? (
+        <div className="lobby-empty-state__actions">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className={action.variant === 'primary' ? 'primary-button' : 'secondary-button'}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+
   const renderContextActions = () => {
     if (selectedRemoteUser) {
       return (
@@ -1532,9 +1553,22 @@ export default function LobbyPage() {
         <div className="lobby-context-body">
           <h3 className="lobby-context-subtitle">같이 스터디할 사람</h3>
           {usersInCurrentZone.length === 0 ? (
-            <p className="app-note">
-              아직 같은 라운지에 다른 사용자가 없습니다. 채팅으로 먼저 사람을 모아보세요.
-            </p>
+            renderEmptyState({
+              title: '지금은 조용한 라운지입니다',
+              description:
+                '공개 채팅으로 먼저 주제를 던지면, 새로 들어온 사용자가 바로 대화에 합류하기 쉬워집니다.',
+              actions: [
+                {
+                  label: '스터디 메시지 쓰기',
+                  variant: 'primary',
+                  onClick: () => focusChatComposer('같이 스터디하실 분 계신가요?'),
+                },
+                {
+                  label: '메인 광장으로 이동',
+                  onClick: () => focusZone('MAIN'),
+                },
+              ],
+            })
           ) : (
             <ul className="lobby-presence-list">
               {usersInCurrentZone.slice(0, 4).map((user) => (
@@ -1578,10 +1612,22 @@ export default function LobbyPage() {
       <div className="lobby-context-body">
         <h3 className="lobby-context-subtitle">바로 상호작용할 사람</h3>
         {relevantInteractionUsers.length === 0 ? (
-          <p className="app-note">
-            아직 이 구역이나 근처에 다른 사용자가 없습니다. 상대가 들어오면 바로 요청하거나
-            예약할 수 있습니다.
-          </p>
+          renderEmptyState({
+            title: '아직 가까운 사용자가 없습니다',
+            description:
+              '광장에서 사람을 기다리거나 스터디 라운지로 이동해 먼저 대화를 시작해 보세요. 사용자가 들어오면 여기서 바로 요청할 수 있습니다.',
+            actions: [
+              {
+                label: '메인 광장으로 이동',
+                variant: 'primary',
+                onClick: () => focusZone('MAIN'),
+              },
+              {
+                label: '스터디 라운지로 이동',
+                onClick: () => focusZone('STUDY'),
+              },
+            ],
+          })
         ) : (
           <ul className="lobby-presence-list">
             {relevantInteractionUsers.slice(0, 4).map((user) => (
@@ -1657,102 +1703,126 @@ export default function LobbyPage() {
         {activeInteractionMode === 'request' ? (
           <>
             <p className="app-note">현재 접속 중인 사용자에게 바로 요청을 보낼 수 있습니다.</p>
-            <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
-              <label className="app-field">
-                <span>대상 선택</span>
-                <select
-                  className="app-input"
-                  value={selectedMentorId}
-                  onChange={(event) => setSelectedMentorId(event.target.value)}
-                  disabled={mentorOptions.length === 0 || isSubmittingRequest}
-                >
-                  {mentorOptions.length === 0 ? (
-                    <option value="">현재 로비에 선택할 수 있는 멘토가 없습니다</option>
-                  ) : null}
-                  {mentorOptions.map((mentor) => (
-                    <option key={mentor.userId} value={mentor.userId}>
-                      {mentor.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {mentorOptions.length === 0 ? (
+              renderEmptyState({
+                title: '지금은 요청할 사람이 없습니다',
+                description:
+                  '다른 사용자가 접속하면 이곳에서 바로 멘토링 요청을 보낼 수 있습니다. 먼저 광장이나 스터디 라운지에서 사람을 찾아보세요.',
+                actions: [
+                  {
+                    label: '메인 광장으로 이동',
+                    variant: 'primary',
+                    onClick: () => focusZone('MAIN'),
+                  },
+                  {
+                    label: '채팅 열기',
+                    onClick: () => focusChatComposer('안녕하세요! 같이 이야기해보실래요?'),
+                  },
+                ],
+              })
+            ) : (
+              <form className="mentoring-form" onSubmit={handleMentoringSubmit}>
+                <label className="app-field">
+                  <span>대상 선택</span>
+                  <select
+                    className="app-input"
+                    value={selectedMentorId}
+                    onChange={(event) => setSelectedMentorId(event.target.value)}
+                    disabled={isSubmittingRequest}
+                  >
+                    {mentorOptions.map((mentor) => (
+                      <option key={mentor.userId} value={mentor.userId}>
+                        {mentor.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="app-field">
-                <span>메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
-                  value={mentoringMessage}
-                  onChange={(event) => setMentoringMessage(event.target.value)}
-                  rows={3}
-                />
-              </label>
+                <label className="app-field">
+                  <span>메시지</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    placeholder="멘토링 요청과 함께 전달할 메시지를 입력해 주세요."
+                    value={mentoringMessage}
+                    onChange={(event) => setMentoringMessage(event.target.value)}
+                    rows={3}
+                  />
+                </label>
 
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={mentorOptions.length === 0 || isSubmittingRequest}
-              >
-                {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
-              </button>
-            </form>
+                <button type="submit" className="primary-button" disabled={isSubmittingRequest}>
+                  {isSubmittingRequest ? '전송 중...' : '요청 보내기'}
+                </button>
+              </form>
+            )}
             {mentoringFeedback ? <p className="app-success">{mentoringFeedback}</p> : null}
             {mentoringError ? <p className="app-error">{mentoringError}</p> : null}
           </>
         ) : (
           <>
             <p className="app-note">지금 보이는 사용자를 기준으로 나중 멘토링 시간을 제안합니다.</p>
-            <form className="mentoring-form" onSubmit={handleReservationSubmit}>
-              <label className="app-field">
-                <span>예약 대상</span>
-                <select
-                  className="app-input"
-                  value={selectedReservationMentorId}
-                  onChange={(event) => setSelectedReservationMentorId(event.target.value)}
-                  disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-                >
-                  {mentorOptions.length === 0 ? (
-                    <option value="">현재 로비에 선택할 수 있는 예약 대상이 없습니다</option>
-                  ) : null}
-                  {mentorOptions.map((mentor) => (
-                    <option key={mentor.userId} value={mentor.userId}>
-                      {mentor.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {mentorOptions.length === 0 ? (
+              renderEmptyState({
+                title: '지금은 예약할 대상이 없습니다',
+                description:
+                  '예약은 상대가 접속해 있을 때 더 자연스럽게 제안할 수 있습니다. 먼저 멘토링 존이나 광장에서 사람을 만나보세요.',
+                actions: [
+                  {
+                    label: '멘토링 존으로 이동',
+                    variant: 'primary',
+                    onClick: () => focusZone('MENTORING'),
+                  },
+                  {
+                    label: '공개 채팅 열기',
+                    onClick: () => focusChatComposer('나중에 멘토링 예약 가능하신 분 계신가요?'),
+                  },
+                ],
+              })
+            ) : (
+              <form className="mentoring-form" onSubmit={handleReservationSubmit}>
+                <label className="app-field">
+                  <span>예약 대상</span>
+                  <select
+                    className="app-input"
+                    value={selectedReservationMentorId}
+                    onChange={(event) => setSelectedReservationMentorId(event.target.value)}
+                    disabled={reservationStatus === 'saving'}
+                  >
+                    {mentorOptions.map((mentor) => (
+                      <option key={mentor.userId} value={mentor.userId}>
+                        {mentor.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="app-field">
-                <span>예약 시간</span>
-                <input
-                  type="datetime-local"
-                  className="app-input"
-                  value={reservationDateTime}
-                  onChange={(event) => setReservationDateTime(event.target.value)}
-                  disabled={reservationStatus === 'saving'}
-                />
-              </label>
+                <label className="app-field">
+                  <span>예약 시간</span>
+                  <input
+                    type="datetime-local"
+                    className="app-input"
+                    value={reservationDateTime}
+                    onChange={(event) => setReservationDateTime(event.target.value)}
+                    disabled={reservationStatus === 'saving'}
+                  />
+                </label>
 
-              <label className="app-field">
-                <span>메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  placeholder="예: 포트폴리오 리뷰를 같이 보고 싶어요."
-                  value={reservationMessage}
-                  onChange={(event) => setReservationMessage(event.target.value)}
-                  rows={3}
-                  disabled={reservationStatus === 'saving'}
-                />
-              </label>
+                <label className="app-field">
+                  <span>메시지</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    placeholder="예: 포트폴리오 리뷰를 같이 보고 싶어요."
+                    value={reservationMessage}
+                    onChange={(event) => setReservationMessage(event.target.value)}
+                    rows={3}
+                    disabled={reservationStatus === 'saving'}
+                  />
+                </label>
 
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={mentorOptions.length === 0 || reservationStatus === 'saving'}
-              >
-                {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
-              </button>
-            </form>
+                <button type="submit" className="primary-button" disabled={reservationStatus === 'saving'}>
+                  {reservationStatus === 'saving' ? '예약 저장 중...' : '예약 만들기'}
+                </button>
+              </form>
+            )}
             {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
             {reservationError ? <p className="app-error">{reservationError}</p> : null}
           </>
@@ -1813,9 +1883,22 @@ export default function LobbyPage() {
           <>
             {requestActionError ? <p className="app-error">{requestActionError}</p> : null}
             {receivedRequests.length === 0 ? (
-              <p className="app-note">
-                아직 받은 멘토링 요청이 없습니다. 멘토링 존에서 먼저 사람을 만나보세요.
-              </p>
+              renderEmptyState({
+                title: '아직 받은 멘토링 요청이 없습니다',
+                description:
+                  '멘토링 존에서 먼저 사람을 만나거나, 광장에서 대화를 시작하면 요청이 자연스럽게 들어올 수 있습니다.',
+                actions: [
+                  {
+                    label: '멘토링 존으로 이동',
+                    variant: 'primary',
+                    onClick: () => focusZone('MENTORING'),
+                  },
+                  {
+                    label: '공개 채팅 열기',
+                    onClick: () => focusChatComposer('지금 멘토링 대화 가능하신 분 계신가요?'),
+                  },
+                ],
+              })
             ) : (
               <ul className="mentoring-request-list">
                 {receivedRequests.map((request) => {
@@ -1873,9 +1956,22 @@ export default function LobbyPage() {
             {receivedReservationNotice ? <p className="app-success">{receivedReservationNotice}</p> : null}
             {receivedReservationError ? <p className="app-error">{receivedReservationError}</p> : null}
             {receivedReservations.length === 0 ? (
-              <p className="app-note">
-                아직 받은 예약이 없습니다. 멘토링 존에서 대화를 시작해 보세요.
-              </p>
+              renderEmptyState({
+                title: '아직 받은 예약이 없습니다',
+                description:
+                  '지금 당장 세션을 시작하기 어렵다면, 사람들과 먼저 대화한 뒤 시간을 제안받는 흐름이 더 자연스럽습니다.',
+                actions: [
+                  {
+                    label: '멘토링 존으로 이동',
+                    variant: 'primary',
+                    onClick: () => focusZone('MENTORING'),
+                  },
+                  {
+                    label: '스터디 라운지로 이동',
+                    onClick: () => focusZone('STUDY'),
+                  },
+                ],
+              })
             ) : (
               <ul className="mentoring-request-list">
                 {receivedReservations.map((reservation) => {
@@ -1943,9 +2039,26 @@ export default function LobbyPage() {
         {activeActivityTab === 'my_progress' ? (
           <>
             {sentRequests.length === 0 && reservations.length === 0 ? (
-              <p className="app-note">
-                아직 진행 중인 요청이나 예약이 없습니다. 사람을 만나 먼저 대화를 시작해 보세요.
-              </p>
+              renderEmptyState({
+                title: '아직 진행 중인 요청이나 예약이 없습니다',
+                description:
+                  '지금은 관계를 만드는 단계입니다. 광장에서 인사하거나 멘토링 존에서 먼저 말을 걸어 보세요.',
+                actions: [
+                  {
+                    label: '멘토링 요청 열기',
+                    variant: 'primary',
+                    onClick: () => {
+                      setActiveLobbyPanel('interact');
+                      setActiveInteractionMode('request');
+                      focusZone('MENTORING');
+                    },
+                  },
+                  {
+                    label: '스터디 메시지 쓰기',
+                    onClick: () => focusChatComposer('같이 스터디하실 분 계신가요?'),
+                  },
+                ],
+              })
             ) : (
               <>
                 {sentRequests.length > 0 ? (
@@ -2050,9 +2163,22 @@ export default function LobbyPage() {
         </div>
         {notificationError ? <p className="app-error">{notificationError}</p> : null}
         {lobbyNotifications.length === 0 ? (
-          <p className="app-note">
-            새 알림이 없습니다. 스터디 라운지나 멘토링 존에서 사람들과 먼저 연결해 보세요.
-          </p>
+          renderEmptyState({
+            title: '새 알림이 없습니다',
+            description:
+              '지금은 바로 확인할 변화가 없습니다. 스터디 라운지나 멘토링 존에서 먼저 사람들과 연결해 보세요.',
+            actions: [
+              {
+                label: '스터디 라운지로 이동',
+                variant: 'primary',
+                onClick: () => focusZone('STUDY'),
+              },
+              {
+                label: '멘토링 존으로 이동',
+                onClick: () => focusZone('MENTORING'),
+              },
+            ],
+          })
         ) : (
           <ul className="mentoring-request-list">
             {lobbyNotifications.map((notification) => (
@@ -2177,9 +2303,25 @@ export default function LobbyPage() {
           </div>
         </div>
         {feedbackHistory.length === 0 ? (
-          <p className="app-note">
-            아직 저장된 세션 피드백이 없습니다. 세션을 마친 뒤 기록이 이곳에 쌓입니다.
-          </p>
+          renderEmptyState({
+            title: '아직 저장된 세션 기록이 없습니다',
+            description:
+              '요청이나 예약으로 세션을 마치면 이곳에 요약과 피드백이 쌓입니다. 먼저 활동을 시작해 보세요.',
+            actions: [
+              {
+                label: '활동 보기',
+                variant: 'primary',
+                onClick: () => setActiveLobbyPanel('activity'),
+              },
+              {
+                label: '멘토링 요청 열기',
+                onClick: () => {
+                  setActiveLobbyPanel('interact');
+                  setActiveInteractionMode('request');
+                },
+              },
+            ],
+          })
         ) : (
           <ul className="mentoring-request-list">
             {feedbackHistory.slice(0, 6).map((feedbackItem) => (
@@ -2422,7 +2564,22 @@ export default function LobbyPage() {
               <>
                 <div className="lobby-chat-messages">
                   {chatMessages.length === 0 ? (
-                    <p className="app-note">아직 채팅 메시지가 없습니다. 먼저 말을 걸어보세요.</p>
+                    renderEmptyState({
+                      title: '아직 공개 채팅이 시작되지 않았습니다',
+                      description:
+                        '첫 메시지가 분위기를 만듭니다. 가볍게 인사하거나 스터디 주제를 먼저 던져보세요.',
+                      actions: [
+                        {
+                          label: '가볍게 인사하기',
+                          variant: 'primary',
+                          onClick: () => focusChatComposer('안녕하세요! 방금 들어왔어요.'),
+                        },
+                        {
+                          label: '스터디 모집하기',
+                          onClick: () => focusChatComposer('같이 스터디하실 분 계신가요?'),
+                        },
+                      ],
+                    })
                   ) : (
                     chatMessages.map((message) => (
                       <article
