@@ -86,20 +86,20 @@ function resolveRtcConfiguration() {
 
 const RTC_CONFIGURATION = resolveRtcConfiguration();
 
-function normalizeSignalMessage(message, requestId) {
+function normalizeSignalMessage(message, sessionScope, sessionIdField, sessionId) {
   if (!SIGNAL_EVENT_TYPES.includes(message?.type)) {
     return null;
   }
 
   const payload = message?.payload || {};
-  const messageRequestId = toNumber(payload.requestId);
+  const scopedSessionId = toNumber(payload[sessionIdField]);
   const scope = payload.scope;
 
-  if (messageRequestId !== requestId) {
+  if (scopedSessionId !== sessionId) {
     return null;
   }
 
-  if (scope && scope !== 'mentoring_session') {
+  if (scope && scope !== sessionScope) {
     return null;
   }
 
@@ -143,7 +143,9 @@ function getConnectionErrorMessage(error) {
 
 export function useSessionWebRTC({
   enabled,
-  requestId,
+  sessionId,
+  sessionScope = 'mentoring_session',
+  sessionIdField = 'requestId',
   userId,
   localStream,
   isInitiator,
@@ -239,8 +241,8 @@ export function useSessionWebRTC({
         type,
         senderId: userId,
         payload: {
-          requestId,
-          scope: 'mentoring_session',
+          [sessionIdField]: sessionId,
+          scope: sessionScope,
           ...payload,
         },
       })
@@ -545,7 +547,12 @@ export function useSessionWebRTC({
         }
       }
 
-      const signal = normalizeSignalMessage(parsedMessage, requestId);
+      const signal = normalizeSignalMessage(
+        parsedMessage,
+        sessionScope,
+        sessionIdField,
+        sessionId
+      );
 
       if (!signal || signal.senderId === userId) {
         return;
@@ -573,7 +580,7 @@ export function useSessionWebRTC({
   }
 
   function openSignalingSocket() {
-    if (!enabledRef.current || !requestId || !userId) {
+    if (!enabledRef.current || !sessionId || !userId) {
       return null;
     }
 
@@ -692,7 +699,7 @@ export function useSessionWebRTC({
   }
 
   useEffect(() => {
-    if (!enabled || !requestId || !userId) {
+    if (!enabled || !sessionId || !userId) {
       closeSignalingSocket({ resetRequestedStart: true });
       cleanupPeerConnection('not_connected', '영상 연결 대기 중입니다.');
       setErrorMessage('');
@@ -708,7 +715,7 @@ export function useSessionWebRTC({
       setLastSignalType('');
       setErrorMessage('');
     };
-  }, [enabled, isInitiator, requestId, userId]);
+  }, [enabled, isInitiator, sessionId, sessionIdField, sessionScope, userId]);
 
   useEffect(() => {
     if (!localStream || !startRequestedRef.current) {

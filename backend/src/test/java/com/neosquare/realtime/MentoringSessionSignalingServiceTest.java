@@ -13,6 +13,8 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
+import com.neosquare.mentoring.MentoringReservation;
+import com.neosquare.mentoring.MentoringReservationRepository;
 import com.neosquare.user.User;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -23,15 +25,18 @@ import org.springframework.web.socket.WebSocketSession;
 class MentoringSessionSignalingServiceTest {
 
     private MentoringRequestRepository mentoringRequestRepository;
+    private MentoringReservationRepository mentoringReservationRepository;
     private RealtimeSessionRegistry realtimeSessionRegistry;
     private MentoringSessionSignalingService mentoringSessionSignalingService;
 
     @BeforeEach
     void setUp() {
         mentoringRequestRepository = mock(MentoringRequestRepository.class);
+        mentoringReservationRepository = mock(MentoringReservationRepository.class);
         realtimeSessionRegistry = mock(RealtimeSessionRegistry.class);
         mentoringSessionSignalingService = new MentoringSessionSignalingService(
                 mentoringRequestRepository,
+                mentoringReservationRepository,
                 realtimeSessionRegistry
         );
     }
@@ -61,6 +66,31 @@ class MentoringSessionSignalingServiceTest {
         assertThat(routeResult.outboundMessage().senderId()).isEqualTo(1L);
         assertThat(routeResult.outboundMessage().payload().get("requestId").asLong()).isEqualTo(41L);
         assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("mentoring_session");
+    }
+
+    @Test
+    void routeSignalRoutesAcceptedReservationToCounterpartUser() {
+        User requester = createUser(1L, "requester@neo.square", "Requester");
+        User mentor = createUser(2L, "mentor@neo.square", "Mentor");
+        MentoringReservation reservation = createAcceptedReservation(71L, requester, mentor);
+        WebSocketSession mentorSession = mock(WebSocketSession.class);
+        when(mentorSession.isOpen()).thenReturn(true);
+
+        when(mentoringReservationRepository.findDetailById(71L)).thenReturn(Optional.of(reservation));
+        when(realtimeSessionRegistry.findOpenSessions(2L)).thenReturn(Set.of(mentorSession));
+
+        SignalRouteResult routeResult = mentoringSessionSignalingService.routeSignal(
+                new WebSocketMessage(
+                        WebSocketEventType.WEBRTC_OFFER,
+                        createReservationSignalPayload(71L),
+                        1L,
+                        Instant.now()
+                )
+        );
+
+        assertThat(routeResult.targetSessions()).containsExactly(mentorSession);
+        assertThat(routeResult.outboundMessage().payload().get("reservationId").asLong()).isEqualTo(71L);
+        assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("reservation_session");
     }
 
     @Test
@@ -97,10 +127,33 @@ class MentoringSessionSignalingServiceTest {
         return mentoringRequest;
     }
 
+    private MentoringReservation createAcceptedReservation(Long id, User requester, User mentor) {
+        MentoringReservation reservation = MentoringReservation.create(
+                requester,
+                mentor,
+                Instant.parse("2026-04-10T10:00:00Z"),
+                "Need mentoring tomorrow"
+        );
+        reservation.accept();
+        ReflectionTestUtils.setField(reservation, "id", id);
+        return reservation;
+    }
+
     private ObjectNode createSignalPayload(Long requestId) {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("requestId", requestId);
         payload.put("scope", "mentoring_session");
+
+        ObjectNode sdp = payload.putObject("sdp");
+        sdp.put("type", "offer");
+        sdp.put("sdp", "sample-offer");
+        return payload;
+    }
+
+    private ObjectNode createReservationSignalPayload(Long reservationId) {
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("reservationId", reservationId);
+        payload.put("scope", "reservation_session");
 
         ObjectNode sdp = payload.putObject("sdp");
         sdp.put("type", "offer");

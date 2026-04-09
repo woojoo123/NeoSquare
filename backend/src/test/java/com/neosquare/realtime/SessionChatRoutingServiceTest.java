@@ -13,6 +13,8 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
+import com.neosquare.mentoring.MentoringReservation;
+import com.neosquare.mentoring.MentoringReservationRepository;
 import com.neosquare.space.Space;
 import com.neosquare.space.SpaceType;
 import com.neosquare.study.StudySession;
@@ -27,6 +29,7 @@ import org.springframework.web.socket.WebSocketSession;
 class SessionChatRoutingServiceTest {
 
     private MentoringRequestRepository mentoringRequestRepository;
+    private MentoringReservationRepository mentoringReservationRepository;
     private StudySessionRepository studySessionRepository;
     private RealtimeSessionRegistry realtimeSessionRegistry;
     private SessionChatRoutingService sessionChatRoutingService;
@@ -34,10 +37,12 @@ class SessionChatRoutingServiceTest {
     @BeforeEach
     void setUp() {
         mentoringRequestRepository = mock(MentoringRequestRepository.class);
+        mentoringReservationRepository = mock(MentoringReservationRepository.class);
         studySessionRepository = mock(StudySessionRepository.class);
         realtimeSessionRegistry = mock(RealtimeSessionRegistry.class);
         sessionChatRoutingService = new SessionChatRoutingService(
                 mentoringRequestRepository,
+                mentoringReservationRepository,
                 studySessionRepository,
                 realtimeSessionRegistry
         );
@@ -67,6 +72,32 @@ class SessionChatRoutingServiceTest {
         assertThat(routeResult.targetSessions()).containsExactlyInAnyOrder(requesterSession, mentorSession);
         assertThat(routeResult.outboundMessage().senderId()).isEqualTo(1L);
         assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("mentoring_session");
+    }
+
+    @Test
+    void routeChatMessageRoutesReservationSessionChatToParticipants() {
+        User requester = createUser(20L, "requester@neo.square", "Requester");
+        User mentor = createUser(21L, "mentor@neo.square", "Mentor");
+        MentoringReservation reservation = createAcceptedReservation(61L, requester, mentor);
+        WebSocketSession requesterSession = mockSession();
+        WebSocketSession mentorSession = mockSession();
+
+        when(mentoringReservationRepository.findDetailById(61L)).thenReturn(Optional.of(reservation));
+        when(realtimeSessionRegistry.findOpenSessions(20L)).thenReturn(Set.of(requesterSession));
+        when(realtimeSessionRegistry.findOpenSessions(21L)).thenReturn(Set.of(mentorSession));
+
+        SignalRouteResult routeResult = sessionChatRoutingService.routeChatMessage(
+                new WebSocketMessage(
+                        WebSocketEventType.CHAT_SEND,
+                        createReservationChatPayload(61L, "예약 세션에서도 바로 이야기해요."),
+                        20L,
+                        Instant.now()
+                )
+        );
+
+        assertThat(routeResult.targetSessions()).containsExactlyInAnyOrder(requesterSession, mentorSession);
+        assertThat(routeResult.outboundMessage().payload().get("reservationId").asLong()).isEqualTo(61L);
+        assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("reservation_session");
     }
 
     @Test
@@ -128,6 +159,18 @@ class SessionChatRoutingServiceTest {
         return mentoringRequest;
     }
 
+    private MentoringReservation createAcceptedReservation(Long id, User requester, User mentor) {
+        MentoringReservation reservation = MentoringReservation.create(
+                requester,
+                mentor,
+                Instant.parse("2026-04-10T12:00:00Z"),
+                "오후 예약 멘토링"
+        );
+        reservation.accept();
+        ReflectionTestUtils.setField(reservation, "id", id);
+        return reservation;
+    }
+
     private StudySession createStudySession(Long id, User host, User member) {
         Space studySpace = Space.create(
                 "Study Lounge",
@@ -153,6 +196,14 @@ class SessionChatRoutingServiceTest {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("requestId", requestId);
         payload.put("scope", "mentoring_session");
+        payload.put("content", content);
+        return payload;
+    }
+
+    private ObjectNode createReservationChatPayload(Long reservationId, String content) {
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("reservationId", reservationId);
+        payload.put("scope", "reservation_session");
         payload.put("content", content);
         return payload;
     }

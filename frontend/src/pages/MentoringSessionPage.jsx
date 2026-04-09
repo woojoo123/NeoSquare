@@ -194,7 +194,9 @@ export default function MentoringSessionPage() {
   const endSessionTimeoutRef = useRef(null);
   const isReservationSession = sessionRequest?.sessionSource === 'reservation';
   const numericSessionId = Number(requestId);
-  const hasRealtimeSessionId = !isReservationSession && Number.isFinite(numericSessionId);
+  const hasRealtimeSessionId = Number.isFinite(numericSessionId);
+  const realtimeSessionScope = isReservationSession ? 'reservation_session' : 'mentoring_session';
+  const realtimeSessionIdField = isReservationSession ? 'reservationId' : 'requestId';
   const {
     localVideoRef,
     localStream,
@@ -222,7 +224,9 @@ export default function MentoringSessionPage() {
     stopConnection,
   } = useSessionWebRTC({
     enabled: Boolean(hasRealtimeSessionId && sessionRequest?.id && currentUser?.id),
-    requestId: hasRealtimeSessionId ? numericSessionId : null,
+    sessionId: hasRealtimeSessionId ? numericSessionId : null,
+    sessionScope: realtimeSessionScope,
+    sessionIdField: realtimeSessionIdField,
     userId: currentUser?.id,
     localStream,
     isInitiator: Boolean(
@@ -236,13 +240,14 @@ export default function MentoringSessionPage() {
     sendMessage,
   } = useMentoringSessionChat({
     enabled: Boolean(
-      !isReservationSession &&
       sessionRequest?.id &&
       sessionRequest?.status === 'ACCEPTED' &&
       currentUser?.id &&
       currentUser?.nickname
     ),
-    requestId: hasRealtimeSessionId ? numericSessionId : null,
+    sessionId: hasRealtimeSessionId ? numericSessionId : null,
+    sessionScope: realtimeSessionScope,
+    sessionIdField: realtimeSessionIdField,
     userId: currentUser?.id,
     nickname: currentUser?.nickname,
   });
@@ -385,13 +390,6 @@ export default function MentoringSessionPage() {
       return;
     }
 
-    if (isReservationSession) {
-      setActionMessage(
-        '로컬 미리보기가 준비되었습니다. 예약 세션은 현재 이 화면을 공용으로 사용하며, 실시간 연결은 추후 보강될 예정입니다.'
-      );
-      return;
-    }
-
     if (preparedStream) {
       await startConnection(preparedStream);
     }
@@ -404,13 +402,6 @@ export default function MentoringSessionPage() {
     const preparedStream = hasLocalPreview ? localStream : await startLocalPreview();
 
     if (!preparedStream) {
-      return;
-    }
-
-    if (isReservationSession) {
-      setActionMessage(
-        '로컬 미리보기를 다시 준비했습니다. 예약 세션용 실시간 연결은 추후 보강될 예정입니다.'
-      );
       return;
     }
 
@@ -549,15 +540,11 @@ export default function MentoringSessionPage() {
   const primaryVideoActionLabel =
     mediaErrorMessage && !hasLocalPreview
       ? '권한 다시 요청'
-      : isReservationSession
-        ? hasLocalPreview
-          ? '로컬 미리보기 다시 준비'
-          : '로컬 미리보기 시작'
-        : canRetry || videoCallStatus === 'error' || videoCallStatus === 'disconnected'
-          ? '연결 다시 시도'
-          : hasLocalPreview
-            ? '영상 연결 시작'
-            : '카메라/마이크 준비';
+      : canRetry || videoCallStatus === 'error' || videoCallStatus === 'disconnected'
+        ? '연결 다시 시도'
+        : hasLocalPreview
+          ? '영상 연결 시작'
+          : '카메라/마이크 준비';
 
   return (
     <AppLayout
@@ -647,7 +634,7 @@ export default function MentoringSessionPage() {
               {actionMessage}
             </p>
           ) : null}
-          {canRetry && !isReservationSession ? (
+          {canRetry ? (
             <p className="app-note">
               연결이 끊기면 같은 버튼으로 시그널링 소켓과 피어 연결을 다시 시도할 수 있습니다.
             </p>
@@ -662,7 +649,7 @@ export default function MentoringSessionPage() {
                   <h2>영상 멘토링 영역</h2>
                   <p className="app-note">
                     {isReservationSession
-                      ? '이 영역에서 로컬 미리보기를 사용할 수 있습니다. 예약 세션용 실시간 연결은 이후 보강됩니다.'
+                      ? '이 영역에서 예약 세션 참가자와 영상 연결을 준비하고 상대 영상을 확인할 수 있습니다.'
                       : '이 영역에서 시그널링과 피어 연결을 준비하고 상대 영상을 확인할 수 있습니다.'}
                   </p>
                 </div>
@@ -771,9 +758,9 @@ export default function MentoringSessionPage() {
                 <div>
                   <h2>세션 채팅</h2>
                   <p className="app-note">
-                    {isReservationSession
-                      ? '예약 세션은 현재 페이지 레이아웃을 우선 재사용합니다. 예약 전용 실시간 식별자가 추가되면 세션 채팅도 함께 연결할 수 있습니다.'
-                      : `상태: ${formatSessionChatStatus(sessionChatStatus)}. 이 채팅은 요청 #${sessionRequest.id} 기준으로 동작합니다.`}
+                    {`상태: ${formatSessionChatStatus(sessionChatStatus)}. 이 채팅은 ${
+                      isReservationSession ? '예약' : '요청'
+                    } #${sessionRequest.id} 기준으로 동작합니다.`}
                   </p>
                 </div>
               </div>
@@ -807,7 +794,6 @@ export default function MentoringSessionPage() {
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   disabled={
-                    isReservationSession ||
                     sessionRequest.status !== 'ACCEPTED' ||
                     sessionExitStatus === 'ending'
                   }
@@ -816,7 +802,6 @@ export default function MentoringSessionPage() {
                   type="submit"
                   className="primary-button"
                   disabled={
-                    isReservationSession ||
                     sessionRequest.status !== 'ACCEPTED' ||
                     sessionExitStatus === 'ending'
                   }

@@ -35,22 +35,22 @@ function appendSessionMessage(previousMessages, nextMessage) {
   return [...previousMessages, nextMessage].slice(-SESSION_CHAT_LIMIT);
 }
 
-function normalizeSessionChatMessage(message, currentUserId, requestId) {
+function normalizeSessionChatMessage(message, currentUserId, sessionScope, sessionIdField, sessionId) {
   if (message?.type !== 'chat_send') {
     return null;
   }
 
   const payload = message?.payload || {};
-  const messageRequestId = toNumber(payload.requestId);
+  const scopedSessionId = toNumber(payload[sessionIdField]);
   const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
   const content = typeof payload.content === 'string' ? payload.content.trim() : '';
   const scope = payload.scope;
 
-  if (!senderId || !content || messageRequestId !== requestId) {
+  if (!senderId || !content || scopedSessionId !== sessionId) {
     return null;
   }
 
-  if (scope && scope !== 'mentoring_session') {
+  if (scope && scope !== sessionScope) {
     return null;
   }
 
@@ -72,7 +72,14 @@ function normalizeSessionChatMessage(message, currentUserId, requestId) {
   };
 }
 
-export function useMentoringSessionChat({ enabled, requestId, userId, nickname }) {
+export function useMentoringSessionChat({
+  enabled,
+  sessionId,
+  sessionScope = 'mentoring_session',
+  sessionIdField = 'requestId',
+  userId,
+  nickname,
+}) {
   const [messages, setMessages] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -82,7 +89,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
   function sendMessage(content) {
     const trimmedContent = typeof content === 'string' ? content.trim() : '';
 
-    if (!trimmedContent || !requestId || !userId || !nickname) {
+    if (!trimmedContent || !sessionId || !userId || !nickname) {
       return false;
     }
 
@@ -92,15 +99,15 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
       return false;
     }
 
-    const clientMessageId = `session-chat-${requestId}-${userId}-${Date.now()}`;
+    const clientMessageId = `${sessionScope}-chat-${sessionId}-${userId}-${Date.now()}`;
 
     socket.send(
       JSON.stringify({
         type: 'chat_send',
         senderId: userId,
         payload: {
-          requestId,
-          scope: 'mentoring_session',
+          [sessionIdField]: sessionId,
+          scope: sessionScope,
           content: trimmedContent,
           nickname,
           clientMessageId,
@@ -124,7 +131,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
   }
 
   useEffect(() => {
-    if (!enabled || !requestId || !userId || !nickname) {
+    if (!enabled || !sessionId || !userId || !nickname) {
       setMessages([]);
       setConnectionStatus('idle');
       setErrorMessage('');
@@ -150,7 +157,13 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
           return;
         }
 
-        const nextMessage = normalizeSessionChatMessage(parsedMessage, userId, requestId);
+        const nextMessage = normalizeSessionChatMessage(
+          parsedMessage,
+          userId,
+          sessionScope,
+          sessionIdField,
+          sessionId
+        );
 
         if (nextMessage) {
           setMessages((previousMessages) =>
@@ -220,7 +233,7 @@ export function useMentoringSessionChat({ enabled, requestId, userId, nickname }
         socket?.close();
       }
     };
-  }, [enabled, nickname, requestId, userId]);
+  }, [enabled, nickname, sessionId, sessionIdField, sessionScope, userId]);
 
   return {
     messages,

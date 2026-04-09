@@ -111,6 +111,18 @@ public class MentoringReservation {
         return Objects.equals(mentor.getId(), userId);
     }
 
+    public Long resolveCounterpartUserId(Long userId) {
+        if (Objects.equals(requester.getId(), userId)) {
+            return mentor.getId();
+        }
+
+        if (Objects.equals(mentor.getId(), userId)) {
+            return requester.getId();
+        }
+
+        throw new IllegalStateException("Signal sender is not a participant of this mentoring reservation.");
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

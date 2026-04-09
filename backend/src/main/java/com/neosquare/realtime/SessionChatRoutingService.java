@@ -2,11 +2,15 @@ package com.neosquare.realtime;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringRequestStatus;
+import com.neosquare.mentoring.MentoringReservation;
+import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.mentoring.MentoringReservationStatus;
 import com.neosquare.study.StudySession;
 import com.neosquare.study.StudySessionRepository;
 import com.neosquare.study.StudySessionStatus;
@@ -19,18 +23,22 @@ public class SessionChatRoutingService {
 
     private static final String SPACE_SCOPE = "space";
     private static final String MENTORING_SESSION_SCOPE = "mentoring_session";
+    private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
     private static final String STUDY_SESSION_SCOPE = "study_session";
 
     private final MentoringRequestRepository mentoringRequestRepository;
+    private final MentoringReservationRepository mentoringReservationRepository;
     private final StudySessionRepository studySessionRepository;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
 
     public SessionChatRoutingService(
             MentoringRequestRepository mentoringRequestRepository,
+            MentoringReservationRepository mentoringReservationRepository,
             StudySessionRepository studySessionRepository,
             RealtimeSessionRegistry realtimeSessionRegistry
     ) {
         this.mentoringRequestRepository = mentoringRequestRepository;
+        this.mentoringReservationRepository = mentoringReservationRepository;
         this.studySessionRepository = studySessionRepository;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
     }
@@ -41,7 +49,9 @@ public class SessionChatRoutingService {
         }
 
         String scope = extractScope(incomingMessage.payload());
-        return MENTORING_SESSION_SCOPE.equals(scope) || STUDY_SESSION_SCOPE.equals(scope);
+        return MENTORING_SESSION_SCOPE.equals(scope)
+                || RESERVATION_SESSION_SCOPE.equals(scope)
+                || STUDY_SESSION_SCOPE.equals(scope);
     }
 
     public boolean hasScopedChat(WebSocketMessage incomingMessage) {
@@ -66,6 +76,10 @@ public class SessionChatRoutingService {
 
         if (MENTORING_SESSION_SCOPE.equals(scope)) {
             return routeMentoringSessionChat(incomingMessage);
+        }
+
+        if (RESERVATION_SESSION_SCOPE.equals(scope)) {
+            return routeReservationSessionChat(incomingMessage);
         }
 
         if (STUDY_SESSION_SCOPE.equals(scope)) {
@@ -100,6 +114,31 @@ public class SessionChatRoutingService {
         );
     }
 
+    private SignalRouteResult routeReservationSessionChat(WebSocketMessage incomingMessage) {
+        JsonNode payload = incomingMessage.payload();
+        Long reservationId = extractLong(payload, "reservationId", "Reservation session id is required.");
+        MentoringReservation mentoringReservation = mentoringReservationRepository.findDetailById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Mentoring reservation not found."));
+
+        if (mentoringReservation.getStatus() != MentoringReservationStatus.ACCEPTED) {
+            throw new IllegalStateException("Mentoring reservation is not accepted.");
+        }
+
+        if (!mentoringReservation.isParticipant(incomingMessage.senderId())) {
+            throw new IllegalStateException("Chat sender is not a participant of this mentoring reservation.");
+        }
+
+        Set<WebSocketSession> targetSessions = findParticipantSessions(Set.of(
+                mentoringReservation.getRequester().getId(),
+                mentoringReservation.getMentor().getId()
+        ));
+
+        return new SignalRouteResult(
+                targetSessions,
+                WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
+        );
+    }
+
     private SignalRouteResult routeStudySessionChat(WebSocketMessage incomingMessage) {
         JsonNode payload = incomingMessage.payload();
         Long studySessionId = extractLong(payload, "studySessionId", "Study session id is required.");
@@ -116,7 +155,7 @@ public class SessionChatRoutingService {
 
         Set<Long> participantUserIds = studySession.getParticipants().stream()
                 .map(participant -> participant.getUser().getId())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         Set<WebSocketSession> targetSessions = findParticipantSessions(participantUserIds);
 
         return new SignalRouteResult(

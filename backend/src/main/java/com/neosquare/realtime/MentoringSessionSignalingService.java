@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringRequestStatus;
+import com.neosquare.mentoring.MentoringReservation;
+import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.mentoring.MentoringReservationStatus;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.WebSocketSession;
@@ -13,14 +16,20 @@ import org.springframework.web.socket.WebSocketSession;
 @Service
 public class MentoringSessionSignalingService {
 
+    private static final String MENTORING_SESSION_SCOPE = "mentoring_session";
+    private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
+
     private final MentoringRequestRepository mentoringRequestRepository;
+    private final MentoringReservationRepository mentoringReservationRepository;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
 
     public MentoringSessionSignalingService(
             MentoringRequestRepository mentoringRequestRepository,
+            MentoringReservationRepository mentoringReservationRepository,
             RealtimeSessionRegistry realtimeSessionRegistry
     ) {
         this.mentoringRequestRepository = mentoringRequestRepository;
+        this.mentoringReservationRepository = mentoringReservationRepository;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
     }
 
@@ -40,13 +49,21 @@ public class MentoringSessionSignalingService {
         }
 
         JsonNode payload = incomingMessage.payload();
-        Long requestId = extractRequestId(payload);
         String scope = extractScope(payload);
 
-        if (!"mentoring_session".equals(scope)) {
-            throw new IllegalArgumentException("Unsupported signaling scope.");
+        if (MENTORING_SESSION_SCOPE.equals(scope)) {
+            return routeMentoringRequestSignal(incomingMessage, payload);
         }
 
+        if (RESERVATION_SESSION_SCOPE.equals(scope)) {
+            return routeReservationSignal(incomingMessage, payload);
+        }
+
+        throw new IllegalArgumentException("Unsupported signaling scope.");
+    }
+
+    private SignalRouteResult routeMentoringRequestSignal(WebSocketMessage incomingMessage, JsonNode payload) {
+        Long requestId = extractLong(payload, "requestId", "Mentoring session requestId is required.");
         MentoringRequest mentoringRequest = mentoringRequestRepository.findById(requestId)
                 .orElseThrow(() -> new IllegalArgumentException("Mentoring request not found."));
 
@@ -71,12 +88,38 @@ public class MentoringSessionSignalingService {
         );
     }
 
-    private Long extractRequestId(JsonNode payload) {
-        if (payload == null || payload.get("requestId") == null || payload.get("requestId").isNull()) {
-            throw new IllegalArgumentException("Mentoring session requestId is required.");
+    private SignalRouteResult routeReservationSignal(WebSocketMessage incomingMessage, JsonNode payload) {
+        Long reservationId = extractLong(payload, "reservationId", "Reservation session reservationId is required.");
+        MentoringReservation mentoringReservation = mentoringReservationRepository.findDetailById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Mentoring reservation not found."));
+
+        if (mentoringReservation.getStatus() != MentoringReservationStatus.ACCEPTED) {
+            throw new IllegalStateException("Mentoring reservation is not accepted.");
         }
 
-        JsonNode requestIdNode = payload.get("requestId");
+        if (!mentoringReservation.isParticipant(incomingMessage.senderId())) {
+            throw new IllegalStateException("Signal sender is not a participant of this mentoring reservation.");
+        }
+
+        Long targetUserId = mentoringReservation.resolveCounterpartUserId(incomingMessage.senderId());
+        Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessions(targetUserId);
+
+        if (targetSessions.isEmpty()) {
+            throw new IllegalStateException("Target participant is not connected.");
+        }
+
+        return new SignalRouteResult(
+                targetSessions,
+                WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
+        );
+    }
+
+    private Long extractLong(JsonNode payload, String fieldName, String errorMessage) {
+        if (payload == null || payload.get(fieldName) == null || payload.get(fieldName).isNull()) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+
+        JsonNode requestIdNode = payload.get(fieldName);
 
         if (requestIdNode.canConvertToLong()) {
             return requestIdNode.asLong();
@@ -86,11 +129,11 @@ public class MentoringSessionSignalingService {
             try {
                 return Long.parseLong(requestIdNode.asText());
             } catch (NumberFormatException exception) {
-                throw new IllegalArgumentException("Mentoring session requestId must be numeric.");
+                throw new IllegalArgumentException(fieldName + " must be numeric.");
             }
         }
 
-        throw new IllegalArgumentException("Mentoring session requestId must be numeric.");
+        throw new IllegalArgumentException(fieldName + " must be numeric.");
     }
 
     private String extractScope(JsonNode payload) {
