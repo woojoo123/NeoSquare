@@ -4,7 +4,9 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getMe } from '../api/auth';
 import { completeStudySession, getStudySession } from '../api/study';
 import AppLayout from '../components/AppLayout';
+import { useSessionMedia } from '../lib/useSessionMedia';
 import { useStudySessionChat } from '../lib/useStudySessionChat';
+import { useStudySessionWebRTC } from '../lib/useStudySessionWebRTC';
 import { useAuthStore } from '../store/authStore';
 
 function formatStudySessionStatus(status) {
@@ -69,6 +71,54 @@ function formatChatStatus(status) {
   return status || '알 수 없음';
 }
 
+function formatVideoStatus(status) {
+  if (status === 'not_connected') {
+    return '미연결';
+  }
+
+  if (status === 'preparing') {
+    return '준비 중';
+  }
+
+  if (status === 'signaling') {
+    return '시그널링 중';
+  }
+
+  if (status === 'connecting') {
+    return '연결 중';
+  }
+
+  if (status === 'connected') {
+    return '연결됨';
+  }
+
+  if (status === 'disconnected') {
+    return '연결 끊김';
+  }
+
+  if (status === 'error') {
+    return '오류';
+  }
+
+  return status || '알 수 없음';
+}
+
+function formatSignalType(type) {
+  if (type === 'webrtc_offer') {
+    return '연결 제안';
+  }
+
+  if (type === 'webrtc_answer') {
+    return '연결 응답';
+  }
+
+  if (type === 'webrtc_ice_candidate') {
+    return 'ICE 후보';
+  }
+
+  return type || '없음';
+}
+
 export default function StudySessionPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -93,6 +143,20 @@ export default function StudySessionPage() {
     [currentUser?.id, studySession?.participants]
   );
   const {
+    localVideoRef,
+    localStream,
+    hasLocalPreview,
+    connectionStatus: localMediaStatus,
+    cameraOn,
+    microphoneOn,
+    statusMessage: mediaStatusMessage,
+    errorMessage: mediaErrorMessage,
+    startLocalPreview,
+    toggleCamera,
+    toggleMicrophone,
+    stopLocalPreview,
+  } = useSessionMedia();
+  const {
     messages,
     connectionStatus,
     errorMessage: chatErrorMessage,
@@ -108,6 +172,40 @@ export default function StudySessionPage() {
     userId: currentUser?.id,
     nickname: currentUser?.nickname,
   });
+  const {
+    connectionStatus: videoConnectionStatus,
+    statusMessage: videoStatusMessage,
+    errorMessage: videoErrorMessage,
+    lastSignalType,
+    canRetry,
+    hasConnectedPeers,
+    remoteStreams,
+    peerStates,
+    hasTurnRelay,
+    iceServerModeLabel,
+    iceServerDetailMessage,
+    bindRemoteVideo,
+    startConnection,
+    retryConnection,
+    stopConnection,
+  } = useStudySessionWebRTC({
+    enabled: Boolean(
+      studySession?.id &&
+      studySession?.status === 'ACTIVE' &&
+      currentUser?.id
+    ),
+    studySessionId: Number.isFinite(numericSessionId) ? numericSessionId : null,
+    userId: currentUser?.id,
+    participants: studySession?.participants || [],
+    localStream,
+  });
+  const otherParticipants = useMemo(
+    () =>
+      (studySession?.participants || []).filter(
+        (participant) => String(participant.userId) !== String(currentUser?.id)
+      ),
+    [currentUser?.id, studySession?.participants]
+  );
 
   useEffect(() => {
     if (currentUser) {
@@ -217,6 +315,8 @@ export default function StudySessionPage() {
 
     try {
       const completedStudySession = await completeStudySession(studySession.id);
+      stopConnection();
+      stopLocalPreview();
       setStudySession(completedStudySession);
       setCompleteStatus('done');
       setActionMessage('스터디 세션을 종료했습니다.');
@@ -227,6 +327,62 @@ export default function StudySessionPage() {
       );
     }
   };
+
+  const handleStartStudyVideo = async () => {
+    setActionMessage('');
+    const preparedStream = await startLocalPreview();
+
+    if (!preparedStream) {
+      return;
+    }
+
+    await startConnection(preparedStream);
+  };
+
+  const handleRetryStudyVideo = async () => {
+    setActionMessage('');
+    const preparedStream = hasLocalPreview ? localStream : await startLocalPreview();
+
+    if (!preparedStream) {
+      return;
+    }
+
+    await retryConnection(preparedStream);
+  };
+
+  const handleToggleCamera = () => {
+    setActionMessage('');
+    toggleCamera();
+  };
+
+  const handleToggleMicrophone = () => {
+    setActionMessage('');
+    toggleMicrophone();
+  };
+
+  const handleBackToSpace = () => {
+    stopConnection();
+    stopLocalPreview();
+    navigate(studySession?.spaceId ? `/spaces/${studySession.spaceId}` : '/lobby');
+  };
+
+  const localMediaStatusLabel =
+    localMediaStatus === 'ready'
+      ? '로컬 미디어 준비 완료'
+      : localMediaStatus === 'preparing'
+        ? '로컬 미디어 준비 중'
+        : localMediaStatus === 'error'
+          ? '로컬 미디어 오류'
+          : '로컬 미디어 대기';
+
+  const primaryVideoActionLabel =
+    mediaErrorMessage && !hasLocalPreview
+      ? '권한 다시 요청'
+      : canRetry || videoConnectionStatus === 'error' || videoConnectionStatus === 'disconnected'
+        ? '연결 다시 시도'
+        : hasLocalPreview
+          ? '스터디 영상 연결 시작'
+          : '카메라/마이크 준비';
 
   return (
     <AppLayout
@@ -272,9 +428,7 @@ export default function StudySessionPage() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() =>
-                  navigate(studySession.spaceId ? `/spaces/${studySession.spaceId}` : '/lobby')
-                }
+                onClick={handleBackToSpace}
               >
                 공간으로 돌아가기
               </button>
@@ -300,6 +454,163 @@ export default function StudySessionPage() {
               {actionMessage}
             </p>
           ) : null}
+          {mediaErrorMessage ? <p className="app-error">{mediaErrorMessage}</p> : null}
+          {videoErrorMessage ? <p className="app-error">{videoErrorMessage}</p> : null}
+          {!mediaErrorMessage && mediaStatusMessage ? (
+            <p className="app-note">{mediaStatusMessage}</p>
+          ) : null}
+          {!videoErrorMessage && videoStatusMessage ? (
+            <p className="app-note">{videoStatusMessage}</p>
+          ) : null}
+          {!videoErrorMessage ? (
+            <p className="app-note">{iceServerDetailMessage}</p>
+          ) : null}
+          {canRetry ? (
+            <p className="app-note">
+              연결이 끊기면 같은 버튼으로 스터디 시그널링과 참가자별 피어 연결을 다시 시도할 수 있습니다.
+            </p>
+          ) : null}
+
+          <section
+            className={`session-video-panel ${videoConnectionStatus !== 'not_connected' || hasLocalPreview ? 'session-video-panel--active' : ''}`}
+          >
+            <div className="session-video-header">
+              <div>
+                <h2>스터디 영상 영역</h2>
+                <p className="app-note">
+                  참가자별 1:1 피어 연결을 조합하는 스터디용 영상 영역입니다.
+                </p>
+              </div>
+              <div className="session-video-status-list">
+                <span className="session-meta-pill">연결: {formatVideoStatus(videoConnectionStatus)}</span>
+                <span className="session-meta-pill">로컬: {localMediaStatusLabel}</span>
+                <span className="session-meta-pill">ICE: {iceServerModeLabel}</span>
+                <span className="session-meta-pill">카메라: {cameraOn ? '켜짐' : '꺼짐'}</span>
+                <span className="session-meta-pill">마이크: {microphoneOn ? '켜짐' : '꺼짐'}</span>
+                {hasTurnRelay ? (
+                  <span className="session-meta-pill">릴레이 준비됨</span>
+                ) : null}
+                {lastSignalType ? (
+                  <span className="session-meta-pill">
+                    최근 시그널: {formatSignalType(lastSignalType)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="session-video-grid">
+              <article className={`session-video-slot ${cameraOn ? 'session-video-slot--active' : ''}`}>
+                <span className="session-video-slot__label">내 영상</span>
+                <strong>{currentUser?.nickname || '나'}</strong>
+                <div className="session-video-stage">
+                  {hasLocalPreview ? (
+                    <video
+                      ref={localVideoRef}
+                      className="session-video-element"
+                      autoPlay
+                      muted
+                      playsInline
+                    />
+                  ) : (
+                    <div className="session-video-placeholder">
+                      <span>로컬 미리보기가 없습니다</span>
+                    </div>
+                  )}
+                </div>
+                <p className="session-video-slot__state">
+                  {hasConnectedPeers
+                    ? '스터디 참가자와 영상 연결을 유지하고 있습니다.'
+                    : hasLocalPreview
+                      ? '로컬 미리보기가 준비되었습니다.'
+                      : '카메라와 마이크를 준비해 주세요.'}
+                </p>
+              </article>
+
+              {otherParticipants.length === 0 ? (
+                <article className="session-video-slot">
+                  <span className="session-video-slot__label">상대 영상</span>
+                  <strong>참가자 없음</strong>
+                  <div className="session-video-stage">
+                    <div className="session-video-placeholder">
+                      <span>다른 참가자가 입장하면 여기에 영상이 표시됩니다</span>
+                    </div>
+                  </div>
+                  <p className="session-video-slot__state">현재 연결할 다른 참가자가 없습니다.</p>
+                </article>
+              ) : (
+                otherParticipants.map((participant) => {
+                  const participantState = peerStates[participant.userId] || 'not_connected';
+                  const hasStream = Boolean(remoteStreams[participant.userId]);
+
+                  return (
+                    <article
+                      key={participant.userId}
+                      className={`session-video-slot ${hasStream ? 'session-video-slot--active' : ''}`}
+                    >
+                      <span className="session-video-slot__label">
+                        {formatParticipantRole(participant.role)}
+                      </span>
+                      <strong>{participant.label}</strong>
+                      <div className="session-video-stage">
+                        {hasStream ? (
+                          <video
+                            ref={(element) => bindRemoteVideo(participant.userId, element)}
+                            className="session-video-element"
+                            autoPlay
+                            playsInline
+                          />
+                        ) : (
+                          <div className="session-video-placeholder">
+                            <span>상대 영상이 여기에 표시됩니다</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="session-video-slot__state">
+                        {hasStream
+                          ? '상대 영상이 연결되었습니다.'
+                          : `상태: ${formatVideoStatus(participantState)}`}
+                      </p>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="session-video-controls">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={
+                  canRetry || videoConnectionStatus === 'error' || videoConnectionStatus === 'disconnected'
+                    ? handleRetryStudyVideo
+                    : handleStartStudyVideo
+                }
+                disabled={studySession.status !== 'ACTIVE' || videoConnectionStatus === 'connecting'}
+              >
+                {videoConnectionStatus === 'connected'
+                  ? '영상 연결됨'
+                  : videoConnectionStatus === 'signaling' || videoConnectionStatus === 'connecting'
+                    ? '연결 중...'
+                    : primaryVideoActionLabel}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleToggleCamera}
+                disabled={!hasLocalPreview || studySession.status !== 'ACTIVE'}
+              >
+                {cameraOn ? '카메라 끄기' : '카메라 켜기'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleToggleMicrophone}
+                disabled={!hasLocalPreview || studySession.status !== 'ACTIVE'}
+              >
+                {microphoneOn ? '마이크 끄기' : '마이크 켜기'}
+              </button>
+            </div>
+          </section>
 
           <section className="session-card-grid">
             <article className="session-card">
@@ -324,6 +635,9 @@ export default function StudySessionPage() {
               </p>
               <p>
                 현재 채팅 연결 상태는 <strong>{formatChatStatus(connectionStatus)}</strong> 입니다.
+              </p>
+              <p>
+                현재 영상 연결 상태는 <strong>{formatVideoStatus(videoConnectionStatus)}</strong> 입니다.
               </p>
               {chatErrorMessage ? <p className="app-error">{chatErrorMessage}</p> : null}
             </article>

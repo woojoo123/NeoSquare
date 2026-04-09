@@ -15,6 +15,10 @@ import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringReservation;
 import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.space.Space;
+import com.neosquare.space.SpaceType;
+import com.neosquare.study.StudySession;
+import com.neosquare.study.StudySessionRepository;
 import com.neosquare.user.User;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +30,7 @@ class MentoringSessionSignalingServiceTest {
 
     private MentoringRequestRepository mentoringRequestRepository;
     private MentoringReservationRepository mentoringReservationRepository;
+    private StudySessionRepository studySessionRepository;
     private RealtimeSessionRegistry realtimeSessionRegistry;
     private MentoringSessionSignalingService mentoringSessionSignalingService;
 
@@ -33,10 +38,12 @@ class MentoringSessionSignalingServiceTest {
     void setUp() {
         mentoringRequestRepository = mock(MentoringRequestRepository.class);
         mentoringReservationRepository = mock(MentoringReservationRepository.class);
+        studySessionRepository = mock(StudySessionRepository.class);
         realtimeSessionRegistry = mock(RealtimeSessionRegistry.class);
         mentoringSessionSignalingService = new MentoringSessionSignalingService(
                 mentoringRequestRepository,
                 mentoringReservationRepository,
+                studySessionRepository,
                 realtimeSessionRegistry
         );
     }
@@ -94,6 +101,32 @@ class MentoringSessionSignalingServiceTest {
     }
 
     @Test
+    void routeSignalRoutesStudySessionSignalToTargetParticipant() {
+        User host = createUser(10L, "host@neo.square", "Host");
+        User member = createUser(11L, "member@neo.square", "Member");
+        StudySession studySession = createStudySession(91L, host, member);
+        WebSocketSession memberSession = mock(WebSocketSession.class);
+        when(memberSession.isOpen()).thenReturn(true);
+
+        when(studySessionRepository.findDetailById(91L)).thenReturn(Optional.of(studySession));
+        when(realtimeSessionRegistry.findOpenSessions(11L)).thenReturn(Set.of(memberSession));
+
+        SignalRouteResult routeResult = mentoringSessionSignalingService.routeSignal(
+                new WebSocketMessage(
+                        WebSocketEventType.WEBRTC_OFFER,
+                        createStudySignalPayload(91L, 11L),
+                        10L,
+                        Instant.now()
+                )
+        );
+
+        assertThat(routeResult.targetSessions()).containsExactly(memberSession);
+        assertThat(routeResult.outboundMessage().payload().get("studySessionId").asLong()).isEqualTo(91L);
+        assertThat(routeResult.outboundMessage().payload().get("targetUserId").asLong()).isEqualTo(11L);
+        assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("study_session");
+    }
+
+    @Test
     void routeSignalRejectsWhenMentoringRequestIsNotAccepted() {
         User requester = createUser(1L, "requester@neo.square", "Requester");
         User mentor = createUser(2L, "mentor@neo.square", "Mentor");
@@ -139,6 +172,27 @@ class MentoringSessionSignalingServiceTest {
         return reservation;
     }
 
+    private StudySession createStudySession(Long id, User host, User member) {
+        Space studySpace = Space.create(
+                "Study Lounge",
+                SpaceType.STUDY,
+                "스터디 공간",
+                50,
+                true
+        );
+        ReflectionTestUtils.setField(studySpace, "id", 3L);
+
+        StudySession studySession = StudySession.create(
+                host,
+                studySpace,
+                "네트워크 스터디",
+                "WebRTC signaling 구조 점검"
+        );
+        studySession.join(member);
+        ReflectionTestUtils.setField(studySession, "id", id);
+        return studySession;
+    }
+
     private ObjectNode createSignalPayload(Long requestId) {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("requestId", requestId);
@@ -154,6 +208,18 @@ class MentoringSessionSignalingServiceTest {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("reservationId", reservationId);
         payload.put("scope", "reservation_session");
+
+        ObjectNode sdp = payload.putObject("sdp");
+        sdp.put("type", "offer");
+        sdp.put("sdp", "sample-offer");
+        return payload;
+    }
+
+    private ObjectNode createStudySignalPayload(Long studySessionId, Long targetUserId) {
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("studySessionId", studySessionId);
+        payload.put("targetUserId", targetUserId);
+        payload.put("scope", "study_session");
 
         ObjectNode sdp = payload.putObject("sdp");
         sdp.put("type", "offer");

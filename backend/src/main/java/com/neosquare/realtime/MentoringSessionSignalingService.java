@@ -1,6 +1,7 @@
 package com.neosquare.realtime;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.neosquare.mentoring.MentoringRequest;
@@ -9,6 +10,9 @@ import com.neosquare.mentoring.MentoringRequestStatus;
 import com.neosquare.mentoring.MentoringReservation;
 import com.neosquare.mentoring.MentoringReservationRepository;
 import com.neosquare.mentoring.MentoringReservationStatus;
+import com.neosquare.study.StudySession;
+import com.neosquare.study.StudySessionRepository;
+import com.neosquare.study.StudySessionStatus;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.WebSocketSession;
@@ -18,18 +22,22 @@ public class MentoringSessionSignalingService {
 
     private static final String MENTORING_SESSION_SCOPE = "mentoring_session";
     private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
+    private static final String STUDY_SESSION_SCOPE = "study_session";
 
     private final MentoringRequestRepository mentoringRequestRepository;
     private final MentoringReservationRepository mentoringReservationRepository;
+    private final StudySessionRepository studySessionRepository;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
 
     public MentoringSessionSignalingService(
             MentoringRequestRepository mentoringRequestRepository,
             MentoringReservationRepository mentoringReservationRepository,
+            StudySessionRepository studySessionRepository,
             RealtimeSessionRegistry realtimeSessionRegistry
     ) {
         this.mentoringRequestRepository = mentoringRequestRepository;
         this.mentoringReservationRepository = mentoringReservationRepository;
+        this.studySessionRepository = studySessionRepository;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
     }
 
@@ -59,6 +67,10 @@ public class MentoringSessionSignalingService {
             return routeReservationSignal(incomingMessage, payload);
         }
 
+        if (STUDY_SESSION_SCOPE.equals(scope)) {
+            return routeStudySessionSignal(incomingMessage, payload);
+        }
+
         throw new IllegalArgumentException("Unsupported signaling scope.");
     }
 
@@ -84,6 +96,40 @@ public class MentoringSessionSignalingService {
 
         return new SignalRouteResult(
                 targetSessions,
+                WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
+        );
+    }
+
+    private SignalRouteResult routeStudySessionSignal(WebSocketMessage incomingMessage, JsonNode payload) {
+        Long studySessionId = extractLong(payload, "studySessionId", "Study session id is required.");
+        Long targetUserId = extractLong(payload, "targetUserId", "Study session targetUserId is required.");
+        StudySession studySession = studySessionRepository.findDetailById(studySessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Study session not found."));
+
+        if (studySession.getStatus() != StudySessionStatus.ACTIVE) {
+            throw new IllegalStateException("Study session is not active.");
+        }
+
+        if (!studySession.isParticipant(incomingMessage.senderId())) {
+            throw new IllegalStateException("Signal sender is not a participant of this study session.");
+        }
+
+        if (!studySession.isParticipant(targetUserId)) {
+            throw new IllegalStateException("Signal target is not a participant of this study session.");
+        }
+
+        if (incomingMessage.senderId().equals(targetUserId)) {
+            throw new IllegalArgumentException("Study session signaling targetUserId must be another participant.");
+        }
+
+        Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessions(targetUserId);
+
+        if (targetSessions.isEmpty()) {
+            throw new IllegalStateException("Target participant is not connected.");
+        }
+
+        return new SignalRouteResult(
+                targetSessions.stream().filter(WebSocketSession::isOpen).collect(Collectors.toSet()),
                 WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
         );
     }
