@@ -1269,6 +1269,62 @@ export default function LobbyPage() {
   }, [currentUser?.id]);
 
   useEffect(() => {
+    if (isLoading || errorMessage || !currentUser?.id) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    const syncLobbyState = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+
+      try {
+        const [
+          sentRequestsResponse,
+          receivedRequestsResponse,
+          myReservationsResponse,
+          receivedReservationsResponse,
+          myNotificationsResponse,
+        ] = await Promise.all([
+          getSentMentoringRequests(),
+          getReceivedMentoringRequests(),
+          getMyReservations(),
+          getReceivedReservations(),
+          getNotifications(),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setSentRequests(normalizeSentRequests(sentRequestsResponse));
+        setReceivedRequests(normalizeReceivedRequests(receivedRequestsResponse));
+        setReservations(normalizeReservations(myReservationsResponse));
+        setReceivedReservations(normalizeReservations(receivedReservationsResponse));
+        setServerNotifications(normalizeServerNotifications(myNotificationsResponse));
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error?.response?.status === 401) {
+          clearAuth();
+          navigate('/login', { replace: true });
+        }
+      }
+    };
+
+    const intervalId = window.setInterval(syncLobbyState, 7000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [clearAuth, currentUser?.id, errorMessage, isLoading, navigate]);
+
+  useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [chatMessages]);
 
@@ -1441,7 +1497,7 @@ export default function LobbyPage() {
       return {
         title: '받은 액션을 먼저 처리해 보세요',
         description:
-          '상대 계정이 이미 연결을 시작했습니다. 받은 요청이나 예약을 수락하면 바로 세션 흐름으로 이어집니다.',
+          '상대 계정이 이미 연결을 시작했습니다. 받은 요청이나 예약은 몇 초 안에 반영되며, 수락하면 바로 세션 흐름으로 이어집니다.',
         primaryAction: {
           label: pendingRequestCount > 0 ? '받은 요청 보기' : '받은 예약 보기',
           onClick: () =>
@@ -1460,7 +1516,7 @@ export default function LobbyPage() {
       return {
         title: '이제 상대 계정에서 수락만 기다리면 됩니다',
         description:
-          '보낸 요청이나 예약은 내 진행 탭에서 계속 볼 수 있습니다. 다른 브라우저나 시크릿 창에서 상대 계정으로 받은 액션을 확인해 보세요.',
+          '보낸 요청이나 예약은 내 진행 탭에서 계속 볼 수 있습니다. 다른 브라우저나 시크릿 창에서 상대 계정으로 받은 액션을 확인하면 몇 초 안에 상태가 갱신됩니다.',
         primaryAction: {
           label: '내 진행 보기',
           onClick: () => openActivityPanel('my_progress'),

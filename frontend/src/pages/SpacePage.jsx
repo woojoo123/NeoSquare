@@ -259,6 +259,46 @@ export default function SpacePage() {
     };
   }, [space?.id, space?.type]);
 
+  useEffect(() => {
+    if (!space?.id || space.type !== 'STUDY') {
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    const syncStudySessions = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+
+      try {
+        const response = await getStudySessionsBySpace(space.id);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setStudySessions(response);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error?.response?.status === 401) {
+          clearAuth();
+          navigate('/login', { replace: true });
+        }
+      }
+    };
+
+    const intervalId = window.setInterval(syncStudySessions, 7000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [clearAuth, navigate, space?.id, space?.type]);
+
   const selectParticipant = (participant) => {
     if (!participant?.userId) {
       return;
@@ -686,7 +726,7 @@ export default function SpacePage() {
                   <div>
                     <h2>현재 진행 중인 스터디 세션</h2>
                     <p className="app-note">
-                      이 공간에서 생성된 실제 스터디 세션을 서버 상태 기준으로 보여줍니다.
+                      이 공간에서 생성된 실제 스터디 세션을 서버 상태 기준으로 보여주며, 몇 초 간격으로 새 목록을 동기화합니다.
                     </p>
                   </div>
                 </div>
