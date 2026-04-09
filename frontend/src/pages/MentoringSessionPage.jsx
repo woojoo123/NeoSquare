@@ -219,6 +219,9 @@ export default function MentoringSessionPage() {
     errorMessage: webrtcErrorMessage,
     lastSignalType,
     canRetry,
+    hasTurnRelay,
+    iceServerModeLabel,
+    iceServerDetailMessage,
     startConnection,
     retryConnection,
     stopConnection,
@@ -634,6 +637,9 @@ export default function MentoringSessionPage() {
               {actionMessage}
             </p>
           ) : null}
+          {!webrtcErrorMessage ? (
+            <p className="app-note">{iceServerDetailMessage}</p>
+          ) : null}
           {canRetry ? (
             <p className="app-note">
               연결이 끊기면 같은 버튼으로 시그널링 소켓과 피어 연결을 다시 시도할 수 있습니다.
@@ -656,8 +662,12 @@ export default function MentoringSessionPage() {
                 <div className="session-video-status-list">
                   <span className="session-meta-pill">연결: {videoStatusLabel}</span>
                   <span className="session-meta-pill">로컬: {localMediaStatusLabel}</span>
+                  <span className="session-meta-pill">ICE: {iceServerModeLabel}</span>
                   <span className="session-meta-pill">카메라: {cameraOn ? '켜짐' : '꺼짐'}</span>
                   <span className="session-meta-pill">마이크: {microphoneOn ? '켜짐' : '꺼짐'}</span>
+                  {hasTurnRelay ? (
+                    <span className="session-meta-pill">릴레이 준비됨</span>
+                  ) : null}
                   {lastSignalType ? (
                     <span className="session-meta-pill">
                       최근 시그널: {formatSignalType(lastSignalType)}

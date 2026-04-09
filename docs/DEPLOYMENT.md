@@ -69,29 +69,41 @@ Vite 개발 서버를 프록시 없이 별도 호스트로 붙이거나, WebRTC 
 
 ```bash
 cd frontend
-cat <<'EOF' > .env.local
+cp .env.example .env.local
+cat <<'EOF' >> .env.local
 VITE_API_BASE_URL=http://localhost:8080/api
 VITE_WS_URL=ws://localhost:8080/ws
-VITE_WEBRTC_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"}]
 EOF
 ```
 
 TURN 서버를 붙이는 경우 예시:
 
 ```bash
-VITE_WEBRTC_ICE_SERVERS=[
-  {"urls":"stun:stun.l.google.com:19302"},
-  {
-    "urls":["turn:turn.example.com:3478?transport=udp","turn:turn.example.com:3478?transport=tcp"],
-    "username":"turn-user",
-    "credential":"turn-password"
-  }
-]
+VITE_WEBRTC_STUN_URLS=stun:stun.l.google.com:19302
+VITE_WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+VITE_WEBRTC_TURN_USERNAME=turn-user
+VITE_WEBRTC_TURN_CREDENTIAL=turn-password
 ```
 
 주의:
-- `VITE_WEBRTC_ICE_SERVERS`는 JSON 문자열입니다.
-- 잘못된 JSON이면 프론트는 기본 Google STUN으로 fallback 합니다.
+- `VITE_WEBRTC_ICE_SERVERS` JSON 방식과 `STUN/TURN 분리 env` 방식 둘 다 지원합니다.
+- JSON 방식이 있으면 그 값이 우선입니다.
+- 둘 다 없으면 프론트는 기본 Google STUN으로 fallback 합니다.
+
+## 3-1. TURN 실환경 점검
+
+TURN 적용 후에는 아래를 같이 확인하는 편이 안전합니다.
+
+1. 브라우저 두 개를 서로 다른 네트워크에서 접속
+2. 멘토링 또는 예약 세션에 같이 입장
+3. 세션 화면 상단 `ICE` 상태가 `TURN 설정됨`으로 보이는지 확인
+4. 카메라/마이크 준비 후 실제로 상대 영상이 연결되는지 확인
+5. 연결 실패 시:
+   - TURN URL 오타
+   - username / credential 불일치
+   - 3478/5349 포트 방화벽
+   - `turn:` / `turns:` 프로토콜 mismatch
+   를 먼저 점검
 
 ## 4. 접속 주소
 

@@ -208,7 +208,11 @@ npm run build
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `/api` | REST API base URL |
 | `VITE_WS_URL` | `/ws` 또는 same-host ws URL | WebSocket base URL |
-| `VITE_WEBRTC_ICE_SERVERS` | Google STUN 1개 기본값 사용 | WebRTC ICE server JSON 배열 |
+| `VITE_WEBRTC_ICE_SERVERS` | 비어 있으면 fallback | WebRTC ICE server JSON 배열 |
+| `VITE_WEBRTC_STUN_URLS` | 비어 있으면 fallback | 쉼표 구분 STUN URL 목록 |
+| `VITE_WEBRTC_TURN_URLS` | 비어 있으면 미사용 | 쉼표 구분 TURN URL 목록 |
+| `VITE_WEBRTC_TURN_USERNAME` | 비어 있으면 미사용 | TURN username |
+| `VITE_WEBRTC_TURN_CREDENTIAL` | 비어 있으면 미사용 | TURN credential |
 
 프론트와 백엔드를 다른 호스트로 띄우는 경우 예시:
 
@@ -217,6 +221,22 @@ VITE_API_BASE_URL=http://localhost:8080/api
 VITE_WS_URL=ws://localhost:8080/ws
 VITE_WEBRTC_ICE_SERVERS='[{"urls":"stun:stun.l.google.com:19302"}]'
 ```
+
+TURN을 분리 env로 넣는 예시:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8080/api
+VITE_WS_URL=ws://localhost:8080/ws
+VITE_WEBRTC_STUN_URLS=stun:stun.l.google.com:19302
+VITE_WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+VITE_WEBRTC_TURN_USERNAME=turn-user
+VITE_WEBRTC_TURN_CREDENTIAL=turn-password
+```
+
+참고:
+- `frontend/.env.example`에 로컬/실환경 예시를 같이 넣어두었습니다.
+- `VITE_WEBRTC_ICE_SERVERS`가 있으면 그 값을 우선 사용하고, 없으면 `STUN/TURN 분리 env`를 읽습니다.
+- 둘 다 없으면 기본 Google STUN만 사용합니다.
 
 ## 디렉터리 구조 요약
 
