@@ -109,6 +109,22 @@ export default function LandingPage() {
     () => getPrimarySpacePathFromSpaces(orderedSpaces),
     [orderedSpaces]
   );
+  const publicSpaceCount = useMemo(
+    () => orderedSpaces.filter((space) => space.isPublic).length,
+    [orderedSpaces]
+  );
+  const totalCapacity = useMemo(
+    () => orderedSpaces.reduce((sum, space) => sum + (Number.isFinite(space.maxCapacity) ? space.maxCapacity : 0), 0),
+    [orderedSpaces]
+  );
+  const studySpace = useMemo(
+    () => orderedSpaces.find((space) => space.type === 'STUDY') || null,
+    [orderedSpaces]
+  );
+  const mentoringSpace = useMemo(
+    () => orderedSpaces.find((space) => space.type === 'MENTORING') || null,
+    [orderedSpaces]
+  );
   const primaryCtaLabel = accessToken ? '메인광장으로 입장하기' : '로그인하고 바로 입장하기';
   const secondaryCtaLabel = accessToken ? '활동 허브 열기' : '회원가입';
 
@@ -284,6 +300,51 @@ export default function LandingPage() {
           </div>
         </section>
 
+        <section className="landing-section landing-section--capabilities">
+          <div className="landing-section__heading">
+            <span className="landing-section-eyebrow">What You Can Do</span>
+            <h2>랜딩에서 끝나지 않고, 로그인 직후 실제 행동으로 이어지는 기능만 앞에 둡니다.</h2>
+            <p>
+              현재 NeoSquare에서 바로 체감할 수 있는 핵심 액션은 메인광장 진입, 실시간 대화,
+              스터디 참여, 멘토링 요청, 허브 기반 후속 관리입니다.
+            </p>
+          </div>
+
+          <div className="landing-capability-grid">
+            <article className="landing-capability-card">
+              <span>01</span>
+              <strong>메인광장 진입</strong>
+              <p>
+                로그인 직후 {primarySpace?.name || '메인광장'}으로 바로 들어가 중간 화면 없이
+                활동을 시작합니다.
+              </p>
+            </article>
+            <article className="landing-capability-card">
+              <span>02</span>
+              <strong>실시간 대화와 참가자 선택</strong>
+              <p>
+                공간 안에서 사용자를 직접 선택하고, 채팅이나 상호작용으로 자연스럽게 연결됩니다.
+              </p>
+            </article>
+            <article className="landing-capability-card">
+              <span>03</span>
+              <strong>스터디 생성과 합류</strong>
+              <p>
+                {studySpace?.name || '스터디 라운지'}에서 세션을 만들거나, 현재 열린 세션에 바로
+                참여할 수 있습니다.
+              </p>
+            </article>
+            <article className="landing-capability-card">
+              <span>04</span>
+              <strong>멘토링 요청과 예약</strong>
+              <p>
+                {mentoringSpace?.name || '멘토링 존'}에서 빠른 요청과 예약 제안으로 1:1 흐름을
+                바로 시작할 수 있습니다.
+              </p>
+            </article>
+          </div>
+        </section>
+
         <section className="landing-section" id="landing-spaces">
           <div className="landing-section__heading">
             <span className="landing-section-eyebrow">Core Spaces</span>
@@ -333,6 +394,48 @@ export default function LandingPage() {
 
           {isLoadingSpaces ? <p className="landing-data-status">공간 정보를 불러오는 중입니다...</p> : null}
           {spaceLoadError ? <p className="landing-data-status landing-data-status--error">{spaceLoadError}</p> : null}
+        </section>
+
+        <section className="landing-section landing-section--signals">
+          <div className="landing-section__heading">
+            <span className="landing-section-eyebrow">Service Snapshot</span>
+            <h2>현재 서비스 상태를 한눈에 보여주고, 과장 대신 실제 구조를 드러냅니다.</h2>
+            <p>
+              공개 랜딩에서도 현재 열려 있는 공간 수와 기본 수용 규모, 진입 구조를 그대로
+              보여주는 편이 신뢰에 더 도움이 됩니다.
+            </p>
+          </div>
+
+          <div className="landing-signal-panel">
+            <div className="landing-signal-list">
+              <article className="landing-signal-card">
+                <strong>{orderedSpaces.length || 3}개</strong>
+                <span>현재 연결된 코어 공간 수</span>
+              </article>
+              <article className="landing-signal-card">
+                <strong>{publicSpaceCount || orderedSpaces.length || 3}개</strong>
+                <span>즉시 접근 가능한 공개 공간</span>
+              </article>
+              <article className="landing-signal-card">
+                <strong>{totalCapacity || 0}명</strong>
+                <span>공간 설정 기준 총 수용 인원</span>
+              </article>
+            </div>
+
+            <div className="landing-signal-story">
+              <strong>진입 원칙</strong>
+              <p>
+                랜딩은 소개, 메인광장은 경험, 허브는 관리라는 역할 분리를 유지합니다. 그래서
+                로그인 이후에는 {primarySpace?.name || '메인광장'}으로 바로 연결되고, 공간
+                정보가 준비되지 않은 경우에만 {getPrimarySpaceFallbackPath()}로 폴백됩니다.
+              </p>
+              <div className="landing-signal-story__tags">
+                <span>설명보다 입장</span>
+                <span>공간 기반 이동</span>
+                <span>허브 기반 후속 관리</span>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="landing-section landing-section--faq" id="landing-faq">
