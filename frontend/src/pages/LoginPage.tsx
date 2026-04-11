@@ -5,6 +5,7 @@ import AppLayout from '../components/AppLayout';
 import { getMe, login, extractFieldErrors } from '../api/auth';
 import type { FieldErrors, LoginFieldName, LoginFormValues } from '../features/auth/types';
 import { validateLoginForm } from '../features/auth/validators';
+import { resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useAuthStore } from '../store/authStore';
 
 const LOGIN_FAILURE_MESSAGE = '이메일 또는 비밀번호를 확인해 주세요.';
@@ -41,7 +42,6 @@ export default function LoginPage() {
   const setAuthenticatedSession = useAuthStore((state) => state.setAuthenticatedSession);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  const redirectTo = locationState?.from || '/lobby';
   const successMessage =
     locationState?.successMessage ||
     (queryParams.get('signup') === 'success' ? '회원가입이 완료되었습니다. 로그인해 주세요.' : '');
@@ -115,7 +115,7 @@ export default function LoginPage() {
         currentUser: currentUserResponse,
       });
 
-      navigate(redirectTo, { replace: true });
+      navigate(locationState?.from || (await resolvePrimarySpacePath()), { replace: true });
     } catch (error) {
       const serverFieldErrors = extractFieldErrors<LoginFieldName>(error);
 

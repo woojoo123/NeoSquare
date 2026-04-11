@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import AuthNavigationHandler from './AuthNavigationHandler';
@@ -7,6 +7,7 @@ import GuestOnlyRoute from './GuestOnlyRoute';
 import RequireAuth from './RequireAuth';
 
 const LobbyPage = lazy(() => import('../pages/LobbyPage'));
+const LandingPage = lazy(() => import('../pages/LandingPage.tsx'));
 const HubPage = lazy(() => import('../pages/HubPage'));
 const LoginPage = lazy(() => import('../pages/LoginPage.tsx'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
@@ -28,7 +29,7 @@ const router = createBrowserRouter([
     children: [
       {
         path: '/',
-        element: <Navigate to="/login" replace />,
+        element: withSuspense(<LandingPage />, '랜딩 화면을 준비하고 있습니다...'),
       },
       {
         element: <GuestOnlyRoute />,
