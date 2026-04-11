@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import AvatarPreview from '../components/AvatarPreview';
-import { getMe } from '../api/auth';
+import { getMe, logout } from '../api/auth';
 import { getSpaces } from '../api/spaces';
 import { AVATAR_PRESETS, getAvatarPreset } from '../lib/avatarPresets';
 import {
@@ -123,9 +123,15 @@ export default function LobbyPage() {
     });
   };
 
-  const handleLogout = () => {
-    clearAuth();
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Access token only 구조라 실패해도 로컬 세션은 정리한다.
+    } finally {
+      clearAuth();
+      navigate('/login', { replace: true });
+    }
   };
 
   return (

@@ -21,7 +21,8 @@ import jakarta.persistence.UniqueConstraint;
 @Table(
         name = "users",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_users_email", columnNames = "email")
+                @UniqueConstraint(name = "uk_users_email", columnNames = "email"),
+                @UniqueConstraint(name = "uk_users_nickname", columnNames = "nickname")
         }
 )
 public class User {
@@ -36,7 +37,7 @@ public class User {
     @Column(nullable = false, length = 255)
     private String password;
 
-    @Column(nullable = false, length = 50)
+    @Column(nullable = false, unique = true, length = 50)
     private String nickname;
 
     @Enumerated(EnumType.STRING)

@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.neosquare.auth.DuplicateEmailException;
+import com.neosquare.auth.DuplicateNicknameException;
 import com.neosquare.auth.InvalidCredentialsException;
 import com.neosquare.mentoring.DuplicateMentoringFeedbackException;
 import com.neosquare.mentoring.DuplicateMentoringReservationFeedbackException;
@@ -74,7 +75,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDuplicateEmailException(DuplicateEmailException exception) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.CONFLICT,
-                exception.getMessage()
+                "Validation failed.",
+                Map.of("email", exception.getMessage())
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateNicknameException(DuplicateNicknameException exception) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                "Validation failed.",
+                Map.of("nickname", exception.getMessage())
         );
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);

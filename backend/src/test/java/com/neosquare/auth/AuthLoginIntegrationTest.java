@@ -88,6 +88,27 @@ class AuthLoginIntegrationTest {
     }
 
     @Test
+    void loginNormalizesEmailBeforeLookup() throws Exception {
+        userRepository.save(User.create(
+                "neo@example.com",
+                passwordEncoder.encode("password123"),
+                "neo"
+        ));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "  NEO@EXAMPLE.COM ",
+                                  "password": "password123"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.email").value("neo@example.com"));
+    }
+
+    @Test
     void meReturnsCurrentUserWhenAuthenticated() throws Exception {
         User savedUser = userRepository.save(User.create(
                 "neo@example.com",
@@ -109,8 +130,35 @@ class AuthLoginIntegrationTest {
     }
 
     @Test
+    void logoutReturnsSuccessWhenAuthenticated() throws Exception {
+        User savedUser = userRepository.save(User.create(
+                "neo@example.com",
+                passwordEncoder.encode("password123"),
+                "neo"
+        ));
+
+        String accessToken = jwtTokenProvider.generateAccessToken(savedUser);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Logout succeeded."));
+    }
+
+    @Test
     void meWithoutAuthenticationReturnsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Authentication is required."))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void logoutWithoutAuthenticationReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/auth/logout"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").value("Authentication is required."))

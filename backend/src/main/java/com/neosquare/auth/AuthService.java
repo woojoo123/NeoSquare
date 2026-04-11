@@ -26,12 +26,19 @@ public class AuthService {
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateEmailException(request.email());
+        String normalizedEmail = normalizeEmail(request.email());
+        String normalizedNickname = normalizeNickname(request.nickname());
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new DuplicateEmailException();
+        }
+
+        if (userRepository.existsByNickname(normalizedNickname)) {
+            throw new DuplicateNicknameException();
         }
 
         String encodedPassword = passwordEncoder.encode(request.password());
-        User user = User.create(request.email(), encodedPassword, request.nickname());
+        User user = User.create(normalizedEmail, encodedPassword, normalizedNickname);
         User savedUser = userRepository.save(user);
 
         return SignupResponse.from(savedUser);
@@ -39,7 +46,7 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
+        User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(InvalidCredentialsException::new);
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -52,7 +59,23 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
+    public void logout(AuthUserPrincipal authUser) {
+        // Refresh token 도입 전 단계라 서버 측 폐기 작업은 없다.
+        if (authUser == null) {
+            throw new InvalidCredentialsException();
+        }
+    }
+
+    @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(AuthUserPrincipal authUser) {
         return CurrentUserResponse.from(authUser);
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase();
+    }
+
+    private String normalizeNickname(String nickname) {
+        return nickname == null ? null : nickname.trim();
     }
 }

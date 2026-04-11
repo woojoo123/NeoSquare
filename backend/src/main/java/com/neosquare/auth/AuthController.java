@@ -38,6 +38,13 @@ public class AuthController {
         return ApiResponse.success("Login succeeded.", response);
     }
 
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@AuthenticationPrincipal AuthUserPrincipal authUser) {
+        authService.logout(authUser);
+
+        return ApiResponse.success("Logout succeeded.");
+    }
+
     @GetMapping("/me")
     public ApiResponse<CurrentUserResponse> me(@AuthenticationPrincipal AuthUserPrincipal authUser) {
         CurrentUserResponse response = authService.getCurrentUser(authUser);

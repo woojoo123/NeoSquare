@@ -81,8 +81,9 @@ class AuthSignupIntegrationTest {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Email already exists: neo@example.com"))
+                .andExpect(jsonPath("$.message").value("Validation failed."))
                 .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.errors.email").value("Email already exists."))
                 .andExpect(jsonPath("$.timestamp").exists());
     }
 
@@ -102,8 +103,50 @@ class AuthSignupIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Validation failed."))
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.errors.email").value("email must be a valid email address"))
-                .andExpect(jsonPath("$.errors.password").value("password must not be blank"))
-                .andExpect(jsonPath("$.errors.nickname").value("nickname must not be blank"));
+                .andExpect(jsonPath("$.errors.email").value("올바른 이메일 주소를 입력해 주세요."))
+                .andExpect(jsonPath("$.errors.password").value("비밀번호를 입력해 주세요."))
+                .andExpect(jsonPath("$.errors.nickname").value("닉네임은 2자 이상 20자 이하로 입력해 주세요."));
+    }
+
+    @Test
+    void signupWithDuplicateNicknameReturnsConflict() throws Exception {
+        userRepository.save(User.create(
+                "existing@example.com",
+                passwordEncoder.encode("password123"),
+                "neo"
+        ));
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "neo@example.com",
+                                  "password": "password123",
+                                  "nickname": "neo"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Validation failed."))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.errors.nickname").value("Nickname already exists."))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void signupNormalizesEmailBeforeSaving() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "  Neo@Example.com ",
+                                  "password": "password123",
+                                  "nickname": "neo"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.email").value("neo@example.com"));
+
+        assertThat(userRepository.findByEmail("neo@example.com")).isPresent();
     }
 }

@@ -50,6 +50,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/signup").permitAll()
+                        .requestMatchers("/api/auth/logout").authenticated()
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/spaces").permitAll()
                         .requestMatchers("/api/spaces/*").permitAll()

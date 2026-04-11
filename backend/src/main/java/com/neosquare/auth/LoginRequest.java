@@ -11,4 +11,8 @@ public record LoginRequest(
         @NotBlank(message = "password must not be blank")
         String password
 ) {
+
+    public LoginRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

@@ -5,6 +5,24 @@ import { getMe, login } from '../api/auth';
 import AppLayout from '../components/AppLayout';
 import { useAuthStore } from '../store/authStore';
 
+function normalizeLoginErrorMessage(error) {
+  const status = error?.response?.status;
+  const rawMessage = String(error?.response?.data?.message || error?.message || '').toLowerCase();
+
+  if (
+    status === 400 ||
+    status === 401 ||
+    rawMessage.includes('invalid email or password') ||
+    rawMessage.includes('invalid password') ||
+    rawMessage.includes('bad credentials') ||
+    rawMessage.includes('unauthorized')
+  ) {
+    return '이메일 또는 비밀번호를 확인해 주세요.';
+  }
+
+  return '로그인에 실패했어요. 잠시 후 다시 시도해 주세요.';
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -16,14 +34,20 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.currentUser);
-  const setAccessToken = useAuthStore((state) => state.setAccessToken);
-  const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
+  const setAuthenticatedSession = useAuthStore((state) => state.setAuthenticatedSession);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
   const redirectTo = location.state?.from || '/lobby';
+  const infoMessage = location.state?.from
+    ? '로그인이 필요한 서비스입니다. 계정 정보를 입력하고 계속 진행해 주세요.'
+    : '';
+  const hasLoginError = Boolean(errorMessage);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
+    if (errorMessage) {
+      setErrorMessage('');
+    }
     setForm((current) => ({
       ...current,
       [name]: value,
@@ -32,27 +56,31 @@ export default function LoginPage() {
 
   const handleLogin = async (event) => {
     event.preventDefault();
+
+    if (isSubmitting) {
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage('');
 
     try {
       const loginResponse = await login(form);
-      const nextAccessToken = loginResponse?.data?.accessToken;
+      const nextAccessToken = loginResponse?.accessToken;
 
       if (!nextAccessToken) {
-        throw new Error('액세스 토큰을 받지 못했습니다.');
+        throw new Error('Login response did not include an access token.');
       }
 
-      setAccessToken(nextAccessToken);
-
       const meResponse = await getMe();
-      setCurrentUser(meResponse);
+      setAuthenticatedSession({
+        accessToken: nextAccessToken,
+        currentUser: meResponse,
+      });
       navigate(redirectTo, { replace: true });
     } catch (error) {
       clearAuth();
-      setErrorMessage(
-        error?.response?.data?.message || error.message || '로그인에 실패했습니다.'
-      );
+      setErrorMessage(normalizeLoginErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -60,11 +88,17 @@ export default function LoginPage() {
 
   return (
     <AppLayout
-      eyebrow="로그인"
-      title="NeoSquare 로그인"
-      description="NeoSquare 계정으로 로그인하면 액세스 토큰을 저장하고 현재 사용자 정보를 불러옵니다."
+      eyebrow="환영합니다"
+      title="NeoSquare에 로그인"
+      description="이메일과 비밀번호를 입력하면 바로 서비스를 이어서 이용할 수 있습니다."
+      panelClassName="auth-panel auth-panel--compact"
     >
-      <form className="app-form" onSubmit={handleLogin}>
+      {location.state?.message ? (
+        <p className="form-feedback form-feedback--success">{location.state.message}</p>
+      ) : null}
+      {infoMessage ? <p className="auth-info-banner">{infoMessage}</p> : null}
+
+      <form className="app-form auth-form" onSubmit={handleLogin}>
         <label className="app-field">
           <span>이메일</span>
           <input
@@ -73,42 +107,48 @@ export default function LoginPage() {
             name="email"
             value={form.email}
             onChange={handleChange}
-            placeholder="you@example.com"
+            placeholder="이메일을 입력해 주세요"
+            autoComplete="email"
             required
           />
         </label>
         <label className="app-field">
           <span>비밀번호</span>
           <input
-            className="app-input"
+            className={`app-input ${hasLoginError ? 'app-input--error' : ''}`}
             type="password"
             name="password"
             value={form.password}
             onChange={handleChange}
             placeholder="비밀번호를 입력하세요"
+            autoComplete="current-password"
+            aria-invalid={hasLoginError}
+            aria-describedby={hasLoginError ? 'login-error-message' : undefined}
             required
           />
+          {hasLoginError ? (
+            <small className="field-error-text" id="login-error-message" role="alert">
+              {errorMessage}
+            </small>
+          ) : null}
         </label>
-        <div className="app-actions">
-          <button type="submit" className="primary-button" disabled={isSubmitting}>
+        <div className="app-actions auth-actions">
+          <button type="submit" className="primary-button auth-submit-button" disabled={isSubmitting}>
             {isSubmitting ? '로그인 중...' : '로그인'}
           </button>
-          <Link className="text-link" to="/signup">
-            회원가입
-          </Link>
         </div>
       </form>
-      {location.state?.message ? (
-        <p className="app-success">{location.state.message}</p>
-      ) : null}
-      {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
+
       {accessToken ? (
-        <p className="app-note">
+        <p className="auth-helper">
           현재 {currentUser?.nickname || '사용자'} 계정으로 로그인되어 있습니다.
         </p>
       ) : (
-        <p className="app-note">
-          로그인하지 않은 사용자가 `/lobby`에 접근하면 이 페이지로 이동합니다.
+        <p className="auth-helper">
+          아직 계정이 없으신가요?{' '}
+          <Link className="auth-helper-link" to="/signup">
+            회원가입
+          </Link>
         </p>
       )}
     </AppLayout>
