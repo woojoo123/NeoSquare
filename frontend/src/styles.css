@@ -755,6 +755,8 @@ select {
   margin-top: 24px;
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .space-page-layout {
@@ -878,6 +880,147 @@ select {
 .space-navigation-card p {
   margin: 8px 0 0;
   color: #475569;
+}
+
+.space-avatar-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.space-avatar-summary strong {
+  display: block;
+  color: #0f172a;
+}
+
+.space-avatar-summary span {
+  display: block;
+  margin-top: 6px;
+  color: #475569;
+}
+
+.space-avatar-onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.space-avatar-onboarding__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.space-avatar-onboarding__panel {
+  position: relative;
+  width: min(960px, 100%);
+  max-height: min(92vh, 980px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 36px 90px rgba(15, 23, 42, 0.28);
+}
+
+.space-avatar-onboarding__panel h2 {
+  margin: 18px 0 12px;
+  color: #0f172a;
+  font-size: clamp(1.9rem, 4vw, 2.7rem);
+  line-height: 1.08;
+}
+
+.space-avatar-onboarding__panel > p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.space-avatar-onboarding__hero {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 22px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(203, 213, 225, 0.72);
+}
+
+.space-avatar-onboarding__hero-copy strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1.12rem;
+}
+
+.space-avatar-onboarding__hero-copy span {
+  display: block;
+  margin-top: 8px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.space-avatar-onboarding__hero-copy p {
+  margin-top: 12px;
+}
+
+.space-avatar-onboarding__grid {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.space-avatar-option {
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 22px;
+  padding: 20px 18px;
+  background: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.space-avatar-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(59, 130, 246, 0.44);
+  box-shadow: 0 20px 36px rgba(15, 23, 42, 0.08);
+}
+
+.space-avatar-option--selected {
+  border-color: #2563eb;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.94));
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.space-avatar-option strong {
+  display: block;
+  color: #0f172a;
+}
+
+.space-avatar-option span {
+  display: block;
+  margin-top: 8px;
+  color: #475569;
+}
+
+.space-avatar-onboarding__actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .space-study-list {
@@ -1981,6 +2124,16 @@ select {
   .lobby-side-panel__content {
     max-height: none;
   }
+
+  .space-avatar-summary,
+  .space-avatar-onboarding__hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .space-avatar-onboarding__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2004,6 +2157,26 @@ select {
   .lobby-page-shell .lobby-game-shell,
   .lobby-page-shell .lobby-game-container {
     min-height: 360px;
+  }
+
+  .space-avatar-onboarding {
+    padding: 14px;
+  }
+
+  .space-avatar-onboarding__panel {
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .space-avatar-onboarding__actions,
+  .space-page-actions {
+    justify-content: stretch;
+  }
+
+  .space-avatar-onboarding__actions .primary-button,
+  .space-avatar-onboarding__actions .secondary-button,
+  .space-page-actions .secondary-button {
+    width: 100%;
   }
 }
 

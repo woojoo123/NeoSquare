@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getMe } from '../api/auth';
 import { completeStudySession, getStudySession } from '../api/study';
 import AppLayout from '../components/AppLayout';
+import { resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useSessionMedia } from '../lib/useSessionMedia';
 import { useStudySessionChat } from '../lib/useStudySessionChat';
 import { useStudySessionWebRTC } from '../lib/useStudySessionWebRTC';
@@ -360,10 +361,10 @@ export default function StudySessionPage() {
     toggleMicrophone();
   };
 
-  const handleBackToSpace = () => {
+  const handleBackToSpace = async () => {
     stopConnection();
     stopLocalPreview();
-    navigate(studySession?.spaceId ? `/spaces/${studySession.spaceId}` : '/lobby');
+    navigate(studySession?.spaceId ? `/spaces/${studySession.spaceId}` : await resolvePrimarySpacePath());
   };
 
   const localMediaStatusLabel =

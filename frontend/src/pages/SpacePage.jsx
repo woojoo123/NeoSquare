@@ -11,9 +11,17 @@ import {
   joinStudySession,
 } from '../api/study';
 import AppLayout from '../components/AppLayout';
+import AvatarPreview from '../components/AvatarPreview';
 import SpaceGame from '../components/SpaceGame';
-import { getSelectedAvatarPresetId } from '../lib/avatarSelectionStorage';
+import { AVATAR_PRESETS, getAvatarPreset } from '../lib/avatarPresets';
+import {
+  getSelectedAvatarPresetId,
+  hasCompletedAvatarOnboarding,
+  markAvatarOnboardingComplete,
+  setSelectedAvatarPresetId,
+} from '../lib/avatarSelectionStorage';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
+import { getPrimarySpace, resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
 
@@ -107,6 +115,10 @@ export default function SpacePage() {
   const [spaceDirectory, setSpaceDirectory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [avatarNotice, setAvatarNotice] = useState('');
+  const [selectedAvatarId, setSelectedAvatarId] = useState(AVATAR_PRESETS[0].id);
+  const [showAvatarOnboarding, setShowAvatarOnboarding] = useState(false);
+  const [hasCompletedAvatarSetup, setHasCompletedAvatarSetup] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
   const [requestMessage, setRequestMessage] = useState('');
   const [requestStatus, setRequestStatus] = useState('idle');
@@ -129,7 +141,7 @@ export default function SpacePage() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
-  const avatarPresetId = getSelectedAvatarPresetId(currentUser?.id);
+  const avatarPresetId = selectedAvatarId;
   const spawnFromSpaceType =
     typeof location.state?.entryFromSpaceType === 'string'
       ? location.state.entryFromSpaceType
@@ -157,10 +169,12 @@ export default function SpacePage() {
     [remoteUsers, selectedParticipantId]
   );
   const spaceDefinition = getLobbyZoneDefinition(space?.type);
+  const currentAvatarPreset = getAvatarPreset(selectedAvatarId);
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
   );
+  const primarySpace = useMemo(() => getPrimarySpace(spaceDirectory), [spaceDirectory]);
   const connectedSpaces = useMemo(
     () =>
       SPACE_NAVIGATION_ORDER.map((spaceType) =>
@@ -170,6 +184,32 @@ export default function SpacePage() {
       ).filter(Boolean),
     [space?.type, spaceDirectory]
   );
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setSelectedAvatarId(AVATAR_PRESETS[0].id);
+      setHasCompletedAvatarSetup(false);
+      setShowAvatarOnboarding(false);
+      return;
+    }
+
+    const didCompleteAvatarSetup = hasCompletedAvatarOnboarding(currentUser.id);
+
+    setSelectedAvatarId(getSelectedAvatarPresetId(currentUser.id));
+    setHasCompletedAvatarSetup(didCompleteAvatarSetup);
+
+    if (didCompleteAvatarSetup) {
+      setShowAvatarOnboarding(false);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !space?.type || hasCompletedAvatarOnboarding(currentUser.id)) {
+      return;
+    }
+
+    setShowAvatarOnboarding(true);
+  }, [currentUser?.id, space?.type]);
 
   useEffect(() => {
     if (!selectedParticipantId) {
@@ -514,6 +554,38 @@ export default function SpacePage() {
     });
   };
 
+  const handleOpenAvatarOnboarding = () => {
+    setAvatarNotice('');
+    setShowAvatarOnboarding(true);
+  };
+
+  const handleCloseAvatarOnboarding = () => {
+    if (!hasCompletedAvatarSetup) {
+      return;
+    }
+
+    setShowAvatarOnboarding(false);
+  };
+
+  const handleSelectAvatarPreset = (presetId) => {
+    setSelectedAvatarId(getAvatarPreset(presetId).id);
+  };
+
+  const handleSaveAvatarSelection = () => {
+    if (!currentUser?.id) {
+      setShowAvatarOnboarding(false);
+      return;
+    }
+
+    const nextPresetId = setSelectedAvatarPresetId(currentUser.id, selectedAvatarId);
+
+    markAvatarOnboardingComplete(currentUser.id);
+    setSelectedAvatarId(nextPresetId);
+    setHasCompletedAvatarSetup(true);
+    setShowAvatarOnboarding(false);
+    setAvatarNotice(`${getAvatarPreset(nextPresetId).name} 아바타로 입장 설정을 저장했습니다.`);
+  };
+
   const handleMoveToSpace = (targetSpace) => {
     if (!targetSpace?.id) {
       return;
@@ -539,6 +611,15 @@ export default function SpacePage() {
     handleMoveToSpace(targetSpace);
   };
 
+  const handleReturnToPrimarySpace = async () => {
+    if (primarySpace?.id) {
+      handleMoveToSpace(primarySpace);
+      return;
+    }
+
+    navigate(await resolvePrimarySpacePath());
+  };
+
   return (
     <AppLayout
       eyebrow="메타버스 공간"
@@ -547,14 +628,25 @@ export default function SpacePage() {
       panelClassName="app-panel--wide"
     >
       <div className="space-page-actions">
-        <button type="button" className="secondary-button" onClick={() => navigate('/lobby')}>
-          입장 로비로 돌아가기
+        {!isLoading && !errorMessage && space?.type !== 'MAIN' ? (
+          <button type="button" className="secondary-button" onClick={handleReturnToPrimarySpace}>
+            메인광장으로 돌아가기
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={handleOpenAvatarOnboarding}
+          disabled={!currentUser?.id}
+        >
+          아바타 {hasCompletedAvatarSetup ? '변경' : '선택'}
         </button>
         <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
           활동 허브 열기
         </button>
       </div>
 
+      {avatarNotice ? <p className="app-success">{avatarNotice}</p> : null}
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
       {isLoading ? <p className="app-note">공간 정보를 불러오는 중입니다...</p> : null}
 
@@ -573,6 +665,25 @@ export default function SpacePage() {
                 <p className="app-note">자동 재연결 시도: {Math.max(reconnectAttempt, 1)}회</p>
               ) : null}
               {lastError ? <p className="app-error">{lastError}</p> : null}
+            </div>
+
+            <div className="lobby-info-card">
+              <h2>내 아바타</h2>
+              <div className="space-avatar-summary">
+                <AvatarPreview presetId={selectedAvatarId} size="medium" highlighted />
+                <div>
+                  <strong>{currentAvatarPreset.name}</strong>
+                  <span>{currentAvatarPreset.summary}</span>
+                  <p className="app-note">
+                    현재 선택한 아바타는 공간 이동과 실시간 표시에도 그대로 사용됩니다.
+                  </p>
+                </div>
+              </div>
+              <div className="space-selected-actions">
+                <button type="button" className="secondary-button" onClick={handleOpenAvatarOnboarding}>
+                  {hasCompletedAvatarSetup ? '아바타 다시 고르기' : '아바타 설정 마치기'}
+                </button>
+              </div>
             </div>
 
             {connectedSpaces.length > 0 ? (
@@ -908,6 +1019,71 @@ export default function SpacePage() {
             </section>
           </section>
         </div>
+      ) : null}
+
+      {showAvatarOnboarding ? (
+        <section
+          className="space-avatar-onboarding"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="space-avatar-onboarding-title"
+        >
+          <div className="space-avatar-onboarding__backdrop" />
+          <div className="space-avatar-onboarding__panel">
+            <span className="landing-section-eyebrow">Avatar Setup</span>
+            <h2 id="space-avatar-onboarding-title">
+              {hasCompletedAvatarSetup
+                ? '지금 사용할 아바타를 다시 골라 주세요.'
+                : '메타버스에 들어가기 전 아바타를 먼저 정해 주세요.'}
+            </h2>
+            <p>
+              별도 로비 없이 바로 공간에 입장하는 흐름으로 바꾸고 있으므로, 아바타 선택은
+              여기서 한 번만 마치면 됩니다. 이후에도 언제든 다시 바꿀 수 있습니다.
+            </p>
+
+            <div className="space-avatar-onboarding__hero">
+              <AvatarPreview presetId={selectedAvatarId} size="hero" highlighted />
+              <div className="space-avatar-onboarding__hero-copy">
+                <strong>{currentAvatarPreset.name}</strong>
+                <span>{currentAvatarPreset.summary}</span>
+                <p className="app-note">
+                  현재 공간: {spaceDefinition.label} · 선택 저장 후 바로 이동과 실시간 표시가
+                  반영됩니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-avatar-onboarding__grid">
+              {AVATAR_PRESETS.map((preset) => {
+                const isSelected = preset.id === selectedAvatarId;
+
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`space-avatar-option ${isSelected ? 'space-avatar-option--selected' : ''}`}
+                    onClick={() => handleSelectAvatarPreset(preset.id)}
+                  >
+                    <AvatarPreview presetId={preset.id} size="card" highlighted={isSelected} />
+                    <strong>{preset.name}</strong>
+                    <span>{preset.summary}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="space-avatar-onboarding__actions">
+              {hasCompletedAvatarSetup ? (
+                <button type="button" className="secondary-button" onClick={handleCloseAvatarOnboarding}>
+                  취소
+                </button>
+              ) : null}
+              <button type="button" className="primary-button" onClick={handleSaveAvatarSelection}>
+                {hasCompletedAvatarSetup ? '변경 저장' : '이 아바타로 시작'}
+              </button>
+            </div>
+          </div>
+        </section>
       ) : null}
     </AppLayout>
   );
