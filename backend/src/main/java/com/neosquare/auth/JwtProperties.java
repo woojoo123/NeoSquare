@@ -13,6 +13,11 @@ public record JwtProperties(
         String secret,
 
         @Positive
-        long accessTokenExpirationMillis
+        long accessTokenExpirationMillis,
+
+        @Positive
+        long refreshTokenExpirationMillis,
+
+        boolean refreshTokenCookieSecure
 ) {
 }

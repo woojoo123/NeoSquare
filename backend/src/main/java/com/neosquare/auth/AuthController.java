@@ -3,7 +3,9 @@ package com.neosquare.auth;
 import com.neosquare.common.ApiResponse;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.HttpStatus;
@@ -18,9 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final RefreshTokenCookieService refreshTokenCookieService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RefreshTokenCookieService refreshTokenCookieService) {
         this.authService = authService;
+        this.refreshTokenCookieService = refreshTokenCookieService;
     }
 
     @PostMapping("/signup")
@@ -32,17 +36,44 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        LoginResponse response = authService.login(request);
+    public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
+        AuthSessionResult sessionResult = authService.login(request);
 
-        return ApiResponse.success("Login succeeded.", response);
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        refreshTokenCookieService.buildRefreshTokenCookieHeader(sessionResult.refreshToken())
+                )
+                .body(ApiResponse.success("Login succeeded.", sessionResult.loginResponse()));
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@AuthenticationPrincipal AuthUserPrincipal authUser) {
-        authService.logout(authUser);
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            HttpServletRequest request
+    ) {
+        authService.logout(
+                authUser,
+                refreshTokenCookieService.extractRefreshToken(request.getHeader(HttpHeaders.COOKIE))
+        );
 
-        return ApiResponse.success("Logout succeeded.");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, refreshTokenCookieService.buildClearRefreshTokenCookieHeader())
+                .body(ApiResponse.success("Logout succeeded."));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<LoginResponse>> refresh(HttpServletRequest request) {
+        AuthSessionResult sessionResult = authService.refresh(
+                refreshTokenCookieService.extractRefreshToken(request.getHeader(HttpHeaders.COOKIE))
+        );
+
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        refreshTokenCookieService.buildRefreshTokenCookieHeader(sessionResult.refreshToken())
+                )
+                .body(ApiResponse.success("Refresh succeeded.", sessionResult.loginResponse()));
     }
 
     @GetMapping("/me")

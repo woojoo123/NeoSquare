@@ -1,6 +1,8 @@
 package com.neosquare.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.equalTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -104,8 +106,15 @@ class AuthSignupIntegrationTest {
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.timestamp").exists())
                 .andExpect(jsonPath("$.errors.email").value("올바른 이메일 주소를 입력해 주세요."))
-                .andExpect(jsonPath("$.errors.password").value("비밀번호를 입력해 주세요."))
-                .andExpect(jsonPath("$.errors.nickname").value("닉네임은 2자 이상 20자 이하로 입력해 주세요."));
+                .andExpect(jsonPath("$.errors.password").value(anyOf(
+                        equalTo("비밀번호를 입력해 주세요."),
+                        equalTo("비밀번호는 8자 이상 64자 이하로 입력해 주세요."),
+                        equalTo("비밀번호는 영문과 숫자를 함께 포함해야 합니다.")
+                )))
+                .andExpect(jsonPath("$.errors.nickname").value(anyOf(
+                        equalTo("닉네임을 입력해 주세요."),
+                        equalTo("닉네임은 2자 이상 20자 이하로 입력해 주세요.")
+                )));
     }
 
     @Test

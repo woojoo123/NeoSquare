@@ -1,7 +1,9 @@
 package com.neosquare.auth;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,6 +58,7 @@ class AuthLoginIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Login succeeded."))
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("neosquare_refresh_token=")))
                 .andExpect(jsonPath("$.data.accessToken").isString())
                 .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.data.userId").isNumber())
@@ -140,10 +143,42 @@ class AuthLoginIntegrationTest {
         String accessToken = jwtTokenProvider.generateAccessToken(savedUser);
 
         mockMvc.perform(post("/api/auth/logout")
+                        .header(HttpHeaders.COOKIE, "neosquare_refresh_token=refresh-token-value")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Logout succeeded."));
+    }
+
+    @Test
+    void refreshReturnsNewAccessTokenWhenRefreshCookieIsValid() throws Exception {
+        userRepository.save(User.create(
+                "neo@example.com",
+                passwordEncoder.encode("password123"),
+                "neo"
+        ));
+
+        String refreshCookie = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "neo@example.com",
+                                  "password": "password123"
+                                }
+                                """))
+                .andReturn()
+                .getResponse()
+                .getHeader(HttpHeaders.SET_COOKIE);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .header(HttpHeaders.COOKIE, refreshCookie))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("neosquare_refresh_token=")))
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Refresh succeeded."))
+                .andExpect(jsonPath("$.data.accessToken").isString())
+                .andExpect(jsonPath("$.data.email").value("neo@example.com"));
     }
 
     @Test
@@ -159,6 +194,16 @@ class AuthLoginIntegrationTest {
     @Test
     void logoutWithoutAuthenticationReturnsUnauthorized() throws Exception {
         mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Authentication is required."))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void refreshWithoutCookieReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/auth/refresh"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").value("Authentication is required."))

@@ -25,6 +25,8 @@ logging:
 jwt:
   secret: ${JWT_SECRET:neosquare-access-token-secret-key-needs-at-least-32-bytes}
   access-token-expiration-millis: ${JWT_ACCESS_TOKEN_EXPIRATION_MILLIS:3600000}
+  refresh-token-expiration-millis: ${JWT_REFRESH_TOKEN_EXPIRATION_MILLIS:1209600000}
+  refresh-token-cookie-secure: ${JWT_REFRESH_TOKEN_COOKIE_SECURE:false}
 
 app:
   seed-demo-data: false

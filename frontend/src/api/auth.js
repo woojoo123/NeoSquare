@@ -12,6 +12,7 @@ export async function signup(payload) {
 export async function login(payload) {
   const response = await axiosInstance.post('/auth/login', payload, {
     skipAuthRedirect: true,
+    skipAuthRefresh: true,
   });
   return unwrapResponse(response);
 }
@@ -22,13 +23,7 @@ export async function getMe() {
 }
 
 export async function logout() {
-  const response = await axiosInstance.post(
-    '/auth/logout',
-    null,
-    {
-      skipAuthRedirect: true,
-    }
-  );
+  const response = await axiosInstance.post('/auth/logout');
 
   return unwrapResponse(response);
 }

@@ -6,6 +6,7 @@ import java.util.Map;
 import com.neosquare.auth.DuplicateEmailException;
 import com.neosquare.auth.DuplicateNicknameException;
 import com.neosquare.auth.InvalidCredentialsException;
+import com.neosquare.auth.InvalidRefreshTokenException;
 import com.neosquare.mentoring.DuplicateMentoringFeedbackException;
 import com.neosquare.mentoring.DuplicateMentoringReservationFeedbackException;
 import com.neosquare.mentoring.InvalidMentoringRequestStateException;
@@ -95,6 +96,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCredentialsException(InvalidCredentialsException exception) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.UNAUTHORIZED,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRefreshTokenException(InvalidRefreshTokenException exception) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.UNAUTHORIZED,
                 exception.getMessage()

@@ -13,15 +13,18 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            JwtTokenProvider jwtTokenProvider
+            JwtTokenProvider jwtTokenProvider,
+            RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -44,8 +47,8 @@ public class AuthService {
         return SignupResponse.from(savedUser);
     }
 
-    @Transactional(readOnly = true)
-    public LoginResponse login(LoginRequest request) {
+    @Transactional
+    public AuthSessionResult login(LoginRequest request) {
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(InvalidCredentialsException::new);
 
@@ -54,16 +57,33 @@ public class AuthService {
         }
 
         String accessToken = jwtTokenProvider.generateAccessToken(user);
+        String refreshToken = refreshTokenService.issue(user);
 
-        return LoginResponse.of(user, accessToken);
+        return new AuthSessionResult(
+                LoginResponse.of(user, accessToken),
+                refreshToken
+        );
     }
 
-    @Transactional(readOnly = true)
-    public void logout(AuthUserPrincipal authUser) {
-        // Refresh token 도입 전 단계라 서버 측 폐기 작업은 없다.
+    @Transactional
+    public AuthSessionResult refresh(String refreshToken) {
+        User user = refreshTokenService.rotate(refreshToken);
+        String accessToken = jwtTokenProvider.generateAccessToken(user);
+        String nextRefreshToken = refreshTokenService.issue(user);
+
+        return new AuthSessionResult(
+                LoginResponse.of(user, accessToken),
+                nextRefreshToken
+        );
+    }
+
+    @Transactional
+    public void logout(AuthUserPrincipal authUser, String refreshToken) {
         if (authUser == null) {
             throw new InvalidCredentialsException();
         }
+
+        refreshTokenService.revoke(refreshToken);
     }
 
     @Transactional(readOnly = true)
