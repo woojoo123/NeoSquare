@@ -84,7 +84,7 @@ class RealtimeWebSocketHandlerTest {
         WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
 
         realtimeSessionRegistry.bindSession(existingSession, 11L);
-        realtimeSessionRegistry.updateSessionPresence(existingSession, 3L, 120.0, 220.0);
+        realtimeSessionRegistry.updateSessionPresence(existingSession, 3L, 120.0, 220.0, "forest-maker");
         realtimeSessionRegistry.bindSession(sourceSession, 7L);
 
         realtimeWebSocketHandler.handleTextMessage(
@@ -96,7 +96,8 @@ class RealtimeWebSocketHandlerTest {
                           "payload": {
                             "spaceId": 3,
                             "x": 180,
-                            "y": 260
+                            "y": 260,
+                            "avatarPresetId": "sky-runner"
                           }
                         }
                         """)
@@ -108,6 +109,7 @@ class RealtimeWebSocketHandlerTest {
         assertThat(realtimeSessionRegistry.findSpaceId(sourceSession)).contains(3L);
         assertThat(realtimeSessionRegistry.findPosition(sourceSession))
                 .contains(new SessionPosition(180.0, 260.0));
+        assertThat(realtimeSessionRegistry.findAvatarPresetId(sourceSession)).contains("sky-runner");
 
         assertThat(sourceResponses.stream()
                 .map(response -> response.get("type").asText())
@@ -115,11 +117,15 @@ class RealtimeWebSocketHandlerTest {
                 .containsExactly("user_enter", "ws_ack");
         assertThat(sourceResponses.get(0).get("senderId").asLong()).isEqualTo(11L);
         assertThat(sourceResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Jisu");
+        assertThat(sourceResponses.get(0).get("payload").get("avatarPresetId").asText())
+                .isEqualTo("forest-maker");
 
         assertThat(peerResponses.get(0).get("type").asText()).isEqualTo("user_enter");
         assertThat(peerResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
         assertThat(peerResponses.get(0).get("payload").get("userId").asLong()).isEqualTo(7L);
         assertThat(peerResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Alice");
+        assertThat(peerResponses.get(0).get("payload").get("avatarPresetId").asText())
+                .isEqualTo("sky-runner");
     }
 
     @Test
@@ -129,11 +135,11 @@ class RealtimeWebSocketHandlerTest {
         WebSocketSession otherSpaceSession = createSession("session-other", 21L, "Mina");
 
         realtimeSessionRegistry.bindSession(sourceSession, 7L);
-        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0);
+        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0, null);
         realtimeSessionRegistry.bindSession(sameSpaceSession, 11L);
-        realtimeSessionRegistry.updateSessionPresence(sameSpaceSession, 3L, 200.0, 280.0);
+        realtimeSessionRegistry.updateSessionPresence(sameSpaceSession, 3L, 200.0, 280.0, null);
         realtimeSessionRegistry.bindSession(otherSpaceSession, 21L);
-        realtimeSessionRegistry.updateSessionPresence(otherSpaceSession, 5L, 320.0, 380.0);
+        realtimeSessionRegistry.updateSessionPresence(otherSpaceSession, 5L, 320.0, 380.0, null);
 
         realtimeWebSocketHandler.handleTextMessage(
                 sourceSession,
@@ -278,9 +284,9 @@ class RealtimeWebSocketHandlerTest {
         WebSocketSession peerSession = createSession("session-peer", 11L, "Jisu");
 
         realtimeSessionRegistry.bindSession(sourceSession, 7L);
-        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0);
+        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0, null);
         realtimeSessionRegistry.bindSession(peerSession, 11L);
-        realtimeSessionRegistry.updateSessionPresence(peerSession, 3L, 200.0, 280.0);
+        realtimeSessionRegistry.updateSessionPresence(peerSession, 3L, 200.0, 280.0, null);
 
         realtimeWebSocketHandler.afterConnectionClosed(sourceSession, CloseStatus.NORMAL);
 

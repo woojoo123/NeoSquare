@@ -146,13 +146,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         Long previousSpaceId = realtimeSessionRegistry.findSpaceId(session).orElse(null);
         Double x = extractCoordinate(normalizedMessage.payload(), "x");
         Double y = extractCoordinate(normalizedMessage.payload(), "y");
+        String avatarPresetId = extractStringPayloadValue(normalizedMessage.payload(), "avatarPresetId");
 
         if (normalizedMessage.type() != WebSocketEventType.USER_LEAVE) {
             if (previousSpaceId != null && !previousSpaceId.equals(spaceId)) {
                 broadcastLeaveToSpace(previousSpaceId, normalizedMessage.senderId(), session);
             }
 
-            realtimeSessionRegistry.updateSessionPresence(session, spaceId, x, y);
+            realtimeSessionRegistry.updateSessionPresence(session, spaceId, x, y, avatarPresetId);
         }
 
         switch (normalizedMessage.type()) {
@@ -207,6 +208,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         if (nickname != null) {
             payload.put("nickname", nickname);
         }
+
+        realtimeSessionRegistry.findAvatarPresetId(session)
+                .filter(avatarId -> !avatarId.isBlank())
+                .ifPresent(avatarId -> payload.put("avatarPresetId", avatarId));
 
         return WebSocketMessage.relay(WebSocketEventType.USER_ENTER, payload, userId);
     }
@@ -316,6 +321,21 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
 
         throw new IllegalArgumentException("WebSocket " + fieldName + " must be numeric.");
+    }
+
+    private String extractStringPayloadValue(JsonNode payload, String fieldName) {
+        if (payload == null || payload.get(fieldName) == null || payload.get(fieldName).isNull()) {
+            return null;
+        }
+
+        JsonNode valueNode = payload.get(fieldName);
+
+        if (!valueNode.isTextual()) {
+            throw new IllegalArgumentException("WebSocket " + fieldName + " must be text.");
+        }
+
+        String value = valueNode.asText();
+        return value.isBlank() ? null : value;
     }
 
     private void sendMessage(WebSocketSession session, WebSocketMessage message) throws Exception {

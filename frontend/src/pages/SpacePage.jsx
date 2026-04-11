@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import { createMentoringRequest } from '../api/mentoring';
 import { createReservation } from '../api/reservations';
-import { getSpace } from '../api/spaces';
+import { getSpace, getSpaces } from '../api/spaces';
 import {
   createStudySession,
   getStudySessionsBySpace,
@@ -12,11 +12,13 @@ import {
 } from '../api/study';
 import AppLayout from '../components/AppLayout';
 import SpaceGame from '../components/SpaceGame';
+import { getSelectedAvatarPresetId } from '../lib/avatarSelectionStorage';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useAuthStore } from '../store/authStore';
 
 const STUDY_RECRUIT_PREFIX = '[스터디 모집]';
+const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY', 'MENTORING'];
 
 function getDefaultReservationDateTime() {
   const now = new Date();
@@ -99,8 +101,10 @@ function formatStudyParticipantCount(count) {
 
 export default function SpacePage() {
   const { spaceId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [space, setSpace] = useState(null);
+  const [spaceDirectory, setSpaceDirectory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
@@ -125,6 +129,11 @@ export default function SpacePage() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const avatarPresetId = getSelectedAvatarPresetId(currentUser?.id);
+  const spawnFromSpaceType =
+    typeof location.state?.entryFromSpaceType === 'string'
+      ? location.state.entryFromSpaceType
+      : null;
   const chatInputRef = useRef(null);
   const {
     connectionStatus,
@@ -140,6 +149,7 @@ export default function SpacePage() {
     userId: currentUser?.id,
     nickname: currentUser?.nickname,
     spaceId: space?.id ?? null,
+    avatarPresetId,
   });
 
   const selectedParticipant = useMemo(
@@ -150,6 +160,15 @@ export default function SpacePage() {
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
+  );
+  const connectedSpaces = useMemo(
+    () =>
+      SPACE_NAVIGATION_ORDER.map((spaceType) =>
+        spaceType === space?.type
+          ? null
+          : spaceDirectory.find((candidateSpace) => candidateSpace.type === spaceType) || null
+      ).filter(Boolean),
+    [space?.type, spaceDirectory]
   );
 
   useEffect(() => {
@@ -174,9 +193,10 @@ export default function SpacePage() {
       setErrorMessage('');
 
       try {
-        const [meResponse, spaceResponse] = await Promise.all([
+        const [meResponse, spaceResponse, spacesResponse] = await Promise.all([
           getMe(),
           getSpace(Number(spaceId)),
+          getSpaces(),
         ]);
 
         if (!isMounted) {
@@ -185,6 +205,7 @@ export default function SpacePage() {
 
         setCurrentUser(meResponse);
         setSpace(spaceResponse);
+        setSpaceDirectory(Array.isArray(spacesResponse) ? spacesResponse : []);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -493,6 +514,31 @@ export default function SpacePage() {
     });
   };
 
+  const handleMoveToSpace = (targetSpace) => {
+    if (!targetSpace?.id) {
+      return;
+    }
+
+    navigate(`/spaces/${targetSpace.id}`, {
+      state: {
+        space: targetSpace,
+        entryFromSpaceType: space?.type ?? null,
+      },
+    });
+  };
+
+  const handleSpacePortalEnter = (targetSpaceType) => {
+    const targetSpace =
+      spaceDirectory.find((candidateSpace) => candidateSpace.type === targetSpaceType) || null;
+
+    if (!targetSpace) {
+      setErrorMessage('이동할 공간 정보를 찾지 못했습니다.');
+      return;
+    }
+
+    handleMoveToSpace(targetSpace);
+  };
+
   return (
     <AppLayout
       eyebrow="메타버스 공간"
@@ -502,7 +548,10 @@ export default function SpacePage() {
     >
       <div className="space-page-actions">
         <button type="button" className="secondary-button" onClick={() => navigate('/lobby')}>
-          로비로 돌아가기
+          입장 로비로 돌아가기
+        </button>
+        <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
+          활동 허브 열기
         </button>
       </div>
 
@@ -525,6 +574,38 @@ export default function SpacePage() {
               ) : null}
               {lastError ? <p className="app-error">{lastError}</p> : null}
             </div>
+
+            {connectedSpaces.length > 0 ? (
+              <div className="lobby-info-card">
+                <h2>연결된 공간 이동</h2>
+                <p className="app-note">
+                  {space?.type === 'MAIN'
+                    ? '메인 광장에서 다음 목적지를 골라 스터디 라운지나 멘토링 존으로 바로 이동할 수 있습니다.'
+                    : '현재 공간에서 다른 공간으로 바로 넘어갈 수 있습니다.'}
+                </p>
+                <ul className="space-navigation-list">
+                  {connectedSpaces.map((targetSpace) => {
+                    const targetDefinition = getLobbyZoneDefinition(targetSpace.type);
+
+                    return (
+                      <li key={targetSpace.id} className="space-navigation-card">
+                        <div>
+                          <strong>{targetDefinition.label}</strong>
+                          <p>{targetDefinition.helperText}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleMoveToSpace(targetSpace)}
+                        >
+                          {targetDefinition.label}으로 이동
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="lobby-info-card">
               <h2>현재 참가자</h2>
@@ -708,14 +789,18 @@ export default function SpacePage() {
               <div>
                 <h2>{spaceDefinition.label} 안에서 이동하기</h2>
                 <p className="app-note">
-                  아바타를 클릭하면 해당 사용자를 바로 선택할 수 있습니다.
+                  아바타를 클릭하면 사용자를 바로 선택할 수 있고, 문 앞으로 가서 Space 또는 Enter를 누르면 다른 공간으로 이동할 수 있습니다.
                 </p>
               </div>
             </div>
             <SpaceGame
               playerLabel={currentUser?.nickname || '나'}
               spaceType={space.type}
+              avatarPresetId={avatarPresetId}
+              connectedSpaces={connectedSpaces}
+              spawnFromSpaceType={spawnFromSpaceType}
               onPlayerMove={sendUserMove}
+              onSpaceEnter={handleSpacePortalEnter}
               onParticipantSelect={selectParticipant}
               remoteEvent={remoteEvent}
             />

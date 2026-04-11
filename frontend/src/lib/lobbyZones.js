@@ -14,6 +14,13 @@ export const LOBBY_ZONE_DEFINITIONS = [
     width: 1200,
     height: 230,
     center: { x: 700, y: 215 },
+    entry: {
+      x: 700,
+      y: 292,
+      width: 172,
+      height: 68,
+      label: '메인 광장 입구',
+    },
   },
   {
     id: 'STUDY',
@@ -30,6 +37,13 @@ export const LOBBY_ZONE_DEFINITIONS = [
     width: 580,
     height: 350,
     center: { x: 390, y: 565 },
+    entry: {
+      x: 390,
+      y: 688,
+      width: 172,
+      height: 68,
+      label: '스터디 라운지 입구',
+    },
   },
   {
     id: 'MENTORING',
@@ -46,6 +60,13 @@ export const LOBBY_ZONE_DEFINITIONS = [
     width: 580,
     height: 350,
     center: { x: 1010, y: 565 },
+    entry: {
+      x: 1010,
+      y: 688,
+      width: 172,
+      height: 68,
+      label: '멘토링 존 입구',
+    },
   },
 ];
 
@@ -76,6 +97,10 @@ export function getLobbyZoneForPosition(x, y) {
 
 export function getLobbyZoneCenter(zoneId) {
   return getLobbyZoneDefinition(zoneId).center;
+}
+
+export function getLobbyZoneEntry(zoneId) {
+  return getLobbyZoneDefinition(zoneId).entry || null;
 }
 
 export function formatLobbySpaceLabel(spaceType) {

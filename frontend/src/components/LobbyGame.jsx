@@ -5,13 +5,16 @@ const GAME_HEIGHT = 540;
 
 export default function LobbyGame({
   playerLabel,
+  avatarPresetId,
   onPlayerMove,
   onZoneChange,
   onPlayerContextChange,
+  onSpaceEnter,
   onRemotePlayerSelect,
   remoteEvent,
   selectedRemoteUserId,
   zoneMoveRequest,
+  availableSpaceTypes,
 }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
@@ -19,9 +22,13 @@ export default function LobbyGame({
   const onPlayerMoveRef = useRef(onPlayerMove);
   const onZoneChangeRef = useRef(onZoneChange);
   const onPlayerContextChangeRef = useRef(onPlayerContextChange);
+  const onSpaceEnterRef = useRef(onSpaceEnter);
   const onRemotePlayerSelectRef = useRef(onRemotePlayerSelect);
   const pendingRemoteEventsRef = useRef([]);
   const pendingZoneMoveRef = useRef(null);
+  const availableSpaceTypesKey = Array.isArray(availableSpaceTypes)
+    ? availableSpaceTypes.join('|')
+    : '';
 
   useEffect(() => {
     onPlayerMoveRef.current = onPlayerMove;
@@ -34,6 +41,10 @@ export default function LobbyGame({
   useEffect(() => {
     onPlayerContextChangeRef.current = onPlayerContextChange;
   }, [onPlayerContextChange]);
+
+  useEffect(() => {
+    onSpaceEnterRef.current = onSpaceEnter;
+  }, [onSpaceEnter]);
 
   useEffect(() => {
     onRemotePlayerSelectRef.current = onRemotePlayerSelect;
@@ -93,6 +104,7 @@ export default function LobbyGame({
 
       const lobbyScene = new LobbyScene({
         playerLabel,
+        avatarPresetId,
         onPlayerMove: (position) => {
           onPlayerMoveRef.current?.(position);
         },
@@ -102,9 +114,13 @@ export default function LobbyGame({
         onPlayerContextChange: (context) => {
           onPlayerContextChangeRef.current?.(context);
         },
+        onSpaceEnter: (zoneId) => {
+          onSpaceEnterRef.current?.(zoneId);
+        },
         onRemotePlayerSelect: (userId) => {
           onRemotePlayerSelectRef.current?.(userId);
         },
+        availableSpaceTypes,
         onSceneReady: (scene) => {
           sceneRef.current = scene;
 
@@ -158,7 +174,7 @@ export default function LobbyGame({
       }
       gameRef.current = null;
     };
-  }, [playerLabel, selectedRemoteUserId]);
+  }, [availableSpaceTypesKey, avatarPresetId, playerLabel]);
 
   return (
     <div className="lobby-game-shell">

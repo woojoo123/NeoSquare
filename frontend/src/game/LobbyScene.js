@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 
+import { getAvatarPalette } from '../lib/avatarPresets';
 import {
   LOBBY_ZONE_DEFINITIONS,
   getLobbyZoneCenter,
   getLobbyZoneDefinition,
+  getLobbyZoneEntry,
   getLobbyZoneForPosition,
 } from '../lib/lobbyZones';
 
@@ -13,32 +15,42 @@ const PLAYER_SIZE = 34;
 const PLAYER_SPEED = 260;
 const WORLD_PADDING = 40;
 const PLAYER_CONTEXT_THRESHOLD = 18;
+const SPACE_ENTRY_DISTANCE = 72;
 
 export default class LobbyScene extends Phaser.Scene {
   constructor({
     playerLabel = '나',
+    avatarPresetId,
     onPlayerMove,
     onSceneReady,
     onZoneChange,
     onPlayerContextChange,
+    onSpaceEnter,
     onRemotePlayerSelect,
+    availableSpaceTypes = [],
   } = {}) {
     super('LobbyScene');
     this.playerLabel = playerLabel;
+    this.avatarPresetId = avatarPresetId;
     this.onPlayerMove = onPlayerMove;
     this.onSceneReady = onSceneReady;
     this.onZoneChange = onZoneChange;
     this.onPlayerContextChange = onPlayerContextChange;
+    this.onSpaceEnter = onSpaceEnter;
     this.onRemotePlayerSelect = onRemotePlayerSelect;
+    this.availableSpaceTypes = new Set(availableSpaceTypes);
     this.player = null;
     this.playerBody = null;
     this.playerName = null;
     this.zoneHighlight = null;
     this.zoneStatusTitle = null;
     this.zoneStatusDescription = null;
+    this.entryPrompt = null;
     this.cursors = null;
     this.remotePlayers = new Map();
     this.currentZoneId = 'MAIN';
+    this.currentEntryZoneId = null;
+    this.isEnteringSpace = false;
     this.lastReportedPosition = null;
     this.selectedRemoteUserId = null;
   }
@@ -52,12 +64,16 @@ export default class LobbyScene extends Phaser.Scene {
 
     const spawnPosition = getLobbyZoneCenter('MAIN');
     this.player = this.add.container(spawnPosition.x, spawnPosition.y);
+    const playerPalette = getAvatarPalette(this.avatarPresetId);
 
     const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.28);
-    this.playerBody = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, 0x38bdf8);
-    this.playerBody.setStrokeStyle(3, 0xe0f2fe, 0.85);
+    const playerCape = this.add.rectangle(0, 6, PLAYER_SIZE - 10, PLAYER_SIZE + 4, playerPalette.capeColorValue);
+    this.playerBody = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, playerPalette.bodyColorValue);
+    this.playerBody.setStrokeStyle(3, playerPalette.bodyOutlineColorValue, 0.85);
 
-    const playerHead = this.add.circle(0, -26, 12, 0xf8fafc);
+    const playerHead = this.add.circle(0, -26, 12, playerPalette.headColorValue);
+    const playerHair = this.add.ellipse(0, -31, 28, 16, playerPalette.hairColorValue, 1);
+    const playerBadge = this.add.circle(0, 4, 4, playerPalette.accentColorValue, 1);
     this.playerName = this.add
       .text(0, 34, this.playerLabel, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
@@ -67,7 +83,7 @@ export default class LobbyScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0);
 
-    this.player.add([shadow, this.playerBody, playerHead, this.playerName]);
+    this.player.add([shadow, playerCape, this.playerBody, playerHead, playerHair, this.playerName, playerBadge]);
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.input.keyboard?.addCapture([
@@ -75,11 +91,19 @@ export default class LobbyScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
       Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
+      Phaser.Input.Keyboard.KeyCodes.ENTER,
     ]);
+    this.input.keyboard?.on('keydown-SPACE', this.handleSpaceEnter, this);
+    this.input.keyboard?.on('keydown-ENTER', this.handleSpaceEnter, this);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-SPACE', this.handleSpaceEnter, this);
+      this.input.keyboard?.off('keydown-ENTER', this.handleSpaceEnter, this);
+    });
 
     this.add
-      .text(28, 24, 'NeoSquare 로비', {
+      .text(28, 24, 'NeoSquare 허브', {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '24px',
         color: '#f8fafc',
@@ -123,6 +147,15 @@ export default class LobbyScene extends Phaser.Scene {
       })
       .setScrollFactor(0);
 
+    this.entryPrompt = this.add
+      .text(28, 168, '', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '14px',
+        color: '#fef3c7',
+      })
+      .setScrollFactor(0);
+
+    this.refreshEntryPrompt();
     this.emitPlayerContext(true);
     this.onPlayerMove?.({
       x: this.player.x,
@@ -178,6 +211,7 @@ export default class LobbyScene extends Phaser.Scene {
         x: this.player.x,
         y: this.player.y,
       });
+      this.refreshEntryPrompt();
       this.emitPlayerContext();
     }
   }
@@ -190,17 +224,18 @@ export default class LobbyScene extends Phaser.Scene {
     const remoteUserId = String(event.userId);
 
     if (event.type === 'user_enter') {
-      this.addRemotePlayer(remoteUserId, event.x, event.y, event.label);
+      this.addRemotePlayer(remoteUserId, event.x, event.y, event.label, event.avatarPresetId);
       return;
     }
 
     if (event.type === 'user_move') {
       if (!this.remotePlayers.has(remoteUserId)) {
-        this.addRemotePlayer(remoteUserId, event.x, event.y, event.label);
+        this.addRemotePlayer(remoteUserId, event.x, event.y, event.label, event.avatarPresetId);
         return;
       }
 
       this.updateRemotePlayerLabel(this.remotePlayers.get(remoteUserId)?.nameLabel, event.label);
+      this.updateRemotePlayerAvatar(remoteUserId, event.avatarPresetId);
       this.moveRemotePlayer(remoteUserId, event.x, event.y);
       return;
     }
@@ -229,43 +264,62 @@ export default class LobbyScene extends Phaser.Scene {
           x: this.player.x,
           y: this.player.y,
         });
+        this.refreshEntryPrompt();
         this.emitPlayerContext(true);
       },
     });
   }
 
-  addRemotePlayer(userId, x, y, label = '게스트') {
+  handleSpaceEnter() {
+    if (!this.currentEntryZoneId || this.isEnteringSpace) {
+      return;
+    }
+
+    this.isEnteringSpace = true;
+    this.onSpaceEnter?.(this.currentEntryZoneId);
+    this.time.delayedCall(400, () => {
+      this.isEnteringSpace = false;
+    });
+  }
+
+  addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
     const remoteKey = String(userId);
     const existingRemotePlayer = this.remotePlayers.get(remoteKey);
 
     if (existingRemotePlayer) {
       this.updateRemotePlayerLabel(existingRemotePlayer.nameLabel, label);
+      this.updateRemotePlayerAvatar(remoteKey, avatarPresetId);
       this.moveRemotePlayer(remoteKey, x, y);
       return;
     }
 
     const position = this.resolveRemotePosition(remoteKey, x, y);
     const remotePlayer = this.add.container(position.x, position.y);
+    const remotePalette = getAvatarPalette(avatarPresetId);
     const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.22);
-    const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, 0x94a3b8);
-    body.setStrokeStyle(3, 0xe2e8f0, 0.8);
+    const cape = this.add.rectangle(0, 6, PLAYER_SIZE - 10, PLAYER_SIZE + 4, remotePalette.capeColorValue);
+    const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, remotePalette.bodyColorValue);
+    body.setStrokeStyle(3, remotePalette.bodyOutlineColorValue, 0.85);
     body.setData('remoteUserId', remoteKey);
     body.setInteractive({ useHandCursor: true });
-    const head = this.add.circle(0, -26, 12, 0xf8fafc);
+    const head = this.add.circle(0, -26, 12, remotePalette.headColorValue);
+    const hair = this.add.ellipse(0, -31, 28, 16, remotePalette.hairColorValue, 1);
     const nameLabel = this.add
       .text(0, 34, label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '16px',
         color: '#e2e8f0',
         align: 'center',
-      })
-      .setOrigin(0.5, 0);
+        })
+        .setOrigin(0.5, 0);
+    const badge = this.add.circle(0, 4, 4, remotePalette.accentColorValue, 1);
 
-    remotePlayer.add([shadow, body, head, nameLabel]);
+    remotePlayer.add([shadow, cape, body, head, hair, nameLabel, badge]);
     this.remotePlayers.set(remoteKey, {
       container: remotePlayer,
       body,
       nameLabel,
+      avatarPresetId,
     });
 
     this.refreshRemoteSelection(remoteKey);
@@ -315,6 +369,34 @@ export default class LobbyScene extends Phaser.Scene {
     nameLabel.setText(label);
   }
 
+  updateRemotePlayerAvatar(userId, avatarPresetId) {
+    if (!avatarPresetId) {
+      return;
+    }
+
+    const remotePlayer = this.remotePlayers.get(String(userId));
+
+    if (!remotePlayer?.container) {
+      return;
+    }
+
+    const palette = getAvatarPalette(avatarPresetId);
+    const cape = remotePlayer.container.list[1];
+    const body = remotePlayer.container.list[2];
+    const head = remotePlayer.container.list[3];
+    const hair = remotePlayer.container.list[4];
+    const badge = remotePlayer.container.list[6];
+
+    remotePlayer.avatarPresetId = avatarPresetId;
+    cape?.setFillStyle?.(palette.capeColorValue);
+    body?.setFillStyle?.(palette.bodyColorValue);
+    body?.setStrokeStyle?.(3, palette.bodyOutlineColorValue, 0.85);
+    head?.setFillStyle?.(palette.headColorValue);
+    hair?.setFillStyle?.(palette.hairColorValue);
+    badge?.setFillStyle?.(palette.accentColorValue, 1);
+    this.refreshRemoteSelection(String(userId));
+  }
+
   resolveRemotePosition(userId, x, y, fallbackX, fallbackY) {
     const fallbackPosition = this.getRemoteSpawnPosition(userId, fallbackX, fallbackY);
     const nextX = Number.isFinite(x) ? x : fallbackPosition.x;
@@ -362,8 +444,14 @@ export default class LobbyScene extends Phaser.Scene {
     }
 
     const isSelected = String(this.selectedRemoteUserId) === String(userId);
-    remotePlayer.body.setFillStyle(isSelected ? 0x60a5fa : 0x94a3b8);
-    remotePlayer.body.setStrokeStyle(isSelected ? 4 : 3, isSelected ? 0xfef3c7 : 0xe2e8f0, 0.9);
+    const palette = getAvatarPalette(remotePlayer.avatarPresetId);
+
+    remotePlayer.body.setFillStyle(palette.bodyColorValue);
+    remotePlayer.body.setStrokeStyle(
+      isSelected ? 4 : 3,
+      isSelected ? 0xfef3c7 : palette.bodyOutlineColorValue,
+      0.9
+    );
   }
 
   emitPlayerContext(force = false) {
@@ -428,6 +516,54 @@ export default class LobbyScene extends Phaser.Scene {
     this.zoneStatusDescription?.setText(zone.helperText);
   }
 
+  refreshEntryPrompt() {
+    const nextEntryZone = this.resolveActiveEntryZone();
+
+    this.currentEntryZoneId = nextEntryZone?.id ?? null;
+
+    if (!this.entryPrompt) {
+      return;
+    }
+
+    if (!nextEntryZone) {
+      this.entryPrompt.setText('입구 가까이 가면 Space 또는 Enter로 바로 입장할 수 있습니다.');
+      return;
+    }
+
+    this.entryPrompt.setText(`Space 또는 Enter로 ${nextEntryZone.label} 입장`);
+  }
+
+  resolveActiveEntryZone() {
+    if (!this.player) {
+      return null;
+    }
+
+    const currentZone = getLobbyZoneForPosition(this.player.x, this.player.y);
+
+    if (!this.availableSpaceTypes.has(currentZone.id)) {
+      return null;
+    }
+
+    const entry = getLobbyZoneEntry(currentZone.id);
+
+    if (!entry) {
+      return null;
+    }
+
+    const distanceToEntry = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      entry.x,
+      entry.y
+    );
+
+    if (distanceToEntry > SPACE_ENTRY_DISTANCE) {
+      return null;
+    }
+
+    return currentZone;
+  }
+
   drawLobbyBackground() {
     const background = this.add.graphics();
 
@@ -463,6 +599,54 @@ export default class LobbyScene extends Phaser.Scene {
           },
         })
         .setDepth(1);
+
+      if (!this.availableSpaceTypes.has(zone.id) || !zone.entry) {
+        return;
+      }
+
+      const portalGlow = this.add.ellipse(zone.entry.x, zone.entry.y + 10, 188, 72, 0x020617, 0.38);
+      const portalFrame = this.add
+        .rectangle(
+          zone.entry.x,
+          zone.entry.y,
+          zone.entry.width,
+          zone.entry.height,
+          zone.borderColor,
+          0.18
+        )
+        .setStrokeStyle(3, zone.borderColor, 0.95);
+      const portalDoor = this.add
+        .rectangle(
+          zone.entry.x,
+          zone.entry.y - 4,
+          zone.entry.width - 26,
+          zone.entry.height - 20,
+          0x0f172a,
+          0.92
+        )
+        .setStrokeStyle(2, zone.accentColor, 0.82);
+
+      this.add
+        .text(zone.entry.x, zone.entry.y - 14, 'ENTER', {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '16px',
+          color: Phaser.Display.Color.IntegerToColor(zone.accentColor).rgba,
+        })
+        .setOrigin(0.5)
+        .setDepth(2);
+
+      this.add
+        .text(zone.entry.x, zone.entry.y + 10, zone.entry.label, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '12px',
+          color: '#cbd5e1',
+        })
+        .setOrigin(0.5)
+        .setDepth(2);
+
+      portalGlow.setDepth(1);
+      portalFrame.setDepth(1);
+      portalDoor.setDepth(1);
     });
   }
 }

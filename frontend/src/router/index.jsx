@@ -4,6 +4,7 @@ import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom'
 import RequireAuth from './RequireAuth';
 
 const LobbyPage = lazy(() => import('../pages/LobbyPage'));
+const HubPage = lazy(() => import('../pages/HubPage'));
 const LoginPage = lazy(() => import('../pages/LoginPage'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
 const SpacePage = lazy(() => import('../pages/SpacePage'));
@@ -48,7 +49,11 @@ const router = createBrowserRouter([
     children: [
       {
         path: '/lobby',
-        element: withSuspense(<LobbyPage />, '로비 공간을 불러오는 중입니다...'),
+        element: withSuspense(<LobbyPage />, '입장 로비를 불러오는 중입니다...'),
+      },
+      {
+        path: '/hub',
+        element: withSuspense(<HubPage />, '활동 허브를 불러오는 중입니다...'),
       },
       {
         path: '/spaces/:spaceId',

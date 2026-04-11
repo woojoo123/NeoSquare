@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 
+import { getAvatarPalette } from '../lib/avatarPresets';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
 
 const WORLD_WIDTH = 1280;
@@ -7,6 +8,23 @@ const WORLD_HEIGHT = 840;
 const PLAYER_SIZE = 34;
 const PLAYER_SPEED = 250;
 const WORLD_PADDING = 56;
+const PORTAL_ENTRY_DISTANCE = 92;
+const PORTAL_SPAWN_OFFSET_Y = 112;
+
+const SPACE_PORTAL_LAYOUTS = {
+  MAIN: [
+    { targetType: 'STUDY', x: 312, y: 650 },
+    { targetType: 'MENTORING', x: 968, y: 650 },
+  ],
+  STUDY: [
+    { targetType: 'MAIN', x: 256, y: 650 },
+    { targetType: 'MENTORING', x: 1024, y: 650 },
+  ],
+  MENTORING: [
+    { targetType: 'MAIN', x: 1024, y: 650 },
+    { targetType: 'STUDY', x: 256, y: 650 },
+  ],
+};
 
 function getSpaceTheme(spaceType) {
   if (spaceType === 'STUDY') {
@@ -44,24 +62,65 @@ function getSpaceTheme(spaceType) {
   };
 }
 
+function getPortalDefinitions(spaceType, connectedSpaces) {
+  const layouts = SPACE_PORTAL_LAYOUTS[spaceType] || [];
+
+  return layouts
+    .map((layout) => {
+      const targetSpace = connectedSpaces.find(
+        (connectedSpace) => connectedSpace?.type === layout.targetType
+      );
+
+      if (!targetSpace) {
+        return null;
+      }
+
+      const targetZone = getLobbyZoneDefinition(layout.targetType);
+      const targetTheme = getSpaceTheme(layout.targetType);
+
+      return {
+        ...layout,
+        width: 188,
+        height: 104,
+        label: targetZone.label,
+        helperText: targetZone.helperText,
+        accentColor: targetTheme.accentColor,
+        borderColor: targetTheme.borderColor,
+      };
+    })
+    .filter(Boolean);
+}
+
 export default class SpaceScene extends Phaser.Scene {
   constructor({
     playerLabel = '나',
     spaceType = 'MAIN',
+    avatarPresetId,
+    connectedSpaces = [],
+    spawnFromSpaceType = null,
     onPlayerMove,
     onSceneReady,
+    onSpaceEnter,
     onParticipantSelect,
   } = {}) {
     super(`SpaceScene-${spaceType}`);
     this.playerLabel = playerLabel;
     this.spaceType = spaceType;
+    this.avatarPresetId = avatarPresetId;
+    this.connectedSpaces = connectedSpaces;
+    this.spawnFromSpaceType = spawnFromSpaceType;
     this.onPlayerMove = onPlayerMove;
     this.onSceneReady = onSceneReady;
+    this.onSpaceEnter = onSpaceEnter;
     this.onParticipantSelect = onParticipantSelect;
     this.player = null;
     this.cursors = null;
     this.remotePlayers = new Map();
     this.theme = getSpaceTheme(spaceType);
+    this.portals = [];
+    this.portalPrompt = null;
+    this.activePortalTargetType = null;
+    this.isEnteringPortal = false;
   }
 
   create() {
@@ -69,13 +128,14 @@ export default class SpaceScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     this.drawSpaceBackground();
+    this.portals = this.drawPortals();
 
+    const spawnPosition = this.resolveSpawnPosition();
     this.player = this.createAvatar(
-      WORLD_WIDTH / 2,
-      WORLD_HEIGHT / 2,
+      spawnPosition.x,
+      spawnPosition.y,
       this.playerLabel,
-      0x38bdf8,
-      0xe0f2fe
+      this.avatarPresetId
     );
 
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -84,7 +144,15 @@ export default class SpaceScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
       Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
+      Phaser.Input.Keyboard.KeyCodes.ENTER,
     ]);
+    this.input.keyboard?.on('keydown-SPACE', this.handlePortalEnter, this);
+    this.input.keyboard?.on('keydown-ENTER', this.handlePortalEnter, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-SPACE', this.handlePortalEnter, this);
+      this.input.keyboard?.off('keydown-ENTER', this.handlePortalEnter, this);
+    });
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     this.add
@@ -104,6 +172,16 @@ export default class SpaceScene extends Phaser.Scene {
       })
       .setScrollFactor(0);
 
+    this.portalPrompt = this.add
+      .text(28, 108, '', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '14px',
+        color: '#fef3c7',
+        wordWrap: { width: 520 },
+      })
+      .setScrollFactor(0);
+
+    this.refreshPortalPrompt();
     this.onPlayerMove?.({ x: this.player.x, y: this.player.y });
     this.onSceneReady?.(this);
   }
@@ -155,6 +233,7 @@ export default class SpaceScene extends Phaser.Scene {
         x: this.player.x,
         y: this.player.y,
       });
+      this.refreshPortalPrompt();
     }
   }
 
@@ -164,17 +243,18 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     if (event.type === 'user_enter') {
-      this.addRemotePlayer(event.userId, event.x, event.y, event.label);
+      this.addRemotePlayer(event.userId, event.x, event.y, event.label, event.avatarPresetId);
       return;
     }
 
     if (event.type === 'user_move') {
       if (!this.remotePlayers.has(event.userId)) {
-        this.addRemotePlayer(event.userId, event.x, event.y, event.label);
+        this.addRemotePlayer(event.userId, event.x, event.y, event.label, event.avatarPresetId);
         return;
       }
 
       this.updateRemotePlayerLabel(this.remotePlayers.get(event.userId)?.nameLabel, event.label);
+      this.updateRemotePlayerAvatar(event.userId, event.avatarPresetId);
       this.moveRemotePlayer(event.userId, event.x, event.y);
       return;
     }
@@ -184,33 +264,65 @@ export default class SpaceScene extends Phaser.Scene {
     }
   }
 
-  addRemotePlayer(userId, x, y, label = '게스트') {
+  handlePortalEnter() {
+    if (!this.activePortalTargetType || this.isEnteringPortal) {
+      return;
+    }
+
+    this.isEnteringPortal = true;
+    this.onSpaceEnter?.(this.activePortalTargetType);
+    this.time.delayedCall(450, () => {
+      this.isEnteringPortal = false;
+    });
+  }
+
+  resolveSpawnPosition() {
+    if (this.spawnFromSpaceType) {
+      const entryPortal = this.portals.find(
+        (portal) => portal.targetType === this.spawnFromSpaceType
+      );
+
+      if (entryPortal) {
+        return {
+          x: entryPortal.x,
+          y: Phaser.Math.Clamp(
+            entryPortal.y - PORTAL_SPAWN_OFFSET_Y,
+            WORLD_PADDING,
+            WORLD_HEIGHT - WORLD_PADDING
+          ),
+        };
+      }
+    }
+
+    return {
+      x: WORLD_WIDTH / 2,
+      y: WORLD_HEIGHT / 2,
+    };
+  }
+
+  addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
     const existingRemotePlayer = this.remotePlayers.get(userId);
 
     if (existingRemotePlayer) {
       this.updateRemotePlayerLabel(existingRemotePlayer.nameLabel, label);
+      this.updateRemotePlayerAvatar(userId, avatarPresetId);
       this.moveRemotePlayer(userId, x, y);
       return;
     }
 
     const position = this.resolveRemotePosition(userId, x, y);
-    const remotePlayer = this.createAvatar(
-      position.x,
-      position.y,
-      label,
-      0x94a3b8,
-      0xe2e8f0
-    );
+    const remotePlayer = this.createAvatar(position.x, position.y, label, avatarPresetId);
     remotePlayer.setInteractive(
       new Phaser.Geom.Rectangle(-30, -44, 60, 88),
       Phaser.Geom.Rectangle.Contains
     );
     remotePlayer.input.cursor = 'pointer';
     remotePlayer.on('pointerover', () => {
-      remotePlayer.list[1]?.setStrokeStyle?.(4, this.theme.highlightColor, 1);
+      remotePlayer.list[2]?.setStrokeStyle?.(4, this.theme.highlightColor, 1);
     });
     remotePlayer.on('pointerout', () => {
-      remotePlayer.list[1]?.setStrokeStyle?.(3, 0xe2e8f0, 0.8);
+      const latestPalette = getAvatarPalette(this.remotePlayers.get(userId)?.avatarPresetId);
+      remotePlayer.list[2]?.setStrokeStyle?.(3, latestPalette.bodyOutlineColorValue, 0.85);
     });
     remotePlayer.on('pointerdown', () => {
       const latestRemotePlayer = this.remotePlayers.get(userId);
@@ -225,7 +337,8 @@ export default class SpaceScene extends Phaser.Scene {
 
     this.remotePlayers.set(userId, {
       container: remotePlayer,
-      nameLabel: remotePlayer.list[3],
+      nameLabel: remotePlayer.list[5],
+      avatarPresetId,
     });
   }
 
@@ -266,6 +379,33 @@ export default class SpaceScene extends Phaser.Scene {
     nameLabel.setText(label);
   }
 
+  updateRemotePlayerAvatar(userId, avatarPresetId) {
+    if (!avatarPresetId) {
+      return;
+    }
+
+    const remotePlayer = this.remotePlayers.get(userId);
+
+    if (!remotePlayer?.container) {
+      return;
+    }
+
+    const palette = getAvatarPalette(avatarPresetId);
+    const cape = remotePlayer.container.list[1];
+    const body = remotePlayer.container.list[2];
+    const head = remotePlayer.container.list[3];
+    const hair = remotePlayer.container.list[4];
+    const badge = remotePlayer.container.list[6];
+
+    remotePlayer.avatarPresetId = avatarPresetId;
+    cape?.setFillStyle?.(palette.capeColorValue);
+    body?.setFillStyle?.(palette.bodyColorValue);
+    body?.setStrokeStyle?.(3, palette.bodyOutlineColorValue, 0.85);
+    head?.setFillStyle?.(palette.headColorValue);
+    hair?.setFillStyle?.(palette.hairColorValue);
+    badge?.setFillStyle?.(palette.accentColorValue, 1);
+  }
+
   resolveRemotePosition(userId, x, y, fallbackX, fallbackY) {
     const fallbackPosition = this.getRemoteSpawnPosition(userId, fallbackX, fallbackY);
     const nextX = Number.isFinite(x) ? x : fallbackPosition.x;
@@ -293,12 +433,54 @@ export default class SpaceScene extends Phaser.Scene {
     };
   }
 
-  createAvatar(x, y, label, bodyColor, outlineColor) {
+  resolveActivePortal() {
+    if (!this.player) {
+      return null;
+    }
+
+    return (
+      this.portals.find((portal) => {
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, portal.x, portal.y);
+        return distance <= PORTAL_ENTRY_DISTANCE;
+      }) || null
+    );
+  }
+
+  refreshPortalPrompt() {
+    const activePortal = this.resolveActivePortal();
+    this.activePortalTargetType = activePortal?.targetType ?? null;
+
+    this.portals.forEach((portal) => {
+      const isActive = activePortal?.targetType === portal.targetType;
+      portal.glow.setAlpha(isActive ? 0.52 : 0.26);
+      portal.frame.setStrokeStyle(isActive ? 5 : 3, isActive ? 0xfef3c7 : portal.accentColor, 0.95);
+      portal.door.setFillStyle(0x020617, isActive ? 0.98 : 0.88);
+      portal.helper.setColor(isActive ? '#f8fafc' : '#cbd5e1');
+    });
+
+    if (!this.portalPrompt) {
+      return;
+    }
+
+    if (!activePortal) {
+      this.portalPrompt.setText('문 앞으로 이동한 뒤 Space 또는 Enter를 누르면 다음 공간으로 들어갑니다.');
+      return;
+    }
+
+    this.portalPrompt.setText(
+      `Space 또는 Enter로 ${activePortal.label} 입장\n${activePortal.helperText}`
+    );
+  }
+
+  createAvatar(x, y, label, avatarPresetId) {
+    const palette = getAvatarPalette(avatarPresetId);
     const avatar = this.add.container(x, y);
     const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.22);
-    const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, bodyColor);
-    body.setStrokeStyle(3, outlineColor, 0.85);
-    const head = this.add.circle(0, -26, 12, 0xf8fafc);
+    const cape = this.add.rectangle(0, 6, PLAYER_SIZE - 10, PLAYER_SIZE + 4, palette.capeColorValue);
+    const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, palette.bodyColorValue);
+    body.setStrokeStyle(3, palette.bodyOutlineColorValue, 0.85);
+    const head = this.add.circle(0, -26, 12, palette.headColorValue);
+    const hair = this.add.ellipse(0, -31, 28, 16, palette.hairColorValue, 1);
     const nameLabel = this.add
       .text(0, 34, label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
@@ -307,9 +489,88 @@ export default class SpaceScene extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5, 0);
+    const badge = this.add.circle(0, 4, 4, palette.accentColorValue, 1);
 
-    avatar.add([shadow, body, head, nameLabel]);
+    avatar.add([shadow, cape, body, head, hair, nameLabel, badge]);
     return avatar;
+  }
+
+  drawPortals() {
+    const portalDefinitions = getPortalDefinitions(this.spaceType, this.connectedSpaces);
+
+    return portalDefinitions.map((portalDefinition) => {
+      const glow = this.add.ellipse(
+        portalDefinition.x,
+        portalDefinition.y + 18,
+        portalDefinition.width + 46,
+        86,
+        portalDefinition.accentColor,
+        0.26
+      );
+      const frame = this.add
+        .rectangle(
+          portalDefinition.x,
+          portalDefinition.y,
+          portalDefinition.width,
+          portalDefinition.height,
+          portalDefinition.accentColor,
+          0.18
+        )
+        .setStrokeStyle(3, portalDefinition.accentColor, 0.92);
+      const door = this.add
+        .rectangle(
+          portalDefinition.x,
+          portalDefinition.y - 2,
+          portalDefinition.width - 24,
+          portalDefinition.height - 18,
+          0x020617,
+          0.88
+        )
+        .setStrokeStyle(2, portalDefinition.borderColor, 0.82);
+      const sign = this.add
+        .text(portalDefinition.x, portalDefinition.y - 18, 'ENTER', {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '16px',
+          color: Phaser.Display.Color.IntegerToColor(portalDefinition.borderColor).rgba,
+        })
+        .setOrigin(0.5)
+        .setDepth(2);
+      const label = this.add
+        .text(portalDefinition.x, portalDefinition.y + 10, portalDefinition.label, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '13px',
+          color: '#f8fafc',
+          align: 'center',
+        })
+        .setOrigin(0.5)
+        .setDepth(2);
+      const helper = this.add
+        .text(portalDefinition.x, portalDefinition.y + 62, portalDefinition.helperText, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '12px',
+          color: '#cbd5e1',
+          align: 'center',
+          wordWrap: {
+            width: portalDefinition.width + 26,
+          },
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(2);
+
+      glow.setDepth(1);
+      frame.setDepth(1);
+      door.setDepth(1);
+
+      return {
+        ...portalDefinition,
+        glow,
+        frame,
+        door,
+        sign,
+        labelText: label,
+        helper,
+      };
+    });
   }
 
   drawSpaceBackground() {
@@ -326,9 +587,9 @@ export default class SpaceScene extends Phaser.Scene {
 
     background.fillStyle(this.theme.furnitureColor, 1);
     background.fillRoundedRect(170, 180, WORLD_WIDTH - 340, 120, 28);
-    background.fillRoundedRect(170, WORLD_HEIGHT - 300, WORLD_WIDTH - 340, 120, 28);
     background.fillRoundedRect(170, 340, 220, 180, 24);
     background.fillRoundedRect(WORLD_WIDTH - 390, 340, 220, 180, 24);
+    background.fillRoundedRect(150, WORLD_HEIGHT - 232, WORLD_WIDTH - 300, 128, 30);
 
     this.add
       .text(WORLD_WIDTH / 2, 132, zone.label, {

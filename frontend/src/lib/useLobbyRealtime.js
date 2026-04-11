@@ -48,6 +48,8 @@ function normalizeRemoteEvent(message, currentUserId, activeSpaceId, sequence) {
     userId: remoteUserId,
     x: toNumber(payload.x),
     y: toNumber(payload.y),
+    avatarPresetId:
+      typeof payload.avatarPresetId === 'string' ? payload.avatarPresetId.trim() || null : null,
     label:
       payload.nickname ||
       payload.label ||
@@ -109,7 +111,7 @@ function appendChatMessage(previousMessages, nextMessage) {
   return [...previousMessages, nextMessage].slice(-CHAT_MESSAGE_LIMIT);
 }
 
-export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
+export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPresetId }) {
   const [connectionStatus, setConnectionStatus] = useState('idle');
   const [lastMessage, setLastMessage] = useState(null);
   const [lastError, setLastError] = useState('');
@@ -169,6 +171,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
           spaceId,
           x: nextPosition.x,
           y: nextPosition.y,
+          avatarPresetId,
         },
       })
     );
@@ -348,6 +351,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
               label: nextRemoteEvent.label,
               x: nextRemoteEvent.x,
               y: nextRemoteEvent.y,
+              avatarPresetId: nextRemoteEvent.avatarPresetId,
             };
             const existingUserIndex = previousUsers.findIndex(
               (user) => user.userId === nextRemoteEvent.userId
@@ -392,6 +396,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
                 nickname,
                 x: currentPositionRef.current?.x ?? null,
                 y: currentPositionRef.current?.y ?? null,
+                avatarPresetId,
               },
             })
           );
@@ -482,7 +487,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId }) {
       remoteEventSequenceRef.current = 0;
       closeSocket(socket, { sendLeave: true });
     };
-  }, [enabled, nickname, spaceId, userId]);
+  }, [avatarPresetId, enabled, nickname, spaceId, userId]);
 
   return {
     connectionStatus,

@@ -17,6 +17,7 @@ public class RealtimeSessionRegistry {
     private final Map<String, Long> userIdBySessionId = new ConcurrentHashMap<>();
     private final Map<String, Long> spaceIdBySessionId = new ConcurrentHashMap<>();
     private final Map<String, SessionPosition> positionBySessionId = new ConcurrentHashMap<>();
+    private final Map<String, String> avatarPresetIdBySessionId = new ConcurrentHashMap<>();
 
     public void bindSession(WebSocketSession session, Long userId) {
         Long existingUserId = userIdBySessionId.get(session.getId());
@@ -29,7 +30,13 @@ public class RealtimeSessionRegistry {
         sessionsByUserId.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet()).add(session);
     }
 
-    public void updateSessionPresence(WebSocketSession session, Long spaceId, Double x, Double y) {
+    public void updateSessionPresence(
+            WebSocketSession session,
+            Long spaceId,
+            Double x,
+            Double y,
+            String avatarPresetId
+    ) {
         assertSessionBound(session);
 
         Long previousSpaceId = spaceIdBySessionId.put(session.getId(), spaceId);
@@ -43,6 +50,10 @@ public class RealtimeSessionRegistry {
         if (x != null && y != null) {
             positionBySessionId.put(session.getId(), new SessionPosition(x, y));
         }
+
+        if (avatarPresetId != null && !avatarPresetId.isBlank()) {
+            avatarPresetIdBySessionId.put(session.getId(), avatarPresetId);
+        }
     }
 
     public void clearSessionSpace(WebSocketSession session) {
@@ -54,6 +65,7 @@ public class RealtimeSessionRegistry {
 
         removeSessionFromSpace(session, spaceId);
         positionBySessionId.remove(session.getId());
+        avatarPresetIdBySessionId.remove(session.getId());
     }
 
     public Set<WebSocketSession> findOpenSessions(Long userId) {
@@ -76,10 +88,15 @@ public class RealtimeSessionRegistry {
         return Optional.ofNullable(positionBySessionId.get(session.getId()));
     }
 
+    public Optional<String> findAvatarPresetId(WebSocketSession session) {
+        return Optional.ofNullable(avatarPresetIdBySessionId.get(session.getId()));
+    }
+
     public void removeSession(WebSocketSession session) {
         clearSessionSpace(session);
 
         Long userId = userIdBySessionId.remove(session.getId());
+        avatarPresetIdBySessionId.remove(session.getId());
 
         if (userId == null) {
             return;

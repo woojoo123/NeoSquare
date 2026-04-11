@@ -6,7 +6,11 @@ const GAME_HEIGHT = 720;
 export default function SpaceGame({
   playerLabel,
   spaceType,
+  avatarPresetId,
+  connectedSpaces,
+  spawnFromSpaceType,
   onPlayerMove,
+  onSpaceEnter,
   onParticipantSelect,
   remoteEvent,
 }) {
@@ -14,12 +18,20 @@ export default function SpaceGame({
   const gameRef = useRef(null);
   const sceneRef = useRef(null);
   const onPlayerMoveRef = useRef(onPlayerMove);
+  const onSpaceEnterRef = useRef(onSpaceEnter);
   const onParticipantSelectRef = useRef(onParticipantSelect);
   const pendingRemoteEventsRef = useRef([]);
+  const connectedSpacesKey = Array.isArray(connectedSpaces)
+    ? connectedSpaces.map((space) => `${space.id}:${space.type}`).join('|')
+    : '';
 
   useEffect(() => {
     onPlayerMoveRef.current = onPlayerMove;
   }, [onPlayerMove]);
+
+  useEffect(() => {
+    onSpaceEnterRef.current = onSpaceEnter;
+  }, [onSpaceEnter]);
 
   useEffect(() => {
     onParticipantSelectRef.current = onParticipantSelect;
@@ -59,8 +71,14 @@ export default function SpaceGame({
       const spaceScene = new SpaceScene({
         playerLabel,
         spaceType,
+        avatarPresetId,
+        connectedSpaces,
+        spawnFromSpaceType,
         onPlayerMove: (position) => {
           onPlayerMoveRef.current?.(position);
+        },
+        onSpaceEnter: (targetSpaceType) => {
+          onSpaceEnterRef.current?.(targetSpaceType);
         },
         onParticipantSelect: (participant) => {
           onParticipantSelectRef.current?.(participant);
@@ -110,7 +128,7 @@ export default function SpaceGame({
       }
       gameRef.current = null;
     };
-  }, [playerLabel, spaceType]);
+  }, [avatarPresetId, connectedSpacesKey, playerLabel, spaceType, spawnFromSpaceType]);
 
   return (
     <div className="space-game-shell">

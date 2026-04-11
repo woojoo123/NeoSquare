@@ -378,7 +378,7 @@ export default function MentoringSessionPage() {
       endSessionTimeoutRef.current = null;
     }
 
-    navigate('/lobby', {
+    navigate('/hub', {
       replace: true,
       state,
     });
@@ -436,7 +436,7 @@ export default function MentoringSessionPage() {
       setSessionRequest(completedSession);
       cleanupSessionResources();
       setSessionExitStatus('ended');
-      setActionMessage('세션이 종료되었습니다. 로비로 돌아가 빠르게 피드백을 남겨 보세요.');
+      setActionMessage('세션이 종료되었습니다. 허브로 돌아가 빠르게 피드백을 남겨 보세요.');
 
       endSessionTimeoutRef.current = window.setTimeout(() => {
         navigateToLobby({
