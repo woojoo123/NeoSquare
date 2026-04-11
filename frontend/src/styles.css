@@ -779,6 +779,49 @@ select {
   padding: 18px;
 }
 
+.space-arrival-banner {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at left top, rgba(59, 130, 246, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(239, 246, 255, 0.92), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.space-arrival-banner__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.space-arrival-banner strong {
+  display: block;
+  margin-top: 12px;
+  color: #0f172a;
+}
+
+.space-arrival-banner p {
+  margin: 10px 0 0;
+  color: #475569;
+}
+
+.space-guide-panel {
+  margin-bottom: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
 .space-study-board {
   margin-top: 18px;
   border: 1px solid #e5e7eb;
@@ -789,11 +832,54 @@ select {
 
 .space-stage-header {
   margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
 }
 
 .space-stage-header h2 {
   margin: 0 0 10px;
   font-size: 1.1rem;
+}
+
+.space-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.space-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.space-guide-card {
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(226, 232, 240, 0.92);
+}
+
+.space-guide-card span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.space-guide-card p {
+  margin: 14px 0 0;
+  color: #334155;
+  line-height: 1.65;
 }
 
 .space-game-shell {
@@ -2126,9 +2212,19 @@ select {
   }
 
   .space-avatar-summary,
-  .space-avatar-onboarding__hero {
+  .space-avatar-onboarding__hero,
+  .space-stage-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .space-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .space-guide-actions {
+    width: 100%;
+    justify-content: stretch;
   }
 
   .space-avatar-onboarding__grid {
@@ -2175,7 +2271,9 @@ select {
 
   .space-avatar-onboarding__actions .primary-button,
   .space-avatar-onboarding__actions .secondary-button,
-  .space-page-actions .secondary-button {
+  .space-page-actions .secondary-button,
+  .space-guide-actions .primary-button,
+  .space-guide-actions .secondary-button {
     width: 100%;
   }
 }

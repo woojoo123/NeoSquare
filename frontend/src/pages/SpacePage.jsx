@@ -107,6 +107,49 @@ function formatStudyParticipantCount(count) {
   return `${count}명 참여 중`;
 }
 
+function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySessionCount) {
+  if (spaceType === 'STUDY') {
+    return {
+      eyebrow: 'Study Flow',
+      title: '스터디 라운지에서는 모집과 합류가 핵심입니다.',
+      summary: '주제를 올리고, 현재 열려 있는 세션에 참여하고, 채팅으로 함께할 사람을 모으는 흐름이 가장 중요합니다.',
+      steps: [
+        '스터디 주제를 적고 세션을 먼저 생성합니다.',
+        joinedStudySessionCount > 0
+          ? '이미 참여 중인 세션이 있으면 바로 입장해 이어서 진행할 수 있습니다.'
+          : '현재 열린 세션 목록을 확인해 바로 참여할 수 있습니다.',
+        '공간 채팅으로 모집 메시지를 남겨 주변 사용자와 연결합니다.',
+      ],
+    };
+  }
+
+  if (spaceType === 'MENTORING') {
+    return {
+      eyebrow: 'Mentoring Flow',
+      title: '멘토링 존에서는 상대 선택 후 요청 또는 예약으로 이어집니다.',
+      summary: '지금 공간에 있는 사용자를 먼저 선택하고, 짧은 대화 뒤 요청이나 예약을 보내는 흐름이 가장 자연스럽습니다.',
+      steps: [
+        selectedParticipant
+          ? `${selectedParticipant.label}님을 선택한 상태입니다. 바로 요청이나 예약을 보낼 수 있습니다.`
+          : '참가자 목록에서 한 명을 선택해 상호작용 대상을 먼저 정합니다.',
+        '빠른 멘토링 요청으로 즉시 대화를 시작할 수 있습니다.',
+        '시간을 맞춰 진행하려면 예약 제안으로 후속 일정을 만듭니다.',
+      ],
+    };
+  }
+
+  return {
+    eyebrow: 'Main Plaza Flow',
+    title: '메인광장은 다음 활동을 고르는 출발점입니다.',
+    summary: '주변 사용자를 만나고, 스터디 라운지나 멘토링 존으로 이동하고, 허브에서 후속 활동을 관리하는 흐름으로 이어집니다.',
+    steps: [
+      '다른 참가자를 클릭해 바로 대화나 상호작용을 시작합니다.',
+      '문 앞으로 이동해 Space 또는 Enter로 다른 공간으로 넘어갈 수 있습니다.',
+      '허브에서 예약, 세션 기록, 피드백 같은 후속 작업을 관리합니다.',
+    ],
+  };
+}
+
 export default function SpacePage() {
   const { spaceId } = useParams();
   const location = useLocation();
@@ -147,6 +190,11 @@ export default function SpacePage() {
       ? location.state.entryFromSpaceType
       : null;
   const chatInputRef = useRef(null);
+  const studyTopicInputRef = useRef(null);
+  const participantSectionRef = useRef(null);
+  const studyComposerRef = useRef(null);
+  const mentoringRequestRef = useRef(null);
+  const chatPanelRef = useRef(null);
   const {
     connectionStatus,
     lastError,
@@ -169,10 +217,15 @@ export default function SpacePage() {
     [remoteUsers, selectedParticipantId]
   );
   const spaceDefinition = getLobbyZoneDefinition(space?.type);
+  const arrivalDefinition = spawnFromSpaceType ? getLobbyZoneDefinition(spawnFromSpaceType) : null;
   const currentAvatarPreset = getAvatarPreset(selectedAvatarId);
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
+  );
+  const guideContent = useMemo(
+    () => getSpaceGuideContent(space?.type, selectedParticipant, joinedStudySessions.length),
+    [joinedStudySessions.length, selectedParticipant, space?.type]
   );
   const primarySpace = useMemo(() => getPrimarySpace(spaceDirectory), [spaceDirectory]);
   const connectedSpaces = useMemo(
@@ -611,6 +664,31 @@ export default function SpacePage() {
     handleMoveToSpace(targetSpace);
   };
 
+  const scrollToSection = (sectionRef) => {
+    sectionRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+
+  const handleOpenStudyComposer = () => {
+    scrollToSection(studyComposerRef);
+    studyTopicInputRef.current?.focus();
+  };
+
+  const handleOpenMentoringComposer = () => {
+    scrollToSection(mentoringRequestRef);
+  };
+
+  const handleOpenParticipantList = () => {
+    scrollToSection(participantSectionRef);
+  };
+
+  const handleOpenChatPanel = () => {
+    scrollToSection(chatPanelRef);
+    chatInputRef.current?.focus();
+  };
+
   const handleReturnToPrimarySpace = async () => {
     if (primarySpace?.id) {
       handleMoveToSpace(primarySpace);
@@ -718,7 +796,7 @@ export default function SpacePage() {
               </div>
             ) : null}
 
-            <div className="lobby-info-card">
+            <div className="lobby-info-card" ref={participantSectionRef}>
               <h2>현재 참가자</h2>
               {remoteUsers.length === 0 ? (
                 <p className="app-note">
@@ -758,12 +836,13 @@ export default function SpacePage() {
             </div>
 
             {space?.type === 'STUDY' ? (
-              <div className="lobby-info-card">
+              <div className="lobby-info-card" ref={studyComposerRef}>
                 <h2>스터디 모집 게시</h2>
                 <form className="mentoring-form" onSubmit={handleCreateStudySession}>
                   <label className="app-field">
                     <span>스터디 주제</span>
                     <input
+                      ref={studyTopicInputRef}
                       type="text"
                       className="app-input"
                       value={studyTopic}
@@ -832,7 +911,7 @@ export default function SpacePage() {
               )}
             </div>
 
-            <div className="lobby-info-card">
+            <div className="lobby-info-card" ref={mentoringRequestRef}>
               <h2>빠른 멘토링 요청</h2>
               <form className="mentoring-form" onSubmit={handleCreateRequest}>
                 <label className="app-field">
@@ -896,6 +975,105 @@ export default function SpacePage() {
           </aside>
 
           <section className="space-stage-panel">
+            {arrivalDefinition ? (
+              <div className="space-arrival-banner">
+                <span className="space-arrival-banner__eyebrow">Arrived From</span>
+                <strong>{arrivalDefinition.label}에서 이동해 현재 공간에 도착했습니다.</strong>
+                <p>{spaceDefinition.label} 안에서 바로 다음 액션을 이어서 진행할 수 있습니다.</p>
+              </div>
+            ) : null}
+
+            <section className="space-guide-panel">
+              <div className="space-stage-header">
+                <div>
+                  <span className="landing-section-eyebrow">{guideContent.eyebrow}</span>
+                  <h2>{guideContent.title}</h2>
+                  <p className="app-note">{guideContent.summary}</p>
+                </div>
+                <div className="space-guide-actions">
+                  {space?.type === 'MAIN' ? (
+                    <>
+                      {connectedSpaces
+                        .filter((targetSpace) => targetSpace.type === 'STUDY')
+                        .slice(0, 1)
+                        .map((targetSpace) => (
+                          <button
+                            key={targetSpace.id}
+                            type="button"
+                            className="primary-button"
+                            onClick={() => handleMoveToSpace(targetSpace)}
+                          >
+                            스터디 라운지로 이동
+                          </button>
+                        ))}
+                      {connectedSpaces
+                        .filter((targetSpace) => targetSpace.type === 'MENTORING')
+                        .slice(0, 1)
+                        .map((targetSpace) => (
+                          <button
+                            key={targetSpace.id}
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleMoveToSpace(targetSpace)}
+                          >
+                            멘토링 존으로 이동
+                          </button>
+                        ))}
+                    </>
+                  ) : null}
+
+                  {space?.type === 'STUDY' ? (
+                    <>
+                      <button type="button" className="primary-button" onClick={handleOpenStudyComposer}>
+                        스터디 모집 작성
+                      </button>
+                      {joinedStudySessions[0] ? (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleOpenStudySession(joinedStudySessions[0])}
+                        >
+                          참여 중 세션 열기
+                        </button>
+                      ) : (
+                        <button type="button" className="secondary-button" onClick={handleOpenChatPanel}>
+                          채팅으로 모집 시작
+                        </button>
+                      )}
+                    </>
+                  ) : null}
+
+                  {space?.type === 'MENTORING' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={selectedParticipant ? handleOpenMentoringComposer : handleOpenParticipantList}
+                      >
+                        {selectedParticipant ? '요청 작성 열기' : '참가자 먼저 선택'}
+                      </button>
+                      <button type="button" className="secondary-button" onClick={handleOpenChatPanel}>
+                        채팅 시작하기
+                      </button>
+                    </>
+                  ) : null}
+
+                  <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
+                    허브 열기
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-guide-grid">
+                {guideContent.steps.map((step, index) => (
+                  <article key={step} className="space-guide-card">
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <p>{step}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
             <div className="space-stage-header">
               <div>
                 <h2>{spaceDefinition.label} 안에서 이동하기</h2>
@@ -975,7 +1153,7 @@ export default function SpacePage() {
               </section>
             ) : null}
 
-            <section className="lobby-chat-panel">
+            <section className="lobby-chat-panel" ref={chatPanelRef}>
               <div className="lobby-chat-header">
                 <div>
                   <h3>{spaceDefinition.label} 채팅</h3>
