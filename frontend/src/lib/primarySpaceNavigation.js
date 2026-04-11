@@ -1,7 +1,7 @@
 import { getSpaces } from '../api/spaces';
 
 const SPACE_PRIORITY = ['MAIN', 'STUDY', 'MENTORING'];
-const LOBBY_FALLBACK_PATH = '/lobby';
+const PRIMARY_SPACE_FALLBACK_PATH = '/hub';
 
 function getSpacePriority(spaceType) {
   const priority = SPACE_PRIORITY.indexOf(spaceType);
@@ -20,7 +20,7 @@ export function getPrimarySpacePathFromSpaces(spaces) {
   const primarySpace = getPrimarySpace(spaces);
 
   if (!primarySpace?.id) {
-    return LOBBY_FALLBACK_PATH;
+    return PRIMARY_SPACE_FALLBACK_PATH;
   }
 
   return `/spaces/${primarySpace.id}`;
@@ -31,10 +31,10 @@ export async function resolvePrimarySpacePath() {
     const spaces = await getSpaces();
     return getPrimarySpacePathFromSpaces(spaces);
   } catch {
-    return LOBBY_FALLBACK_PATH;
+    return PRIMARY_SPACE_FALLBACK_PATH;
   }
 }
 
-export function getLobbyFallbackPath() {
-  return LOBBY_FALLBACK_PATH;
+export function getPrimarySpaceFallbackPath() {
+  return PRIMARY_SPACE_FALLBACK_PATH;
 }

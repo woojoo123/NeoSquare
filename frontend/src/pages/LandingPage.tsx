@@ -3,7 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { getSpaces } from '../api/spaces';
 import { useAuthStore } from '../store/authStore';
-import { getPrimarySpace, getPrimarySpacePathFromSpaces, getLobbyFallbackPath } from '../lib/primarySpaceNavigation';
+import {
+  getPrimarySpace,
+  getPrimarySpaceFallbackPath,
+  getPrimarySpacePathFromSpaces,
+} from '../lib/primarySpaceNavigation';
 
 type SpaceSummary = {
   id: number;
@@ -368,7 +372,7 @@ export default function LandingPage() {
             <h2>설명은 여기까지, 이제 메인광장에서 시작하면 됩니다.</h2>
             <p>
               기본 진입 경로는 {primarySpace?.name || '메인광장'}입니다. 공간 정보가 없으면{' '}
-              {getLobbyFallbackPath()} 경로로 안전하게 폴백됩니다.
+              {getPrimarySpaceFallbackPath()} 경로로 안전하게 폴백됩니다.
             </p>
           </div>
           <button type="button" className="landing-primary-button" onClick={handlePrimaryAction}>
