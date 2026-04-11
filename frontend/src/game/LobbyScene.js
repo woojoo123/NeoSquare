@@ -310,8 +310,8 @@ export default class LobbyScene extends Phaser.Scene {
         fontSize: '16px',
         color: '#e2e8f0',
         align: 'center',
-        })
-        .setOrigin(0.5, 0);
+      })
+      .setOrigin(0.5, 0);
     const badge = this.add.circle(0, 4, 4, remotePalette.accentColorValue, 1);
 
     remotePlayer.add([shadow, cape, body, head, hair, nameLabel, badge]);
