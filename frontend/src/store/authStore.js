@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { getStoredAccessToken, setStoredAccessToken } from '../api/axiosInstance';
+import { clearStoredAccessToken, getStoredAccessToken, setStoredAccessToken } from '../features/auth/tokenStorage';
 
 const initialAccessToken = getStoredAccessToken();
 
@@ -36,7 +36,7 @@ export const useAuthStore = create((set) => ({
     }));
   },
   clearAuth: () => {
-    setStoredAccessToken(null);
+    clearStoredAccessToken();
     set({
       accessToken: null,
       currentUser: null,

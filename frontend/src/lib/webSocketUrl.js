@@ -1,4 +1,4 @@
-import { getStoredAccessToken } from '../api/axiosInstance';
+import { getStoredAccessToken } from '../features/auth/tokenStorage';
 
 function resolveBaseWebSocketUrl() {
   const configuredUrl = import.meta.env.VITE_WS_URL;

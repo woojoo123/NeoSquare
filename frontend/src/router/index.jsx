@@ -8,11 +8,11 @@ import RequireAuth from './RequireAuth';
 
 const LobbyPage = lazy(() => import('../pages/LobbyPage'));
 const HubPage = lazy(() => import('../pages/HubPage'));
-const LoginPage = lazy(() => import('../pages/LoginPage'));
+const LoginPage = lazy(() => import('../pages/LoginPage.tsx'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
 const SpacePage = lazy(() => import('../pages/SpacePage'));
 const StudySessionPage = lazy(() => import('../pages/StudySessionPage'));
-const SignupPage = lazy(() => import('../pages/SignupPage'));
+const SignupPage = lazy(() => import('../pages/SignupPage.tsx'));
 
 function withSuspense(element, message) {
   return (
