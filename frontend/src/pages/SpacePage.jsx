@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { getMe } from '../api/auth';
+import { getMe, logout } from '../api/auth';
 import { createMentoringRequest } from '../api/mentoring';
 import { createReservation } from '../api/reservations';
 import { getSpace, getSpaces } from '../api/spaces';
@@ -10,7 +10,6 @@ import {
   getStudySessionsBySpace,
   joinStudySession,
 } from '../api/study';
-import AppLayout from '../components/AppLayout';
 import AvatarPreview from '../components/AvatarPreview';
 import SpaceGame from '../components/SpaceGame';
 import { AVATAR_PRESETS } from '../lib/avatarPresets';
@@ -111,14 +110,14 @@ function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySession
   if (spaceType === 'STUDY') {
     return {
       eyebrow: '스터디 흐름',
-      title: '스터디 라운지에서는 모집과 합류가 핵심입니다.',
-      summary: '주제를 올리고, 현재 열려 있는 세션에 참여하고, 채팅으로 함께할 사람을 모으는 흐름이 가장 중요합니다.',
+      title: '가이드',
+      summary: '채팅이나 스터디 탭에서 바로 같이 공부할 흐름을 열 수 있습니다.',
       steps: [
-        '스터디 주제를 적고 세션을 먼저 생성합니다.',
+        '스터디 주제를 적고 세션을 만듭니다.',
         joinedStudySessionCount > 0
-          ? '이미 참여 중인 세션이 있으면 바로 입장해 이어서 진행할 수 있습니다.'
-          : '현재 열린 세션 목록을 확인해 바로 참여할 수 있습니다.',
-        '공간 채팅으로 모집 메시지를 남겨 주변 사용자와 연결합니다.',
+          ? '참여 중인 세션이 있으면 바로 입장해 이어서 진행합니다.'
+          : '현재 열린 세션 목록을 보고 바로 참여합니다.',
+        '필요하면 채팅으로 모집 메시지를 남깁니다.',
       ],
     };
   }
@@ -126,26 +125,26 @@ function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySession
   if (spaceType === 'MENTORING') {
     return {
       eyebrow: '멘토링 흐름',
-      title: '멘토링 존에서는 상대 선택 후 요청 또는 예약으로 이어집니다.',
-      summary: '지금 공간에 있는 사용자를 먼저 선택하고, 짧은 대화 뒤 요청이나 예약을 보내는 흐름이 가장 자연스럽습니다.',
+      title: '가이드',
+      summary: '상대를 선택한 뒤 요청이나 예약을 바로 보낼 수 있습니다.',
       steps: [
         selectedParticipant
-          ? `${selectedParticipant.label}님을 선택한 상태입니다. 바로 요청이나 예약을 보낼 수 있습니다.`
-          : '참가자 목록에서 한 명을 선택해 상호작용 대상을 먼저 정합니다.',
-        '빠른 멘토링 요청으로 즉시 대화를 시작할 수 있습니다.',
-        '시간을 맞춰 진행하려면 예약 제안으로 후속 일정을 만듭니다.',
+          ? `${selectedParticipant.label}님을 선택했습니다. 바로 요청이나 예약을 보낼 수 있습니다.`
+          : '참가자 목록에서 대화할 상대를 먼저 고릅니다.',
+        '빠른 멘토링 요청으로 대화를 시작합니다.',
+        '시간을 맞춰 진행하려면 예약 제안을 보냅니다.',
       ],
     };
   }
 
   return {
     eyebrow: '메인광장 흐름',
-    title: '메인광장은 다음 활동을 고르는 출발점입니다.',
-    summary: '주변 사용자를 만나고, 스터디 라운지나 멘토링 존으로 이동하고, 허브에서 후속 활동을 관리하는 흐름으로 이어집니다.',
+    title: '가이드',
+    summary: '방향키로 움직이고 문 앞에서 Space / Enter로 입장합니다.',
     steps: [
-      '다른 참가자를 클릭해 바로 대화나 상호작용을 시작합니다.',
-      '문 앞으로 이동해 Space 또는 Enter로 다른 공간으로 넘어갈 수 있습니다.',
-      '허브에서 예약, 세션 기록, 피드백 같은 후속 작업을 관리합니다.',
+      '주변 참가자를 확인합니다.',
+      '문 앞에서 Space / Enter로 입장합니다.',
+      '필요하면 채팅이나 참가자 탭을 확인합니다.',
     ],
   };
 }
@@ -181,6 +180,9 @@ export default function SpacePage() {
   const [studySessions, setStudySessions] = useState([]);
   const [studySessionsStatus, setStudySessionsStatus] = useState('idle');
   const [studySessionsError, setStudySessionsError] = useState('');
+  const [activeDrawer, setActiveDrawer] = useState('guide');
+  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
+  const [isSupportPanelOpen, setIsSupportPanelOpen] = useState(true);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -191,10 +193,7 @@ export default function SpacePage() {
       : null;
   const chatInputRef = useRef(null);
   const studyTopicInputRef = useRef(null);
-  const participantSectionRef = useRef(null);
-  const studyComposerRef = useRef(null);
-  const mentoringRequestRef = useRef(null);
-  const chatPanelRef = useRef(null);
+  const utilityMenuRef = useRef(null);
   const {
     connectionStatus,
     lastError,
@@ -222,6 +221,7 @@ export default function SpacePage() {
     const resolvedIndex = AVATAR_PRESETS.findIndex((preset) => preset.id === selectedAvatarId);
     return resolvedIndex >= 0 ? resolvedIndex + 1 : 1;
   }, [selectedAvatarId]);
+  const worldParticipantCount = remoteUsers.length + 1;
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
@@ -240,6 +240,23 @@ export default function SpacePage() {
       ).filter(Boolean),
     [space?.type, spaceDirectory]
   );
+  const drawerTabs = useMemo(() => {
+    const tabs = [
+      { id: 'guide', label: '가이드' },
+      { id: 'people', label: '참가자' },
+      { id: 'chat', label: '채팅' },
+    ];
+
+    if (space?.type === 'STUDY') {
+      tabs.push({ id: 'study', label: '스터디' });
+    }
+
+    if (space?.type === 'MENTORING') {
+      tabs.push({ id: 'mentoring', label: '멘토링' });
+    }
+
+    return tabs;
+  }, [space?.type]);
 
   useEffect(() => {
     if (!currentUser?.id) {
@@ -266,6 +283,60 @@ export default function SpacePage() {
 
     setShowAvatarOnboarding(true);
   }, [currentUser?.id, space?.type]);
+
+  useEffect(() => {
+    if (!space?.type) {
+      return;
+    }
+
+    if (space.type === 'STUDY') {
+      setActiveDrawer('study');
+      return;
+    }
+
+    if (space.type === 'MENTORING') {
+      setActiveDrawer('mentoring');
+      return;
+    }
+
+    setActiveDrawer('guide');
+  }, [space?.id, space?.type]);
+
+  useEffect(() => {
+    if (!drawerTabs.some((tab) => tab.id === activeDrawer)) {
+      setActiveDrawer(drawerTabs[0]?.id || 'guide');
+    }
+  }, [activeDrawer, drawerTabs]);
+
+  useEffect(() => {
+    if (!isUtilityMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (utilityMenuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      setIsUtilityMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isUtilityMenuOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (window.innerWidth <= 960) {
+      setIsSupportPanelOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedParticipantId) {
@@ -422,6 +493,8 @@ export default function SpacePage() {
     }
 
     setSelectedParticipantId(participant.userId);
+    setIsSupportPanelOpen(true);
+    setActiveDrawer(space?.type === 'MENTORING' ? 'mentoring' : 'people');
     setRequestNotice('');
     setRequestError('');
     setReservationNotice('');
@@ -453,6 +526,7 @@ export default function SpacePage() {
       return;
     }
 
+    setActiveDrawer('chat');
     setChatInput((currentValue) =>
       currentValue.trim()
         ? currentValue
@@ -667,29 +741,30 @@ export default function SpacePage() {
     handleMoveToSpace(targetSpace);
   };
 
-  const scrollToSection = (sectionRef) => {
-    sectionRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
+  const handleOpenStudyComposer = () => {
+    setIsSupportPanelOpen(true);
+    setActiveDrawer('study');
+    window.requestAnimationFrame(() => {
+      studyTopicInputRef.current?.focus();
     });
   };
 
-  const handleOpenStudyComposer = () => {
-    scrollToSection(studyComposerRef);
-    studyTopicInputRef.current?.focus();
-  };
-
   const handleOpenMentoringComposer = () => {
-    scrollToSection(mentoringRequestRef);
+    setIsSupportPanelOpen(true);
+    setActiveDrawer('mentoring');
   };
 
   const handleOpenParticipantList = () => {
-    scrollToSection(participantSectionRef);
+    setIsSupportPanelOpen(true);
+    setActiveDrawer('people');
   };
 
   const handleOpenChatPanel = () => {
-    scrollToSection(chatPanelRef);
-    chatInputRef.current?.focus();
+    setIsSupportPanelOpen(true);
+    setActiveDrawer('chat');
+    window.requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
   };
 
   const handleReturnToPrimarySpace = async () => {
@@ -701,508 +776,544 @@ export default function SpacePage() {
     navigate(await resolvePrimarySpacePath());
   };
 
-  return (
-    <AppLayout
-      eyebrow="메타버스 공간"
-      title={spaceDefinition.label}
-      description={spaceDefinition.helperText}
-      panelClassName="app-panel--wide"
-    >
-      <div className="space-page-actions">
-        {!isLoading && !errorMessage && space?.type !== 'MAIN' ? (
-          <button type="button" className="secondary-button" onClick={handleReturnToPrimarySpace}>
-            메인광장으로 돌아가기
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={handleOpenAvatarOnboarding}
-          disabled={!currentUser?.id}
-        >
-          아바타 {hasCompletedAvatarSetup ? '변경' : '선택'}
-        </button>
-        <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
-          활동 허브 열기
-        </button>
-      </div>
+  const handleLogout = async () => {
+    setIsUtilityMenuOpen(false);
+    try {
+      await logout();
+    } catch {
+      // 서버 로그아웃 실패와 무관하게 로컬 세션은 정리한다.
+    } finally {
+      clearAuth();
+      navigate('/login', { replace: true });
+    }
+  };
 
-      {avatarNotice ? <p className="app-success">{avatarNotice}</p> : null}
-      {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
-      {isLoading ? <p className="app-note">공간 정보를 불러오는 중입니다...</p> : null}
+  const handleToggleUtilityMenu = () => {
+    setIsUtilityMenuOpen((currentValue) => !currentValue);
+  };
 
-      {!isLoading && !errorMessage && space ? (
-        <div className="space-page-layout">
-          <aside className="space-sidebar">
-            <div className="lobby-info-card">
-              <h2>공간 정보</h2>
-              <strong>{spaceDefinition.label}</strong>
-              <span>최대 {space.maxCapacity}명까지 이용 가능한 공간입니다.</span>
-              <p className="app-note">{spaceDefinition.description}</p>
+  const handleOpenAvatarMenuAction = () => {
+    setIsUtilityMenuOpen(false);
+    handleOpenAvatarOnboarding();
+  };
+
+  const handleOpenHubMenuAction = () => {
+    setIsUtilityMenuOpen(false);
+    navigate('/hub');
+  };
+
+  const handleReturnToPrimarySpaceMenuAction = async () => {
+    setIsUtilityMenuOpen(false);
+    await handleReturnToPrimarySpace();
+  };
+
+  const handleCloseSupportPanel = () => {
+    setIsSupportPanelOpen(false);
+  };
+
+  const handleOpenSupportPanel = () => {
+    setIsSupportPanelOpen(true);
+  };
+
+  const activeDrawerLabel =
+    drawerTabs.find((tab) => tab.id === activeDrawer)?.label || '가이드';
+
+  const activeDrawerDescription =
+    activeDrawer === 'guide'
+      ? guideContent.summary
+      : activeDrawer === 'people'
+      ? '이 공간의 참가자를 확인하고 바로 상호작용할 수 있습니다.'
+      : activeDrawer === 'chat'
+        ? '현재 공간에 있는 사람들과 실시간으로 대화합니다.'
+        : activeDrawer === 'study'
+            ? '스터디 세션을 만들거나 참여 중인 세션을 이어갑니다.'
+            : activeDrawer === 'mentoring'
+              ? '상대를 고른 뒤 요청이나 예약을 바로 보낼 수 있습니다.'
+              : '현재 공간에서 무엇을 먼저 해야 하는지 빠르게 확인합니다.';
+
+  const renderDrawerContent = () => {
+    if (activeDrawer === 'people') {
+      return (
+        <div className="space-hud-stack">
+          <section className="space-hud-card">
+            <h3>선택한 참가자</h3>
+            {!selectedParticipant ? (
               <p className="app-note">
-                현재 연결 상태: {formatRealtimeConnectionStatus(connectionStatus)}
+                월드에서 다른 아바타를 클릭하거나 아래 목록에서 한 명을 선택하면 바로 상호작용을 시작할 수 있습니다.
               </p>
-              {connectionStatus === 'reconnecting' ? (
-                <p className="app-note">자동 재연결 시도: {Math.max(reconnectAttempt, 1)}회</p>
-              ) : null}
-              {lastError ? <p className="app-error">{lastError}</p> : null}
-            </div>
-
-            <div className="lobby-info-card">
-              <h2>내 아바타</h2>
-              <div className="space-avatar-summary">
-                <AvatarPreview presetId={selectedAvatarId} size="medium" highlighted />
-                <div>
-                  <strong>현재 선택한 캐릭터</strong>
-                  <span>
-                    아바타 {currentAvatarOrder} / {AVATAR_PRESETS.length}
-                  </span>
-                  <p className="app-note">
-                    현재 선택한 아바타는 공간 이동과 실시간 표시에도 그대로 사용됩니다.
-                  </p>
-                </div>
-              </div>
-              <div className="space-selected-actions">
-                <button type="button" className="secondary-button" onClick={handleOpenAvatarOnboarding}>
-                  {hasCompletedAvatarSetup ? '아바타 다시 고르기' : '아바타 설정 마치기'}
-                </button>
-              </div>
-            </div>
-
-            {connectedSpaces.length > 0 ? (
-              <div className="lobby-info-card">
-                <h2>연결된 공간 이동</h2>
-                <p className="app-note">
-                  {space?.type === 'MAIN'
-                    ? '메인 광장에서 다음 목적지를 골라 스터디 라운지나 멘토링 존으로 바로 이동할 수 있습니다.'
-                    : '현재 공간에서 다른 공간으로 바로 넘어갈 수 있습니다.'}
-                </p>
-                <ul className="space-navigation-list">
-                  {connectedSpaces.map((targetSpace) => {
-                    const targetDefinition = getLobbyZoneDefinition(targetSpace.type);
-
-                    return (
-                      <li key={targetSpace.id} className="space-navigation-card">
-                        <div>
-                          <strong>{targetDefinition.label}</strong>
-                          <p>{targetDefinition.helperText}</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleMoveToSpace(targetSpace)}
-                        >
-                          {targetDefinition.label}으로 이동
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-
-            <div className="lobby-info-card" ref={participantSectionRef}>
-              <h2>현재 참가자</h2>
-              {remoteUsers.length === 0 ? (
-                <p className="app-note">
-                  아직 이 공간에 보이는 다른 참가자가 없습니다. 다른 계정으로 같은 공간에 들어와 보세요.
-                </p>
-              ) : (
-                <ul className="space-participant-list">
-                  {remoteUsers.map((user) => {
-                    const isSelected =
-                      String(user.userId) === String(selectedParticipant?.userId);
-
-                    return (
-                      <li
-                        key={user.userId}
-                        className={`space-participant-card ${
-                          isSelected ? 'space-participant-card--selected' : ''
-                        }`}
-                      >
-                        <div>
-                          <strong>{user.label}</strong>
-                          <p>
-                            좌표 {Math.round(user.x || 0)}, {Math.round(user.y || 0)}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className={isSelected ? 'secondary-button' : 'primary-button'}
-                          onClick={() => selectParticipant(user)}
-                        >
-                          {isSelected ? '선택됨' : '상호작용'}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            {space?.type === 'STUDY' ? (
-              <div className="lobby-info-card" ref={studyComposerRef}>
-                <h2>스터디 모집 게시</h2>
-                <form className="mentoring-form" onSubmit={handleCreateStudySession}>
-                  <label className="app-field">
-                    <span>스터디 주제</span>
-                    <input
-                      ref={studyTopicInputRef}
-                      type="text"
-                      className="app-input"
-                      value={studyTopic}
-                      onChange={(event) => setStudyTopic(event.target.value)}
-                      placeholder="예: React 상태관리, 코딩테스트, 포트폴리오 리뷰"
-                      disabled={studyStatus === 'saving'}
-                    />
-                  </label>
-                  <label className="app-field">
-                    <span>메모</span>
-                    <textarea
-                      className="app-input mentoring-textarea"
-                      value={studyNote}
-                      onChange={(event) => setStudyNote(event.target.value)}
-                      rows={3}
-                      placeholder="진행 방식이나 목표를 간단히 적어 주세요."
-                      disabled={studyStatus === 'saving'}
-                    />
-                  </label>
-                  <button type="submit" className="primary-button">
-                    {studyStatus === 'saving' ? '스터디 세션 생성 중...' : '스터디 세션 만들기'}
+            ) : (
+              <>
+                <strong>{selectedParticipant.label}</strong>
+                <p className="app-note">현재 {spaceDefinition.label}에 접속 중입니다.</p>
+                <div className="space-selected-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleMentionParticipant}
+                  >
+                    채팅으로 말 걸기
                   </button>
-                </form>
-                {studyNotice ? <p className="app-success">{studyNotice}</p> : null}
-                {studyError ? <p className="app-error">{studyError}</p> : null}
-                {joinedStudySessions.length > 0 ? (
-                  <div className="space-selected-actions">
-                    {joinedStudySessions.slice(0, 2).map((studySession) => (
-                      <button
-                        key={studySession.id}
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => handleOpenStudySession(studySession)}
-                      >
-                        {studySession.title} 입장
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="lobby-info-card">
-              <h2>선택한 참가자</h2>
-              {!selectedParticipant ? (
-                <p className="app-note">
-                  아바타를 클릭하거나 참가자 목록에서 한 명을 선택하면 요청, 예약, 채팅 액션을 바로 실행할 수 있습니다.
-                </p>
-              ) : (
-                <>
-                  <strong>{selectedParticipant.label}</strong>
-                  <span>현재 {spaceDefinition.label}에 접속 중</span>
-                  <p className="app-note">
-                    먼저 채팅으로 말을 걸거나 바로 멘토링 요청과 예약을 보낼 수 있습니다.
-                  </p>
-                  <div className="space-selected-actions">
+                  {space?.type === 'MENTORING' ? (
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={handleMentionParticipant}
+                      onClick={handleOpenMentoringComposer}
                     >
-                      채팅으로 말 걸기
+                      멘토링 요청 열기
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="space-hud-card">
+            <h3>현재 참가자</h3>
+            {remoteUsers.length === 0 ? (
+              <p className="app-note">
+                아직 이 공간에 보이는 다른 참가자가 없습니다. 다른 계정으로 같은 공간에 들어와 보세요.
+              </p>
+            ) : (
+              <ul className="space-participant-list">
+                {remoteUsers.map((user) => {
+                  const isSelected =
+                    String(user.userId) === String(selectedParticipant?.userId);
+
+                  return (
+                    <li
+                      key={user.userId}
+                      className={`space-participant-card ${
+                        isSelected ? 'space-participant-card--selected' : ''
+                      }`}
+                    >
+                      <div>
+                        <strong>{user.label}</strong>
+                        <p>
+                          좌표 {Math.round(user.x || 0)}, {Math.round(user.y || 0)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className={isSelected ? 'secondary-button' : 'primary-button'}
+                        onClick={() => selectParticipant(user)}
+                      >
+                        {isSelected ? '선택됨' : '상호작용'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      );
+    }
+
+    if (activeDrawer === 'chat') {
+      return (
+        <section className="lobby-chat-panel space-hud-chat-panel">
+          <div className="lobby-chat-header">
+            <div>
+              <h3>{spaceDefinition.label} 채팅</h3>
+              <p className="app-note">이 공간에 접속한 사용자끼리만 메시지가 공유됩니다.</p>
+            </div>
+          </div>
+
+          <div className="lobby-chat-messages">
+            {chatMessages.length === 0 ? (
+              <p className="app-note">아직 채팅 메시지가 없습니다.</p>
+            ) : (
+              chatMessages.map((message) => (
+                <article
+                  key={message.id}
+                  className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
+                >
+                  <span className="chat-message__meta">
+                    {message.isMine ? '나' : message.nickname}
+                  </span>
+                  <p>{message.content}</p>
+                </article>
+              ))
+            )}
+          </div>
+
+          <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
+            <input
+              ref={chatInputRef}
+              type="text"
+              className="app-input"
+              placeholder="메시지를 입력하세요"
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+            />
+            <button type="submit" className="primary-button">
+              전송
+            </button>
+          </form>
+        </section>
+      );
+    }
+
+    if (activeDrawer === 'study') {
+      return (
+        <div className="space-hud-stack">
+          <section className="space-hud-card">
+            <h3>스터디 모집 게시</h3>
+            <form className="mentoring-form" onSubmit={handleCreateStudySession}>
+              <label className="app-field">
+                <span>스터디 주제</span>
+                <input
+                  ref={studyTopicInputRef}
+                  type="text"
+                  className="app-input"
+                  value={studyTopic}
+                  onChange={(event) => setStudyTopic(event.target.value)}
+                  placeholder="예: React 상태관리, 코딩테스트, 포트폴리오 리뷰"
+                  disabled={studyStatus === 'saving'}
+                />
+              </label>
+              <label className="app-field">
+                <span>메모</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  value={studyNote}
+                  onChange={(event) => setStudyNote(event.target.value)}
+                  rows={3}
+                  placeholder="진행 방식이나 목표를 간단히 적어 주세요."
+                  disabled={studyStatus === 'saving'}
+                />
+              </label>
+              <button type="submit" className="primary-button">
+                {studyStatus === 'saving' ? '스터디 세션 생성 중...' : '스터디 세션 만들기'}
+              </button>
+            </form>
+            {studyNotice ? <p className="app-success">{studyNotice}</p> : null}
+            {studyError ? <p className="app-error">{studyError}</p> : null}
+          </section>
+
+          <section className="space-hud-card">
+            <h3>현재 진행 중인 스터디 세션</h3>
+            {studySessionsStatus === 'loading' ? (
+              <p className="app-note">스터디 세션 목록을 불러오는 중입니다...</p>
+            ) : studySessionsError ? (
+              <p className="app-error">{studySessionsError}</p>
+            ) : studySessions.length === 0 ? (
+              <p className="app-note">아직 진행 중인 스터디 세션이 없습니다.</p>
+            ) : (
+              <ul className="space-study-list">
+                {studySessions.map((studySession) => (
+                  <li key={studySession.id} className="space-study-card">
+                    <div className="space-study-card__meta">
+                      <strong>{studySession.title}</strong>
+                      <span>
+                        {studySession.joined ? '참여 중' : studySession.hostLabel} ·{' '}
+                        {formatChatTimestamp(studySession.createdAt)}
+                      </span>
+                    </div>
+                    <p>{studySession.description || '설명 없이 바로 함께 공부를 시작할 수 있습니다.'}</p>
+                    <div className="space-study-card__meta">
+                      <span>{formatStudySessionStatus(studySession.status)}</span>
+                      <span>{formatStudyParticipantCount(studySession.participantCount)}</span>
+                    </div>
+                    <div className="space-selected-actions">
+                      {studySession.joined ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => handleOpenStudySession(studySession)}
+                        >
+                          세션 입장
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => handleJoinStudySession(studySession)}
+                        >
+                          참여하기
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      );
+    }
+
+    if (activeDrawer === 'mentoring') {
+      return (
+        <div className="space-hud-stack">
+          <section className="space-hud-card">
+            <h3>선택한 참가자</h3>
+            {!selectedParticipant ? (
+              <p className="app-note">
+                아바타를 클릭하거나 참가자 탭에서 한 명을 선택하면 요청과 예약을 바로 보낼 수 있습니다.
+              </p>
+            ) : (
+              <>
+                <strong>{selectedParticipant.label}</strong>
+                <p className="app-note">
+                  먼저 채팅으로 말을 걸거나 바로 멘토링 요청과 예약을 보낼 수 있습니다.
+                </p>
+                <div className="space-selected-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleMentionParticipant}
+                  >
+                    채팅으로 말 걸기
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="space-hud-card">
+            <h3>빠른 멘토링 요청</h3>
+            <form className="mentoring-form" onSubmit={handleCreateRequest}>
+              <label className="app-field">
+                <span>요청 메시지</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  value={requestMessage}
+                  onChange={(event) => setRequestMessage(event.target.value)}
+                  rows={3}
+                  placeholder="선택한 참가자에게 전달할 메시지를 입력해 주세요."
+                  disabled={!selectedParticipant || requestStatus === 'saving'}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={!selectedParticipant || requestStatus === 'saving'}
+              >
+                {requestStatus === 'saving' ? '요청 전송 중...' : '멘토링 요청 보내기'}
+              </button>
+            </form>
+            {requestNotice ? <p className="app-success">{requestNotice}</p> : null}
+            {requestError ? <p className="app-error">{requestError}</p> : null}
+          </section>
+
+          <section className="space-hud-card">
+            <h3>빠른 예약 제안</h3>
+            <form className="mentoring-form" onSubmit={handleCreateReservation}>
+              <label className="app-field">
+                <span>예약 시간</span>
+                <input
+                  type="datetime-local"
+                  className="app-input"
+                  value={reservationDateTime}
+                  onChange={(event) => setReservationDateTime(event.target.value)}
+                  disabled={!selectedParticipant || reservationStatus === 'saving'}
+                />
+              </label>
+              <label className="app-field">
+                <span>예약 메시지</span>
+                <textarea
+                  className="app-input mentoring-textarea"
+                  value={reservationMessage}
+                  onChange={(event) => setReservationMessage(event.target.value)}
+                  rows={3}
+                  placeholder="예약과 함께 전달할 메시지를 입력해 주세요."
+                  disabled={!selectedParticipant || reservationStatus === 'saving'}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={!selectedParticipant || reservationStatus === 'saving'}
+              >
+                {reservationStatus === 'saving' ? '예약 생성 중...' : '예약 제안 보내기'}
+              </button>
+            </form>
+            {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
+            {reservationError ? <p className="app-error">{reservationError}</p> : null}
+          </section>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-hud-stack">
+        {arrivalDefinition ? (
+          <section className="space-hud-card space-hud-card--accent space-hud-card--compact">
+            <span className="space-arrival-banner__eyebrow">이전 공간</span>
+            <strong>{arrivalDefinition.label}에서 이동했습니다.</strong>
+          </section>
+        ) : null}
+
+        <section className="space-hud-card">
+          <h3>가이드</h3>
+          <p className="app-note">{guideContent.summary}</p>
+          <ol className="space-guide-list">
+            {guideContent.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </section>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <main className="space-page-root">
+        {!isLoading && !errorMessage && space ? (
+          <section className="space-world-stage space-world-stage--immersive">
+            <div className="space-world-stage__canvas">
+              <SpaceGame
+                playerLabel={currentUser?.nickname || '나'}
+                spaceType={space.type}
+                avatarPresetId={avatarPresetId}
+                connectedSpaces={connectedSpaces}
+                spawnFromSpaceType={spawnFromSpaceType}
+                onPlayerMove={sendUserMove}
+                onSpaceEnter={handleSpacePortalEnter}
+                onParticipantSelect={selectParticipant}
+                remoteEvent={remoteEvent}
+              />
+            </div>
+
+            <header className="space-top-overlay">
+              <div className="space-top-overlay__brand">
+                <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
+                <h1>{spaceDefinition.label}</h1>
+              </div>
+
+              <div className="space-top-overlay__meta">
+                <span className="space-top-overlay__chip">{`${worldParticipantCount}명 접속 중`}</span>
+                <span className="space-top-overlay__chip">
+                  {formatRealtimeConnectionStatus(connectionStatus)}
+                </span>
+                <div className="space-utility-menu-wrap" ref={utilityMenuRef}>
+                  <button
+                    type="button"
+                    className="space-top-overlay__menu-button"
+                    onClick={handleToggleUtilityMenu}
+                  >
+                    메뉴
+                  </button>
+                  {isUtilityMenuOpen ? (
+                    <div className="space-utility-menu" role="menu" aria-label="메타버스 메뉴">
+                      {!isLoading && !errorMessage && space?.type !== 'MAIN' ? (
+                        <button
+                          type="button"
+                          className="space-utility-menu__item"
+                          onClick={handleReturnToPrimarySpaceMenuAction}
+                        >
+                          메인광장으로 돌아가기
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="space-utility-menu__item"
+                        onClick={handleOpenAvatarMenuAction}
+                        disabled={!currentUser?.id}
+                      >
+                        아바타 변경
+                      </button>
+                      <button
+                        type="button"
+                        className="space-utility-menu__item"
+                        onClick={handleOpenHubMenuAction}
+                      >
+                        활동 허브 열기
+                      </button>
+                      <button
+                        type="button"
+                        className="space-utility-menu__item space-utility-menu__item--danger"
+                        onClick={handleLogout}
+                      >
+                        로그아웃
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+
+            {avatarNotice ? <p className="space-toast space-toast--success">{avatarNotice}</p> : null}
+            {lastError ? <p className="space-toast space-toast--error">{lastError}</p> : null}
+
+            {!isSupportPanelOpen ? (
+              <button
+                type="button"
+                className="space-side-panel-fab"
+                onClick={handleOpenSupportPanel}
+              >
+                참가자 · 채팅 · 가이드
+              </button>
+            ) : null}
+
+            {isSupportPanelOpen ? (
+              <aside className="space-hud-drawer" aria-label="메타버스 도구 패널">
+                <div className="space-hud-drawer__tabs" role="tablist" aria-label="공간 도구">
+                  {drawerTabs.map((tab) => {
+                    const isActive = tab.id === activeDrawer;
+
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={`space-hud-drawer__tab ${
+                          isActive ? 'space-hud-drawer__tab--active' : ''
+                        }`}
+                        onClick={() => setActiveDrawer(tab.id)}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="space-hud-drawer__panel">
+                  <div className="space-hud-drawer__header">
+                    <div>
+                      <h2>{activeDrawerLabel}</h2>
+                      <p>{activeDrawerDescription}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="space-hud-drawer__close"
+                      onClick={handleCloseSupportPanel}
+                    >
+                      닫기
                     </button>
                   </div>
+                  <div className="space-hud-drawer__content">{renderDrawerContent()}</div>
+                </div>
+              </aside>
+            ) : null}
+
+            <div className="space-world-overlay space-world-overlay--controls">
+              <span>이동: 방향키</span>
+              <span>상호작용: 클릭</span>
+              <span>입장: Space / Enter</span>
+            </div>
+          </section>
+        ) : (
+          <section className="space-world-stage space-world-stage--immersive">
+            <div className="space-status-overlay">
+              {isLoading ? (
+                <>
+                  <strong>메타버스 공간을 불러오는 중입니다...</strong>
+                  <p>잠시만 기다리면 바로 움직일 수 있습니다.</p>
+                </>
+              ) : (
+                <>
+                  <strong>공간에 연결하지 못했습니다.</strong>
+                  <p>{errorMessage || '잠시 후 다시 시도해 주세요.'}</p>
                 </>
               )}
             </div>
-
-            <div className="lobby-info-card" ref={mentoringRequestRef}>
-              <h2>빠른 멘토링 요청</h2>
-              <form className="mentoring-form" onSubmit={handleCreateRequest}>
-                <label className="app-field">
-                  <span>요청 메시지</span>
-                  <textarea
-                    className="app-input mentoring-textarea"
-                    value={requestMessage}
-                    onChange={(event) => setRequestMessage(event.target.value)}
-                    rows={3}
-                    placeholder="선택한 참가자에게 전달할 메시지를 입력해 주세요."
-                    disabled={!selectedParticipant || requestStatus === 'saving'}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={!selectedParticipant || requestStatus === 'saving'}
-                >
-                  {requestStatus === 'saving' ? '요청 전송 중...' : '멘토링 요청 보내기'}
-                </button>
-              </form>
-              {requestNotice ? <p className="app-success">{requestNotice}</p> : null}
-              {requestError ? <p className="app-error">{requestError}</p> : null}
-            </div>
-
-            <div className="lobby-info-card">
-              <h2>빠른 예약 제안</h2>
-              <form className="mentoring-form" onSubmit={handleCreateReservation}>
-                <label className="app-field">
-                  <span>예약 시간</span>
-                  <input
-                    type="datetime-local"
-                    className="app-input"
-                    value={reservationDateTime}
-                    onChange={(event) => setReservationDateTime(event.target.value)}
-                    disabled={!selectedParticipant || reservationStatus === 'saving'}
-                  />
-                </label>
-                <label className="app-field">
-                  <span>예약 메시지</span>
-                  <textarea
-                    className="app-input mentoring-textarea"
-                    value={reservationMessage}
-                    onChange={(event) => setReservationMessage(event.target.value)}
-                    rows={3}
-                    placeholder="예약과 함께 전달할 메시지를 입력해 주세요."
-                    disabled={!selectedParticipant || reservationStatus === 'saving'}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={!selectedParticipant || reservationStatus === 'saving'}
-                >
-                  {reservationStatus === 'saving' ? '예약 생성 중...' : '예약 제안 보내기'}
-                </button>
-              </form>
-              {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
-              {reservationError ? <p className="app-error">{reservationError}</p> : null}
-            </div>
-          </aside>
-
-          <section className="space-stage-panel">
-            {arrivalDefinition ? (
-              <div className="space-arrival-banner">
-                <span className="space-arrival-banner__eyebrow">Arrived From</span>
-                <strong>{arrivalDefinition.label}에서 이동해 현재 공간에 도착했습니다.</strong>
-                <p>{spaceDefinition.label} 안에서 바로 다음 액션을 이어서 진행할 수 있습니다.</p>
-              </div>
-            ) : null}
-
-            <section className="space-guide-panel">
-              <div className="space-stage-header">
-                <div>
-                  <span className="landing-section-eyebrow">{guideContent.eyebrow}</span>
-                  <h2>{guideContent.title}</h2>
-                  <p className="app-note">{guideContent.summary}</p>
-                </div>
-                <div className="space-guide-actions">
-                  {space?.type === 'MAIN' ? (
-                    <>
-                      {connectedSpaces
-                        .filter((targetSpace) => targetSpace.type === 'STUDY')
-                        .slice(0, 1)
-                        .map((targetSpace) => (
-                          <button
-                            key={targetSpace.id}
-                            type="button"
-                            className="primary-button"
-                            onClick={() => handleMoveToSpace(targetSpace)}
-                          >
-                            스터디 라운지로 이동
-                          </button>
-                        ))}
-                      {connectedSpaces
-                        .filter((targetSpace) => targetSpace.type === 'MENTORING')
-                        .slice(0, 1)
-                        .map((targetSpace) => (
-                          <button
-                            key={targetSpace.id}
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => handleMoveToSpace(targetSpace)}
-                          >
-                            멘토링 존으로 이동
-                          </button>
-                        ))}
-                    </>
-                  ) : null}
-
-                  {space?.type === 'STUDY' ? (
-                    <>
-                      <button type="button" className="primary-button" onClick={handleOpenStudyComposer}>
-                        스터디 모집 작성
-                      </button>
-                      {joinedStudySessions[0] ? (
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleOpenStudySession(joinedStudySessions[0])}
-                        >
-                          참여 중 세션 열기
-                        </button>
-                      ) : (
-                        <button type="button" className="secondary-button" onClick={handleOpenChatPanel}>
-                          채팅으로 모집 시작
-                        </button>
-                      )}
-                    </>
-                  ) : null}
-
-                  {space?.type === 'MENTORING' ? (
-                    <>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        onClick={selectedParticipant ? handleOpenMentoringComposer : handleOpenParticipantList}
-                      >
-                        {selectedParticipant ? '요청 작성 열기' : '참가자 먼저 선택'}
-                      </button>
-                      <button type="button" className="secondary-button" onClick={handleOpenChatPanel}>
-                        채팅 시작하기
-                      </button>
-                    </>
-                  ) : null}
-
-                  <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
-                    허브 열기
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-guide-grid">
-                {guideContent.steps.map((step, index) => (
-                  <article key={step} className="space-guide-card">
-                    <span>{String(index + 1).padStart(2, '0')}</span>
-                    <p>{step}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <div className="space-stage-header">
-              <div>
-                <h2>{spaceDefinition.label} 안에서 이동하기</h2>
-                <p className="app-note">
-                  아바타를 클릭하면 사용자를 바로 선택할 수 있고, 문 앞으로 가서 Space 또는 Enter를 누르면 다른 공간으로 이동할 수 있습니다.
-                </p>
-              </div>
-            </div>
-            <SpaceGame
-              playerLabel={currentUser?.nickname || '나'}
-              spaceType={space.type}
-              avatarPresetId={avatarPresetId}
-              connectedSpaces={connectedSpaces}
-              spawnFromSpaceType={spawnFromSpaceType}
-              onPlayerMove={sendUserMove}
-              onSpaceEnter={handleSpacePortalEnter}
-              onParticipantSelect={selectParticipant}
-              remoteEvent={remoteEvent}
-            />
-
-            {space?.type === 'STUDY' ? (
-              <section className="space-study-board">
-                <div className="space-stage-header">
-                  <div>
-                    <h2>현재 진행 중인 스터디 세션</h2>
-                    <p className="app-note">
-                      이 공간에서 생성된 실제 스터디 세션을 서버 상태 기준으로 보여주며, 몇 초 간격으로 새 목록을 동기화합니다.
-                    </p>
-                  </div>
-                </div>
-
-                {studySessionsStatus === 'loading' ? (
-                  <p className="app-note">스터디 세션 목록을 불러오는 중입니다...</p>
-                ) : studySessionsError ? (
-                  <p className="app-error">{studySessionsError}</p>
-                ) : studySessions.length === 0 ? (
-                  <p className="app-note">아직 진행 중인 스터디 세션이 없습니다.</p>
-                ) : (
-                  <ul className="space-study-list">
-                    {studySessions.map((studySession) => (
-                      <li key={studySession.id} className="space-study-card">
-                        <div className="space-study-card__meta">
-                          <strong>{studySession.title}</strong>
-                          <span>
-                            {studySession.joined ? '참여 중' : studySession.hostLabel} ·{' '}
-                            {formatChatTimestamp(studySession.createdAt)}
-                          </span>
-                        </div>
-                        <p>{studySession.description || '설명 없이 바로 함께 공부를 시작할 수 있습니다.'}</p>
-                        <div className="space-study-card__meta">
-                          <span>{formatStudySessionStatus(studySession.status)}</span>
-                          <span>{formatStudyParticipantCount(studySession.participantCount)}</span>
-                        </div>
-                        <div className="space-selected-actions">
-                          {studySession.joined ? (
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => handleOpenStudySession(studySession)}
-                            >
-                              세션 입장
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => handleJoinStudySession(studySession)}
-                            >
-                              참여하기
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ) : null}
-
-            <section className="lobby-chat-panel" ref={chatPanelRef}>
-              <div className="lobby-chat-header">
-                <div>
-                  <h3>{spaceDefinition.label} 채팅</h3>
-                  <p className="app-note">
-                    이 공간에 접속한 사용자끼리만 메시지가 공유됩니다.
-                  </p>
-                </div>
-              </div>
-
-              <div className="lobby-chat-messages">
-                {chatMessages.length === 0 ? (
-                  <p className="app-note">아직 채팅 메시지가 없습니다.</p>
-                ) : (
-                  chatMessages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
-                    >
-                      <span className="chat-message__meta">
-                        {message.isMine ? '나' : message.nickname}
-                      </span>
-                      <p>{message.content}</p>
-                    </article>
-                  ))
-                )}
-              </div>
-
-              <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
-                <input
-                  ref={chatInputRef}
-                  type="text"
-                  className="app-input"
-                  placeholder="메시지를 입력하세요"
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                />
-                <button type="submit" className="primary-button">
-                  전송
-                </button>
-              </form>
-            </section>
           </section>
-        </div>
-      ) : null}
+        )}
+      </main>
 
       {showAvatarOnboarding ? (
         <section
@@ -1269,6 +1380,6 @@ export default function SpacePage() {
           </div>
         </section>
       ) : null}
-    </AppLayout>
+    </>
   );
 }

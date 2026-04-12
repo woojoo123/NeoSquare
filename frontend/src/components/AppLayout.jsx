@@ -4,12 +4,14 @@ export default function AppLayout({
   description,
   children,
   panelClassName = '',
+  shellClassName = '',
   headerHidden = false,
 }) {
+  const shellClassNames = ['app-shell', shellClassName].filter(Boolean).join(' ');
   const panelClassNames = ['app-panel', panelClassName].filter(Boolean).join(' ');
 
   return (
-    <main className="app-shell">
+    <main className={shellClassNames}>
       <section className={panelClassNames}>
         {!headerHidden ? (
           <>

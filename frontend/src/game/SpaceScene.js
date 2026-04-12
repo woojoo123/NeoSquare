@@ -159,7 +159,7 @@ export default class SpaceScene extends Phaser.Scene {
       spawnPosition.y,
       this.playerLabel,
       this.avatarPresetId,
-      { focusAlpha: 0.3 }
+      { focusAlpha: 0.48 }
     );
     this.player = this.playerAvatar.container;
 
@@ -180,29 +180,12 @@ export default class SpaceScene extends Phaser.Scene {
     });
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
-    this.add
-      .text(28, 24, this.theme.title, {
-        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '24px',
-        color: '#f8fafc',
-      })
-      .setScrollFactor(0);
-
-    this.add
-      .text(28, 56, this.theme.subtitle, {
-        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '15px',
-        color: '#cbd5e1',
-        wordWrap: { width: 420 },
-      })
-      .setScrollFactor(0);
-
     this.portalPrompt = this.add
-      .text(28, 108, '', {
+      .text(28, 26, '', {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '14px',
         color: '#fef3c7',
-        wordWrap: { width: 520 },
+        wordWrap: { width: 320 },
       })
       .setScrollFactor(0);
 
@@ -482,10 +465,18 @@ export default class SpaceScene extends Phaser.Scene {
 
     this.portals.forEach((portal) => {
       const isActive = activePortal?.targetType === portal.targetType;
-      portal.glow.setAlpha(isActive ? 0.52 : 0.26);
-      portal.frame.setStrokeStyle(isActive ? 5 : 3, isActive ? 0xfef3c7 : portal.accentColor, 0.95);
+      portal.glow.setAlpha(isActive ? 0.68 : 0.34);
+      portal.signBackground.setFillStyle(portal.accentColor, isActive ? 0.42 : 0.26);
+      portal.signBackground.setStrokeStyle(
+        isActive ? 3 : 2,
+        isActive ? 0xfef3c7 : portal.borderColor,
+        0.94
+      );
+      portal.frame.setStrokeStyle(isActive ? 5 : 4, isActive ? 0xfef3c7 : portal.accentColor, 0.95);
       portal.door.setFillStyle(0x020617, isActive ? 0.98 : 0.88);
       portal.helper.setColor(isActive ? '#f8fafc' : '#cbd5e1');
+      portal.labelText.setScale(isActive ? 1.04 : 1);
+      portal.sign.setScale(isActive ? 1.04 : 1);
     });
 
     if (!this.portalPrompt) {
@@ -493,13 +484,11 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     if (!activePortal) {
-      this.portalPrompt.setText('문 앞으로 이동한 뒤 Space 또는 Enter를 누르면 다음 공간으로 들어갑니다.');
+      this.portalPrompt.setText('문 앞에서 Space / Enter로 다음 공간에 입장합니다.');
       return;
     }
 
-    this.portalPrompt.setText(
-      `Space 또는 Enter로 ${activePortal.label} 입장\n${activePortal.helperText}`
-    );
+    this.portalPrompt.setText(`${activePortal.label} 입장 가능 · Space / Enter`);
   }
 
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
@@ -600,11 +589,21 @@ export default class SpaceScene extends Phaser.Scene {
       const glow = this.add.ellipse(
         portalDefinition.x,
         portalDefinition.y + 18,
-        portalDefinition.width + 46,
-        86,
+        portalDefinition.width + 72,
+        104,
         portalDefinition.accentColor,
-        0.26
+        0.34
       );
+      const signBackground = this.add
+        .rectangle(
+          portalDefinition.x,
+          portalDefinition.y - 22,
+          104,
+          34,
+          portalDefinition.accentColor,
+          0.26
+        )
+        .setStrokeStyle(2, portalDefinition.borderColor, 0.9);
       const frame = this.add
         .rectangle(
           portalDefinition.x,
@@ -612,9 +611,9 @@ export default class SpaceScene extends Phaser.Scene {
           portalDefinition.width,
           portalDefinition.height,
           portalDefinition.accentColor,
-          0.18
+          0.24
         )
-        .setStrokeStyle(3, portalDefinition.accentColor, 0.92);
+        .setStrokeStyle(4, portalDefinition.accentColor, 0.92);
       const door = this.add
         .rectangle(
           portalDefinition.x,
@@ -622,46 +621,45 @@ export default class SpaceScene extends Phaser.Scene {
           portalDefinition.width - 24,
           portalDefinition.height - 18,
           0x020617,
-          0.88
+          0.92
         )
-        .setStrokeStyle(2, portalDefinition.borderColor, 0.82);
+        .setStrokeStyle(3, portalDefinition.borderColor, 0.88);
       const sign = this.add
-        .text(portalDefinition.x, portalDefinition.y - 18, 'ENTER', {
+        .text(portalDefinition.x, portalDefinition.y - 22, 'ENTER', {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '16px',
-          color: Phaser.Display.Color.IntegerToColor(portalDefinition.borderColor).rgba,
+          fontSize: '17px',
+          color: '#f8fafc',
         })
         .setOrigin(0.5)
         .setDepth(2);
       const label = this.add
-        .text(portalDefinition.x, portalDefinition.y + 10, portalDefinition.label, {
+        .text(portalDefinition.x, portalDefinition.y + 8, portalDefinition.label, {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '13px',
+          fontSize: '15px',
           color: '#f8fafc',
           align: 'center',
         })
         .setOrigin(0.5)
         .setDepth(2);
       const helper = this.add
-        .text(portalDefinition.x, portalDefinition.y + 62, portalDefinition.helperText, {
+        .text(portalDefinition.x, portalDefinition.y + 58, 'Space / Enter', {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '12px',
-          color: '#cbd5e1',
+          fontSize: '13px',
+          color: '#e2e8f0',
           align: 'center',
-          wordWrap: {
-            width: portalDefinition.width + 26,
-          },
         })
         .setOrigin(0.5, 0.5)
         .setDepth(2);
 
       glow.setDepth(1);
+      signBackground.setDepth(1);
       frame.setDepth(1);
       door.setDepth(1);
 
       return {
         ...portalDefinition,
         glow,
+        signBackground,
         frame,
         door,
         sign,
@@ -692,17 +690,8 @@ export default class SpaceScene extends Phaser.Scene {
     this.add
       .text(WORLD_WIDTH / 2, 132, zone.label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '26px',
+        fontSize: '24px',
         color: Phaser.Display.Color.IntegerToColor(zone.accentColor).rgba,
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(WORLD_WIDTH / 2, 164, zone.helperText, {
-        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '15px',
-        color: '#e2e8f0',
-        align: 'center',
       })
       .setOrigin(0.5);
   }
