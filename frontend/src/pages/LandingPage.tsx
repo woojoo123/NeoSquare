@@ -43,14 +43,12 @@ export default function LandingPage() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.currentUser);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
-  const [isLoadingSpaces, setIsLoadingSpaces] = useState(true);
   const [spaceLoadError, setSpaceLoadError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadSpaces() {
-      setIsLoadingSpaces(true);
       setSpaceLoadError('');
 
       try {
@@ -69,10 +67,6 @@ export default function LandingPage() {
         setSpaceLoadError(
           error instanceof Error ? error.message : '공간 정보를 준비하는 중 문제가 발생했습니다.'
         );
-      } finally {
-        if (isMounted) {
-          setIsLoadingSpaces(false);
-        }
       }
     }
 
@@ -93,18 +87,10 @@ export default function LandingPage() {
     () => orderedSpaces.find((space) => space.type === 'MENTORING') || null,
     [orderedSpaces]
   );
-  const publicSpaceCount = useMemo(
-    () => orderedSpaces.filter((space) => space.isPublic).length,
-    [orderedSpaces]
-  );
-
   const primarySpaceName = primarySpace?.name || '메인광장';
   const studySpaceName = studySpace?.name || '스터디 라운지';
   const mentoringSpaceName = mentoringSpace?.name || '멘토링 존';
   const userLabel = currentUser?.nickname || '사용자';
-  const publicSpaceLabel = isLoadingSpaces
-    ? '공간 준비 중'
-    : `${publicSpaceCount || 1}개의 공개 공간 흐름`;
 
   const featureCards = useMemo<FeatureCard[]>(
     () => [
@@ -228,77 +214,16 @@ export default function LandingPage() {
                   <div className="landing-preview-map__grid" />
                   <div className="landing-preview-map__track landing-preview-map__track--horizontal" />
                   <div className="landing-preview-map__track landing-preview-map__track--vertical" />
-                  <div className="landing-preview-map__zone landing-preview-map__zone--main">
-                    {primarySpaceName}
-                  </div>
-                  <div className="landing-preview-map__zone landing-preview-map__zone--study">
-                    {studySpaceName}
-                  </div>
-                  <div className="landing-preview-map__zone landing-preview-map__zone--mentoring">
-                    {mentoringSpaceName}
-                  </div>
+                  <div className="landing-preview-map__zone landing-preview-map__zone--main" aria-hidden="true" />
+                  <div className="landing-preview-map__zone landing-preview-map__zone--study" aria-hidden="true" />
+                  <div
+                    className="landing-preview-map__zone landing-preview-map__zone--mentoring"
+                    aria-hidden="true"
+                  />
                   <span className="landing-preview-map__avatar landing-preview-map__avatar--one" />
                   <span className="landing-preview-map__avatar landing-preview-map__avatar--two" />
                   <span className="landing-preview-map__avatar landing-preview-map__avatar--three" />
                   <span className="landing-preview-map__avatar landing-preview-map__avatar--four" />
-                </div>
-
-                <aside className="landing-preview-sidebar">
-                  <div className="landing-preview-sidebar__panel">
-                    <span className="landing-preview-sidebar__label">현재 공간</span>
-                    <strong>{primarySpaceName}</strong>
-                    <small>{publicSpaceLabel}</small>
-                  </div>
-
-                  <div className="landing-preview-sidebar__panel">
-                    <span className="landing-preview-sidebar__label">함께 있는 사람들</span>
-                    <div className="landing-preview-people">
-                      <div className="landing-preview-person">
-                        <span className="landing-preview-person__avatar landing-preview-person__avatar--blue">
-                          수
-                        </span>
-                        <div>
-                          <strong>수연</strong>
-                          <span>광장에서 대화 중</span>
-                        </div>
-                      </div>
-                      <div className="landing-preview-person">
-                        <span className="landing-preview-person__avatar landing-preview-person__avatar--orange">
-                          현
-                        </span>
-                        <div>
-                          <strong>현우</strong>
-                          <span>{studySpaceName} 참여 준비</span>
-                        </div>
-                      </div>
-                      <div className="landing-preview-person">
-                        <span className="landing-preview-person__avatar landing-preview-person__avatar--green">
-                          지
-                        </span>
-                        <div>
-                          <strong>지민</strong>
-                          <span>{mentoringSpaceName} 연결 가능</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </aside>
-
-                <div className="landing-preview-chat">
-                  <div className="landing-preview-chat__header">
-                    <strong>실시간 대화</strong>
-                    <span>지금 함께 있는 커뮤니티</span>
-                  </div>
-                  <ul className="landing-preview-chat__messages">
-                    <li>
-                      <strong>민지</strong>
-                      <span>방금 입장했어요. 같이 둘러보실 분 있나요?</span>
-                    </li>
-                    <li>
-                      <strong>준호</strong>
-                      <span>{studySpaceName}에서 같이 공부할 분을 찾고 있어요.</span>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </section>
