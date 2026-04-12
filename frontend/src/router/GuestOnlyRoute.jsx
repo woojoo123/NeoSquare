@@ -1,6 +1,5 @@
-import { Outlet } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 
-import PrimarySpaceRedirect from '../components/PrimarySpaceRedirect';
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import { useAuthStore } from '../store/authStore';
 
@@ -13,7 +12,7 @@ export default function GuestOnlyRoute() {
   }
 
   if (accessToken && authStatus === 'authenticated') {
-    return <PrimarySpaceRedirect message="메인광장으로 이동하고 있습니다..." />;
+    return <Navigate to="/lobby" replace />;
   }
 
   return <Outlet />;

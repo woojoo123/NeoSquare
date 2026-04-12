@@ -166,8 +166,7 @@ export default function LandingPage() {
 
     navigate('/login', {
       state: {
-        from: '/enter',
-        message: '로그인 후 캐릭터를 고르고 메타버스에 입장할 수 있습니다.',
+        message: '로그인 후 로비에서 캐릭터를 고르고 메타버스에 입장할 수 있습니다.',
       },
     });
   }

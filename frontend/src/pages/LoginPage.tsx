@@ -5,7 +5,6 @@ import AppLayout from '../components/AppLayout';
 import { extractFieldErrors, getMe, login } from '../api/auth';
 import type { FieldErrors, LoginFieldName, LoginFormValues } from '../features/auth/types';
 import { validateLoginForm } from '../features/auth/validators';
-import { resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useAuthStore } from '../store/authStore';
 
 const LOGIN_FAILURE_MESSAGE = '이메일 또는 비밀번호를 확인해 주세요.';
@@ -115,7 +114,7 @@ export default function LoginPage() {
         currentUser: currentUserResponse,
       });
 
-      navigate(locationState?.from || (await resolvePrimarySpacePath()), { replace: true });
+      navigate(locationState?.from || '/lobby', { replace: true });
     } catch (error) {
       const serverFieldErrors = extractFieldErrors<LoginFieldName>(error);
 

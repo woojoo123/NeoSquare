@@ -1,7 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
-import PrimarySpaceRedirect from '../components/PrimarySpaceRedirect';
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import AuthNavigationHandler from './AuthNavigationHandler';
 import GuestOnlyRoute from './GuestOnlyRoute';
@@ -50,7 +49,7 @@ const router = createBrowserRouter([
         children: [
           {
             path: '/lobby',
-            element: <PrimarySpaceRedirect message="구형 로비 경로를 메인광장으로 전환하고 있습니다..." />,
+            element: withSuspense(<LandingPage />, '로비 화면을 준비하고 있습니다...'),
           },
           {
             path: '/hub',
