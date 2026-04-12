@@ -2,6 +2,7 @@ import { getDefaultAvatarPreset, getAvatarPreset } from './avatarPresets';
 
 const STORAGE_KEY = 'neosquare-avatar-selection';
 const ONBOARDING_STORAGE_KEY = 'neosquare-avatar-onboarding';
+const PENDING_STORAGE_KEY = 'neosquare-avatar-selection-pending';
 
 function readAvatarSelectionMap() {
   if (typeof window === 'undefined') {
@@ -67,6 +68,36 @@ function writeAvatarOnboardingMap(nextValue) {
   }
 }
 
+function readPendingAvatarPresetIdValue() {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    return window.localStorage.getItem(PENDING_STORAGE_KEY) || '';
+  } catch (error) {
+    console.warn('Failed to read pending avatar selection:', error);
+    return '';
+  }
+}
+
+function writePendingAvatarPresetIdValue(nextValue) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    if (nextValue) {
+      window.localStorage.setItem(PENDING_STORAGE_KEY, nextValue);
+      return;
+    }
+
+    window.localStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch (error) {
+    console.warn('Failed to persist pending avatar selection:', error);
+  }
+}
+
 export function getSelectedAvatarPresetId(userId) {
   if (!userId) {
     return getDefaultAvatarPreset().id;
@@ -90,6 +121,24 @@ export function setSelectedAvatarPresetId(userId, presetId) {
 
   writeAvatarSelectionMap(nextAvatarSelectionMap);
   return nextPresetId;
+}
+
+export function getPendingAvatarPresetId() {
+  return getAvatarPreset(readPendingAvatarPresetIdValue()).id;
+}
+
+export function hasPendingAvatarPresetId() {
+  return Boolean(readPendingAvatarPresetIdValue());
+}
+
+export function setPendingAvatarPresetId(presetId) {
+  const nextPresetId = getAvatarPreset(presetId).id;
+  writePendingAvatarPresetIdValue(nextPresetId);
+  return nextPresetId;
+}
+
+export function clearPendingAvatarPresetId() {
+  writePendingAvatarPresetIdValue('');
 }
 
 export function hasCompletedAvatarOnboarding(userId) {

@@ -13,7 +13,7 @@ import {
 import AppLayout from '../components/AppLayout';
 import AvatarPreview from '../components/AvatarPreview';
 import SpaceGame from '../components/SpaceGame';
-import { AVATAR_PRESETS, getAvatarPreset } from '../lib/avatarPresets';
+import { AVATAR_PRESETS } from '../lib/avatarPresets';
 import {
   getSelectedAvatarPresetId,
   hasCompletedAvatarOnboarding,
@@ -110,7 +110,7 @@ function formatStudyParticipantCount(count) {
 function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySessionCount) {
   if (spaceType === 'STUDY') {
     return {
-      eyebrow: 'Study Flow',
+      eyebrow: '스터디 흐름',
       title: '스터디 라운지에서는 모집과 합류가 핵심입니다.',
       summary: '주제를 올리고, 현재 열려 있는 세션에 참여하고, 채팅으로 함께할 사람을 모으는 흐름이 가장 중요합니다.',
       steps: [
@@ -125,7 +125,7 @@ function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySession
 
   if (spaceType === 'MENTORING') {
     return {
-      eyebrow: 'Mentoring Flow',
+      eyebrow: '멘토링 흐름',
       title: '멘토링 존에서는 상대 선택 후 요청 또는 예약으로 이어집니다.',
       summary: '지금 공간에 있는 사용자를 먼저 선택하고, 짧은 대화 뒤 요청이나 예약을 보내는 흐름이 가장 자연스럽습니다.',
       steps: [
@@ -139,7 +139,7 @@ function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySession
   }
 
   return {
-    eyebrow: 'Main Plaza Flow',
+    eyebrow: '메인광장 흐름',
     title: '메인광장은 다음 활동을 고르는 출발점입니다.',
     summary: '주변 사용자를 만나고, 스터디 라운지나 멘토링 존으로 이동하고, 허브에서 후속 활동을 관리하는 흐름으로 이어집니다.',
     steps: [
@@ -218,7 +218,10 @@ export default function SpacePage() {
   );
   const spaceDefinition = getLobbyZoneDefinition(space?.type);
   const arrivalDefinition = spawnFromSpaceType ? getLobbyZoneDefinition(spawnFromSpaceType) : null;
-  const currentAvatarPreset = getAvatarPreset(selectedAvatarId);
+  const currentAvatarOrder = useMemo(() => {
+    const resolvedIndex = AVATAR_PRESETS.findIndex((preset) => preset.id === selectedAvatarId);
+    return resolvedIndex >= 0 ? resolvedIndex + 1 : 1;
+  }, [selectedAvatarId]);
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
@@ -750,8 +753,10 @@ export default function SpacePage() {
               <div className="space-avatar-summary">
                 <AvatarPreview presetId={selectedAvatarId} size="medium" highlighted />
                 <div>
-                  <strong>{currentAvatarPreset.name}</strong>
-                  <span>{currentAvatarPreset.summary}</span>
+                  <strong>현재 선택한 캐릭터</strong>
+                  <span>
+                    아바타 {currentAvatarOrder} / {AVATAR_PRESETS.length}
+                  </span>
                   <p className="app-note">
                     현재 선택한 아바타는 공간 이동과 실시간 표시에도 그대로 사용됩니다.
                   </p>
@@ -1208,7 +1213,7 @@ export default function SpacePage() {
         >
           <div className="space-avatar-onboarding__backdrop" />
           <div className="space-avatar-onboarding__panel">
-            <span className="landing-section-eyebrow">Avatar Setup</span>
+            <span className="landing-section-eyebrow">캐릭터 선택</span>
             <h2 id="space-avatar-onboarding-title">
               {hasCompletedAvatarSetup
                 ? '지금 사용할 아바타를 다시 골라 주세요.'
@@ -1222,8 +1227,10 @@ export default function SpacePage() {
             <div className="space-avatar-onboarding__hero">
               <AvatarPreview presetId={selectedAvatarId} size="hero" highlighted />
               <div className="space-avatar-onboarding__hero-copy">
-                <strong>{currentAvatarPreset.name}</strong>
-                <span>{currentAvatarPreset.summary}</span>
+                <strong>선택한 캐릭터</strong>
+                <span>
+                  아바타 {currentAvatarOrder} / {AVATAR_PRESETS.length}
+                </span>
                 <p className="app-note">
                   현재 공간: {spaceDefinition.label} · 선택 저장 후 바로 이동과 실시간 표시가
                   반영됩니다.
@@ -1232,7 +1239,7 @@ export default function SpacePage() {
             </div>
 
             <div className="space-avatar-onboarding__grid">
-              {AVATAR_PRESETS.map((preset) => {
+              {AVATAR_PRESETS.map((preset, presetIndex) => {
                 const isSelected = preset.id === selectedAvatarId;
 
                 return (
@@ -1243,8 +1250,7 @@ export default function SpacePage() {
                     onClick={() => handleSelectAvatarPreset(preset.id)}
                   >
                     <AvatarPreview presetId={preset.id} size="card" highlighted={isSelected} />
-                    <strong>{preset.name}</strong>
-                    <span>{preset.summary}</span>
+                    <strong>아바타 {presetIndex + 1}</strong>
                   </button>
                 );
               })}

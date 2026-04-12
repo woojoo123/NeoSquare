@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { getSpaces } from '../api/spaces';
-import { getPrimarySpace, getPrimarySpacePathFromSpaces } from '../lib/primarySpaceNavigation';
+import { getPrimarySpace } from '../lib/primarySpaceNavigation';
 import { useAuthStore } from '../store/authStore';
 
 type SpaceSummary = {
@@ -97,10 +97,6 @@ export default function LandingPage() {
     () => orderedSpaces.filter((space) => space.isPublic).length,
     [orderedSpaces]
   );
-  const primarySpacePath = useMemo(
-    () => getPrimarySpacePathFromSpaces(orderedSpaces),
-    [orderedSpaces]
-  );
 
   const primarySpaceName = primarySpace?.name || '메인광장';
   const studySpaceName = studySpace?.name || '스터디 라운지';
@@ -120,15 +116,15 @@ export default function LandingPage() {
         iconClassName: 'landing-feature-icon--community',
       },
       {
-        title: '실시간 대화로 참여하는 커뮤니티',
+        title: '실시간 대화와 자연스러운 참여',
         description:
-          '공개 채팅과 실시간 상호작용을 통해 지금 이 순간 함께 있는 느낌의 대화가 이어집니다.',
+          '공개 채팅과 실시간 상호작용을 통해 지금 이 순간 함께 있는 듯한 대화가 이어집니다.',
         accentClassName: 'landing-feature-card--chat',
         iconClassName: 'landing-feature-icon--chat',
       },
       {
         title: '대화에서 스터디와 멘토링까지',
-        description: `${studySpaceName}에서 함께 배우고, ${mentoringSpaceName}에서 더 깊은 연결로 자연스럽게 확장할 수 있습니다.`,
+        description: `${studySpaceName}에서 함께 배우고, ${mentoringSpaceName}에서 더 깊은 연결로 자연스럽게 이어질 수 있습니다.`,
         accentClassName: 'landing-feature-card--growth',
         iconClassName: 'landing-feature-icon--growth',
       },
@@ -164,14 +160,14 @@ export default function LandingPage() {
 
   function handlePrimaryAction() {
     if (accessToken) {
-      navigate(primarySpacePath);
+      navigate('/enter');
       return;
     }
 
     navigate('/login', {
       state: {
-        from: primarySpacePath,
-        message: '로그인하면 메인광장으로 바로 입장할 수 있습니다.',
+        from: '/enter',
+        message: '로그인 후 캐릭터를 고르고 메타버스에 입장할 수 있습니다.',
       },
     });
   }
@@ -210,8 +206,8 @@ export default function LandingPage() {
               스터디하고, 필요하면 멘토링까지 할 수 있는 가상 커뮤니티 공간입니다.
             </p>
             <p>
-              단순한 채팅 서비스가 아니라, 같은 공간 안에서 다른 사람을 만나고 실시간으로
-              소통하며 자연스럽게 관계를 만들 수 있습니다.
+              단순히 글만 주고받는 서비스가 아니라, 같은 공간 안에서 다른 사람을 만나고
+              실시간으로 소통하며 자연스럽게 관계를 만들 수 있습니다.
             </p>
             <p>
               관심사가 맞는 사람과 대화를 시작할 수도 있고, 스터디나 멘토링처럼 목적 있는
@@ -316,8 +312,8 @@ export default function LandingPage() {
               {spaceLoadError
                 ? spaceLoadError
                 : accessToken
-                  ? `${userLabel}님은 버튼을 누르면 ${primarySpaceName}으로 바로 이동합니다.`
-                  : '로그인 후 메인광장으로 바로 입장할 수 있습니다.'}
+                  ? '로그인된 상태라면 캐릭터 선택 페이지로 이동합니다.'
+                  : '로그인 후 캐릭터를 고르고 메인광장으로 입장할 수 있습니다.'}
             </p>
           </div>
         </section>

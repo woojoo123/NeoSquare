@@ -8,6 +8,7 @@ import GuestOnlyRoute from './GuestOnlyRoute';
 import RequireAuth from './RequireAuth';
 
 const LandingPage = lazy(() => import('../pages/LandingPage.tsx'));
+const EntryAvatarPage = lazy(() => import('../pages/EntryAvatarPage.tsx'));
 const HubPage = lazy(() => import('../pages/HubPage'));
 const LoginPage = lazy(() => import('../pages/LoginPage.tsx'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
@@ -54,6 +55,10 @@ const router = createBrowserRouter([
           {
             path: '/hub',
             element: withSuspense(<HubPage />, '활동 허브를 불러오는 중입니다...'),
+          },
+          {
+            path: '/enter',
+            element: withSuspense(<EntryAvatarPage />, '캐릭터 선택 화면을 준비하고 있습니다...'),
           },
           {
             path: '/spaces/:spaceId',

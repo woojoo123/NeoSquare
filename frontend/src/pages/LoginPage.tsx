@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import AppLayout from '../components/AppLayout';
-import { getMe, login, extractFieldErrors } from '../api/auth';
+import { extractFieldErrors, getMe, login } from '../api/auth';
 import type { FieldErrors, LoginFieldName, LoginFormValues } from '../features/auth/types';
 import { validateLoginForm } from '../features/auth/validators';
 import { resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
