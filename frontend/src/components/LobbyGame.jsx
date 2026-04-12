@@ -152,8 +152,8 @@ export default function LobbyGame({
           height: GAME_HEIGHT,
         },
         render: {
-          antialias: true,
-          pixelArt: false,
+          antialias: false,
+          pixelArt: true,
         },
       });
 

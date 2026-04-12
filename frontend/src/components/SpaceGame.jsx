@@ -107,8 +107,8 @@ export default function SpaceGame({
           height: GAME_HEIGHT,
         },
         render: {
-          antialias: true,
-          pixelArt: false,
+          antialias: false,
+          pixelArt: true,
         },
       });
 

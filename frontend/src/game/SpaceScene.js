@@ -1,15 +1,26 @@
 import Phaser from 'phaser';
 
-import { getAvatarPalette } from '../lib/avatarPresets';
+import {
+  AVATAR_SPRITE_FRAME_SIZE,
+  AVATAR_SPRITE_SHEET_KEY,
+  AVATAR_SPRITE_SHEET_URL,
+  getAvatarDirectionFromDelta,
+  getAvatarPalette,
+  getAvatarSpriteFrame,
+} from '../lib/avatarPresets';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
 
 const WORLD_WIDTH = 1280;
 const WORLD_HEIGHT = 840;
-const PLAYER_SIZE = 34;
 const PLAYER_SPEED = 250;
 const WORLD_PADDING = 56;
 const PORTAL_ENTRY_DISTANCE = 92;
 const PORTAL_SPAWN_OFFSET_Y = 112;
+const AVATAR_HIT_AREA_WIDTH = 68;
+const AVATAR_HIT_AREA_HEIGHT = 96;
+const AVATAR_RING_Y = 16;
+const AVATAR_NAME_OFFSET_Y = 42;
+const AVATAR_WALK_FRAME_DURATION = 140;
 
 const SPACE_PORTAL_LAYOUTS = {
   MAIN: [
@@ -114,6 +125,7 @@ export default class SpaceScene extends Phaser.Scene {
     this.onSpaceEnter = onSpaceEnter;
     this.onParticipantSelect = onParticipantSelect;
     this.player = null;
+    this.playerAvatar = null;
     this.cursors = null;
     this.remotePlayers = new Map();
     this.theme = getSpaceTheme(spaceType);
@@ -121,6 +133,17 @@ export default class SpaceScene extends Phaser.Scene {
     this.portalPrompt = null;
     this.activePortalTargetType = null;
     this.isEnteringPortal = false;
+  }
+
+  preload() {
+    if (this.textures.exists(AVATAR_SPRITE_SHEET_KEY)) {
+      return;
+    }
+
+    this.load.spritesheet(AVATAR_SPRITE_SHEET_KEY, AVATAR_SPRITE_SHEET_URL, {
+      frameWidth: AVATAR_SPRITE_FRAME_SIZE,
+      frameHeight: AVATAR_SPRITE_FRAME_SIZE,
+    });
   }
 
   create() {
@@ -131,12 +154,14 @@ export default class SpaceScene extends Phaser.Scene {
     this.portals = this.drawPortals();
 
     const spawnPosition = this.resolveSpawnPosition();
-    this.player = this.createAvatar(
+    this.playerAvatar = this.createAvatar(
       spawnPosition.x,
       spawnPosition.y,
       this.playerLabel,
-      this.avatarPresetId
+      this.avatarPresetId,
+      { focusAlpha: 0.3 }
     );
+    this.player = this.playerAvatar.container;
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.input.keyboard?.addCapture([
@@ -228,6 +253,13 @@ export default class SpaceScene extends Phaser.Scene {
       WORLD_HEIGHT - WORLD_PADDING
     );
 
+    this.updateAvatarMotion(
+      this.playerAvatar,
+      this.player.x - previousX,
+      this.player.y - previousY,
+      delta
+    );
+
     if (previousX !== this.player.x || previousY !== this.player.y) {
       this.onPlayerMove?.({
         x: this.player.x,
@@ -312,19 +344,24 @@ export default class SpaceScene extends Phaser.Scene {
 
     const position = this.resolveRemotePosition(userId, x, y);
     const remotePlayer = this.createAvatar(position.x, position.y, label, avatarPresetId);
-    remotePlayer.setInteractive(
-      new Phaser.Geom.Rectangle(-30, -44, 60, 88),
+    remotePlayer.container.setData('remoteUserId', userId);
+    remotePlayer.container.setInteractive(
+      new Phaser.Geom.Rectangle(
+        -AVATAR_HIT_AREA_WIDTH / 2,
+        -AVATAR_HIT_AREA_HEIGHT / 2,
+        AVATAR_HIT_AREA_WIDTH,
+        AVATAR_HIT_AREA_HEIGHT
+      ),
       Phaser.Geom.Rectangle.Contains
     );
-    remotePlayer.input.cursor = 'pointer';
-    remotePlayer.on('pointerover', () => {
-      remotePlayer.list[2]?.setStrokeStyle?.(4, this.theme.highlightColor, 1);
+    remotePlayer.container.input.cursor = 'pointer';
+    remotePlayer.container.on('pointerover', () => {
+      this.setAvatarHoverState(remotePlayer, true);
     });
-    remotePlayer.on('pointerout', () => {
-      const latestPalette = getAvatarPalette(this.remotePlayers.get(userId)?.avatarPresetId);
-      remotePlayer.list[2]?.setStrokeStyle?.(3, latestPalette.bodyOutlineColorValue, 0.85);
+    remotePlayer.container.on('pointerout', () => {
+      this.setAvatarHoverState(remotePlayer, false);
     });
-    remotePlayer.on('pointerdown', () => {
+    remotePlayer.container.on('pointerdown', () => {
       const latestRemotePlayer = this.remotePlayers.get(userId);
 
       this.onParticipantSelect?.({
@@ -335,11 +372,7 @@ export default class SpaceScene extends Phaser.Scene {
       });
     });
 
-    this.remotePlayers.set(userId, {
-      container: remotePlayer,
-      nameLabel: remotePlayer.list[5],
-      avatarPresetId,
-    });
+    this.remotePlayers.set(userId, remotePlayer);
   }
 
   moveRemotePlayer(userId, x, y) {
@@ -357,7 +390,16 @@ export default class SpaceScene extends Phaser.Scene {
       remotePlayer.container.x,
       remotePlayer.container.y
     );
+
+    const previousX = remotePlayer.container.x;
+    const previousY = remotePlayer.container.y;
     remotePlayer.container.setPosition(position.x, position.y);
+    this.updateAvatarMotion(
+      remotePlayer,
+      position.x - previousX,
+      position.y - previousY,
+      AVATAR_WALK_FRAME_DURATION
+    );
   }
 
   removeRemotePlayer(userId) {
@@ -386,24 +428,12 @@ export default class SpaceScene extends Phaser.Scene {
 
     const remotePlayer = this.remotePlayers.get(userId);
 
-    if (!remotePlayer?.container) {
+    if (!remotePlayer?.sprite) {
       return;
     }
 
-    const palette = getAvatarPalette(avatarPresetId);
-    const cape = remotePlayer.container.list[1];
-    const body = remotePlayer.container.list[2];
-    const head = remotePlayer.container.list[3];
-    const hair = remotePlayer.container.list[4];
-    const badge = remotePlayer.container.list[6];
-
     remotePlayer.avatarPresetId = avatarPresetId;
-    cape?.setFillStyle?.(palette.capeColorValue);
-    body?.setFillStyle?.(palette.bodyColorValue);
-    body?.setStrokeStyle?.(3, palette.bodyOutlineColorValue, 0.85);
-    head?.setFillStyle?.(palette.headColorValue);
-    hair?.setFillStyle?.(palette.hairColorValue);
-    badge?.setFillStyle?.(palette.accentColorValue, 1);
+    this.applyAvatarAppearance(remotePlayer);
   }
 
   resolveRemotePosition(userId, x, y, fallbackX, fallbackY) {
@@ -472,27 +502,95 @@ export default class SpaceScene extends Phaser.Scene {
     );
   }
 
-  createAvatar(x, y, label, avatarPresetId) {
+  createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
     const palette = getAvatarPalette(avatarPresetId);
     const avatar = this.add.container(x, y);
-    const shadow = this.add.ellipse(0, 18, 34, 14, 0x020617, 0.22);
-    const cape = this.add.rectangle(0, 6, PLAYER_SIZE - 10, PLAYER_SIZE + 4, palette.capeColorValue);
-    const body = this.add.rectangle(0, 0, PLAYER_SIZE, PLAYER_SIZE, palette.bodyColorValue);
-    body.setStrokeStyle(3, palette.bodyOutlineColorValue, 0.85);
-    const head = this.add.circle(0, -26, 12, palette.headColorValue);
-    const hair = this.add.ellipse(0, -31, 28, 16, palette.hairColorValue, 1);
+    const shadow = this.add.ellipse(0, 22, 38, 16, 0x020617, 0.24);
+    const focusRing = this.add.ellipse(0, AVATAR_RING_Y, 52, 22);
+    const sprite = this.add.sprite(
+      0,
+      0,
+      AVATAR_SPRITE_SHEET_KEY,
+      getAvatarSpriteFrame(avatarPresetId, 'down', 0).index
+    );
     const nameLabel = this.add
-      .text(0, 34, label, {
+      .text(0, AVATAR_NAME_OFFSET_Y, label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '16px',
         color: '#e2e8f0',
         align: 'center',
       })
       .setOrigin(0.5, 0);
-    const badge = this.add.circle(0, 4, 4, palette.accentColorValue, 1);
+    const badge = this.add.circle(21, -16, 4, palette.accentColorValue, 1);
 
-    avatar.add([shadow, cape, body, head, hair, nameLabel, badge]);
-    return avatar;
+    avatar.add([shadow, focusRing, sprite, badge, nameLabel]);
+
+    const avatarState = {
+      container: avatar,
+      shadow,
+      focusRing,
+      sprite,
+      badge,
+      nameLabel,
+      avatarPresetId,
+      direction: 'down',
+      step: 0,
+      animationElapsed: 0,
+      isHovered: false,
+    };
+
+    focusRing.setAlpha(focusAlpha);
+    this.applyAvatarAppearance(avatarState);
+
+    return avatarState;
+  }
+
+  applyAvatarAppearance(avatarState) {
+    if (!avatarState?.sprite || !avatarState?.focusRing || !avatarState?.badge) {
+      return;
+    }
+
+    const palette = getAvatarPalette(avatarState.avatarPresetId);
+    const frame = getAvatarSpriteFrame(
+      avatarState.avatarPresetId,
+      avatarState.direction,
+      avatarState.step
+    );
+
+    avatarState.sprite.setFrame(frame.index);
+    avatarState.focusRing.setStrokeStyle(3, palette.accentColorValue, 0.95);
+    avatarState.focusRing.setFillStyle(palette.accentColorValue, 0.16);
+    avatarState.badge.setFillStyle(palette.accentColorValue, 1);
+  }
+
+  updateAvatarMotion(avatarState, deltaX, deltaY, delta = 0) {
+    if (!avatarState?.sprite) {
+      return;
+    }
+
+    const hasMoved = Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001;
+    avatarState.direction = getAvatarDirectionFromDelta(deltaX, deltaY, avatarState.direction);
+
+    if (hasMoved) {
+      avatarState.animationElapsed += delta > 0 ? delta : AVATAR_WALK_FRAME_DURATION;
+      avatarState.step =
+        Math.floor(avatarState.animationElapsed / AVATAR_WALK_FRAME_DURATION) % 3;
+    } else {
+      avatarState.animationElapsed = 0;
+      avatarState.step = 0;
+    }
+
+    this.applyAvatarAppearance(avatarState);
+  }
+
+  setAvatarHoverState(avatarState, isHovered) {
+    if (!avatarState?.focusRing || !avatarState?.nameLabel) {
+      return;
+    }
+
+    avatarState.isHovered = isHovered;
+    avatarState.focusRing.setAlpha(isHovered ? 0.92 : 0);
+    avatarState.nameLabel.setColor(isHovered ? '#f8fafc' : '#e2e8f0');
   }
 
   drawPortals() {
