@@ -106,6 +106,16 @@ function formatStudyParticipantCount(count) {
   return `${count}명 참여 중`;
 }
 
+function getLabelInitial(label) {
+  const trimmedLabel = label?.trim();
+
+  if (!trimmedLabel) {
+    return '?';
+  }
+
+  return trimmedLabel.charAt(0).toUpperCase();
+}
+
 function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySessionCount) {
   if (spaceType === 'STUDY') {
     return {
@@ -140,10 +150,10 @@ function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySession
   return {
     eyebrow: '메인광장 흐름',
     title: '가이드',
-    summary: '방향키로 움직이고 문 앞에서 Space / Enter로 입장합니다.',
+    summary: '방향키로 움직이고 문 앞에서 위쪽 방향키로 입장합니다.',
     steps: [
       '주변 참가자를 확인합니다.',
-      '문 앞에서 Space / Enter로 입장합니다.',
+      '문 앞에서 위쪽 방향키로 입장합니다.',
       '필요하면 채팅이나 참가자 탭을 확인합니다.',
     ],
   };
@@ -182,7 +192,7 @@ export default function SpacePage() {
   const [studySessionsError, setStudySessionsError] = useState('');
   const [activeDrawer, setActiveDrawer] = useState('guide');
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
-  const [isSupportPanelOpen, setIsSupportPanelOpen] = useState(true);
+  const [isSupportPanelOpen, setIsSupportPanelOpen] = useState(false);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -222,6 +232,8 @@ export default function SpacePage() {
     return resolvedIndex >= 0 ? resolvedIndex + 1 : 1;
   }, [selectedAvatarId]);
   const worldParticipantCount = remoteUsers.length + 1;
+  const visiblePresenceUsers = useMemo(() => remoteUsers.slice(0, 5), [remoteUsers]);
+  const hiddenPresenceCount = Math.max(remoteUsers.length - visiblePresenceUsers.length, 0);
   const joinedStudySessions = useMemo(
     () => studySessions.filter((studySession) => studySession.joined),
     [studySessions]
@@ -327,16 +339,6 @@ export default function SpacePage() {
       document.removeEventListener('mousedown', handlePointerDown);
     };
   }, [isUtilityMenuOpen]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (window.innerWidth <= 960) {
-      setIsSupportPanelOpen(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (!selectedParticipantId) {
@@ -792,6 +794,16 @@ export default function SpacePage() {
     setIsUtilityMenuOpen((currentValue) => !currentValue);
   };
 
+  const handleToggleSupportDrawer = (drawerId) => {
+    if (isSupportPanelOpen && activeDrawer === drawerId) {
+      setIsSupportPanelOpen(false);
+      return;
+    }
+
+    setActiveDrawer(drawerId);
+    setIsSupportPanelOpen(true);
+  };
+
   const handleOpenAvatarMenuAction = () => {
     setIsUtilityMenuOpen(false);
     handleOpenAvatarOnboarding();
@@ -811,25 +823,21 @@ export default function SpacePage() {
     setIsSupportPanelOpen(false);
   };
 
-  const handleOpenSupportPanel = () => {
-    setIsSupportPanelOpen(true);
-  };
-
   const activeDrawerLabel =
     drawerTabs.find((tab) => tab.id === activeDrawer)?.label || '가이드';
 
   const activeDrawerDescription =
     activeDrawer === 'guide'
-      ? guideContent.summary
+      ? '움직임과 입장 방법을 빠르게 확인합니다.'
       : activeDrawer === 'people'
-      ? '이 공간의 참가자를 확인하고 바로 상호작용할 수 있습니다.'
+      ? '현재 공간에 함께 있는 참가자를 확인합니다.'
       : activeDrawer === 'chat'
-        ? '현재 공간에 있는 사람들과 실시간으로 대화합니다.'
+        ? '현재 공간에 있는 사람들과 바로 대화합니다.'
         : activeDrawer === 'study'
-            ? '스터디 세션을 만들거나 참여 중인 세션을 이어갑니다.'
+            ? '스터디 세션을 열거나 참여합니다.'
             : activeDrawer === 'mentoring'
-              ? '상대를 고른 뒤 요청이나 예약을 바로 보낼 수 있습니다.'
-              : '현재 공간에서 무엇을 먼저 해야 하는지 빠르게 확인합니다.';
+              ? '요청이나 예약으로 멘토링을 이어갑니다.'
+              : '현재 공간에서 필요한 도구를 확인합니다.';
 
   const renderDrawerContent = () => {
     if (activeDrawer === 'people') {
@@ -839,12 +847,12 @@ export default function SpacePage() {
             <h3>선택한 참가자</h3>
             {!selectedParticipant ? (
               <p className="app-note">
-                월드에서 다른 아바타를 클릭하거나 아래 목록에서 한 명을 선택하면 바로 상호작용을 시작할 수 있습니다.
+                월드에서 다른 아바타를 클릭하거나 아래 목록에서 한 명을 선택하면 바로 상호작용할 수 있습니다.
               </p>
             ) : (
               <>
                 <strong>{selectedParticipant.label}</strong>
-                <p className="app-note">현재 {spaceDefinition.label}에 접속 중입니다.</p>
+                <p className="app-note">지금 같은 공간에 있습니다. 바로 말을 걸거나 요청을 시작할 수 있습니다.</p>
                 <div className="space-selected-actions">
                   <button
                     type="button"
@@ -888,9 +896,7 @@ export default function SpacePage() {
                     >
                       <div>
                         <strong>{user.label}</strong>
-                        <p>
-                          좌표 {Math.round(user.x || 0)}, {Math.round(user.y || 0)}
-                        </p>
+                        <p>{spaceDefinition.label}에서 함께 이동 중</p>
                       </div>
                       <button
                         type="button"
@@ -1179,8 +1185,11 @@ export default function SpacePage() {
 
             <header className="space-top-overlay">
               <div className="space-top-overlay__brand">
-                <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
-                <h1>{spaceDefinition.label}</h1>
+              <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
+              </div>
+
+              <div className="space-top-overlay__title" aria-label="현재 공간">
+                {spaceDefinition.label}
               </div>
 
               <div className="space-top-overlay__meta">
@@ -1235,42 +1244,71 @@ export default function SpacePage() {
               </div>
             </header>
 
+            <aside className="space-presence-strip" aria-label="현재 공간 참가자">
+              <div className="space-presence-strip__list">
+                <button
+                  type="button"
+                  className="space-presence-chip space-presence-chip--current"
+                  disabled
+                  aria-label={`${currentUser?.nickname || '나'}로 접속 중`}
+                >
+                  <span className="space-presence-chip__avatar">
+                    {getLabelInitial(currentUser?.nickname || '나')}
+                  </span>
+                  <span className="space-presence-chip__label">{currentUser?.nickname || '나'}</span>
+                </button>
+
+                {visiblePresenceUsers.map((user) => {
+                  const isSelected =
+                    String(user.userId) === String(selectedParticipant?.userId);
+
+                  return (
+                    <button
+                      key={user.userId}
+                      type="button"
+                      className={`space-presence-chip ${isSelected ? 'space-presence-chip--selected' : ''}`}
+                      onClick={() => selectParticipant(user)}
+                    >
+                      <span className="space-presence-chip__avatar">
+                        {getLabelInitial(user.label)}
+                      </span>
+                      <span className="space-presence-chip__label">{user.label}</span>
+                    </button>
+                  );
+                })}
+
+                {hiddenPresenceCount > 0 ? (
+                  <div className="space-presence-chip space-presence-chip--more" aria-label={`추가 참가자 ${hiddenPresenceCount}명`}>
+                    <span className="space-presence-chip__avatar">+{hiddenPresenceCount}</span>
+                  </div>
+                ) : null}
+              </div>
+            </aside>
+
             {avatarNotice ? <p className="space-toast space-toast--success">{avatarNotice}</p> : null}
             {lastError ? <p className="space-toast space-toast--error">{lastError}</p> : null}
 
-            {!isSupportPanelOpen ? (
-              <button
-                type="button"
-                className="space-side-panel-fab"
-                onClick={handleOpenSupportPanel}
-              >
-                참가자 · 채팅 · 가이드
-              </button>
-            ) : null}
+            <nav className="space-support-rail" aria-label="메타버스 도구">
+              {drawerTabs.map((tab) => {
+                const isActive = isSupportPanelOpen && activeDrawer === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`space-support-rail__button ${
+                      isActive ? 'space-support-rail__button--active' : ''
+                    }`}
+                    onClick={() => handleToggleSupportDrawer(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
 
             {isSupportPanelOpen ? (
               <aside className="space-hud-drawer" aria-label="메타버스 도구 패널">
-                <div className="space-hud-drawer__tabs" role="tablist" aria-label="공간 도구">
-                  {drawerTabs.map((tab) => {
-                    const isActive = tab.id === activeDrawer;
-
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        className={`space-hud-drawer__tab ${
-                          isActive ? 'space-hud-drawer__tab--active' : ''
-                        }`}
-                        onClick={() => setActiveDrawer(tab.id)}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
                 <div className="space-hud-drawer__panel">
                   <div className="space-hud-drawer__header">
                     <div>
@@ -1293,7 +1331,7 @@ export default function SpacePage() {
             <div className="space-world-overlay space-world-overlay--controls">
               <span>이동: 방향키</span>
               <span>상호작용: 클릭</span>
-              <span>입장: Space / Enter</span>
+              <span>입장: 위쪽 방향키</span>
             </div>
           </section>
         ) : (

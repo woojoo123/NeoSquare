@@ -99,16 +99,8 @@ export default class LobbyScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
       Phaser.Input.Keyboard.KeyCodes.RIGHT,
-      Phaser.Input.Keyboard.KeyCodes.SPACE,
-      Phaser.Input.Keyboard.KeyCodes.ENTER,
     ]);
-    this.input.keyboard?.on('keydown-SPACE', this.handleSpaceEnter, this);
-    this.input.keyboard?.on('keydown-ENTER', this.handleSpaceEnter, this);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.input.keyboard?.off('keydown-SPACE', this.handleSpaceEnter, this);
-      this.input.keyboard?.off('keydown-ENTER', this.handleSpaceEnter, this);
-    });
 
     this.add
       .text(28, 24, 'NeoSquare 허브', {
@@ -228,6 +220,10 @@ export default class LobbyScene extends Phaser.Scene {
       });
       this.refreshEntryPrompt();
       this.emitPlayerContext();
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+      this.handleSpaceEnter();
     }
   }
 
@@ -617,11 +613,11 @@ export default class LobbyScene extends Phaser.Scene {
     }
 
     if (!nextEntryZone) {
-      this.entryPrompt.setText('입구 가까이 가면 Space 또는 Enter로 바로 입장할 수 있습니다.');
+      this.entryPrompt.setText('입구 가까이에서 위쪽 방향키를 누르면 바로 입장할 수 있습니다.');
       return;
     }
 
-    this.entryPrompt.setText(`Space 또는 Enter로 ${nextEntryZone.label} 입장`);
+    this.entryPrompt.setText(`위쪽 방향키로 ${nextEntryZone.label} 입장`);
   }
 
   resolveActiveEntryZone() {

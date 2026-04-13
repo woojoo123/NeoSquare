@@ -169,24 +169,18 @@ export default class SpaceScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
       Phaser.Input.Keyboard.KeyCodes.RIGHT,
-      Phaser.Input.Keyboard.KeyCodes.SPACE,
-      Phaser.Input.Keyboard.KeyCodes.ENTER,
     ]);
-    this.input.keyboard?.on('keydown-SPACE', this.handlePortalEnter, this);
-    this.input.keyboard?.on('keydown-ENTER', this.handlePortalEnter, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.input.keyboard?.off('keydown-SPACE', this.handlePortalEnter, this);
-      this.input.keyboard?.off('keydown-ENTER', this.handlePortalEnter, this);
-    });
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     this.portalPrompt = this.add
-      .text(28, 26, '', {
+      .text(WORLD_WIDTH / 2, 86, '', {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '14px',
+        fontSize: '13px',
         color: '#fef3c7',
-        wordWrap: { width: 320 },
+        align: 'center',
+        wordWrap: { width: 360 },
       })
+      .setOrigin(0.5, 0)
       .setScrollFactor(0);
 
     this.refreshPortalPrompt();
@@ -249,6 +243,10 @@ export default class SpaceScene extends Phaser.Scene {
         y: this.player.y,
       });
       this.refreshPortalPrompt();
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+      this.handlePortalEnter();
     }
   }
 
@@ -484,11 +482,11 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     if (!activePortal) {
-      this.portalPrompt.setText('문 앞에서 Space / Enter로 다음 공간에 입장합니다.');
+      this.portalPrompt.setText('');
       return;
     }
 
-    this.portalPrompt.setText(`${activePortal.label} 입장 가능 · Space / Enter`);
+    this.portalPrompt.setText(`${activePortal.label} 입장 가능 · 위쪽 방향키`);
   }
 
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
@@ -642,7 +640,7 @@ export default class SpaceScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(2);
       const helper = this.add
-        .text(portalDefinition.x, portalDefinition.y + 58, 'Space / Enter', {
+        .text(portalDefinition.x, portalDefinition.y + 58, '위쪽 방향키', {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
           fontSize: '13px',
           color: '#e2e8f0',
@@ -669,30 +667,154 @@ export default class SpaceScene extends Phaser.Scene {
     });
   }
 
+  drawBuildingBlock(
+    graphics,
+    x,
+    y,
+    width,
+    height,
+    {
+      bodyColor = 0x516072,
+      roofColor = 0x253244,
+      trimColor = this.theme.accentColor,
+      doorColor = 0x0f172a,
+      windowColor = 0xe2e8f0,
+    } = {}
+  ) {
+    graphics.fillStyle(bodyColor, 1);
+    graphics.fillRoundedRect(x, y, width, height, 22);
+    graphics.fillStyle(roofColor, 1);
+    graphics.fillRoundedRect(x - 12, y - 20, width + 24, 34, 20);
+    graphics.lineStyle(3, trimColor, 0.45);
+    graphics.strokeRoundedRect(x, y, width, height, 22);
+
+    const windowWidth = 34;
+    const windowHeight = 26;
+    const columnGap = (width - windowWidth * 3) / 4;
+    const windowStartX = x + columnGap;
+
+    for (let row = 0; row < 2; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        const windowX = windowStartX + column * (windowWidth + columnGap);
+        const windowY = y + 28 + row * 44;
+        graphics.fillStyle(windowColor, row === 0 ? 0.8 : 0.64);
+        graphics.fillRoundedRect(windowX, windowY, windowWidth, windowHeight, 8);
+      }
+    }
+
+    graphics.fillStyle(doorColor, 0.94);
+    graphics.fillRoundedRect(x + width / 2 - 26, y + height - 72, 52, 72, 16);
+    graphics.lineStyle(2, trimColor, 0.42);
+    graphics.strokeRoundedRect(x + width / 2 - 26, y + height - 72, 52, 72, 16);
+  }
+
+  drawBench(graphics, x, y) {
+    graphics.fillStyle(0x7c4a21, 1);
+    graphics.fillRoundedRect(x - 30, y, 60, 10, 4);
+    graphics.fillRoundedRect(x - 24, y + 12, 48, 8, 4);
+    graphics.fillRoundedRect(x - 22, y + 20, 6, 14, 3);
+    graphics.fillRoundedRect(x + 16, y + 20, 6, 14, 3);
+  }
+
+  drawTree(graphics, x, y) {
+    graphics.fillStyle(0x6b4f2d, 1);
+    graphics.fillRoundedRect(x - 6, y + 18, 12, 24, 4);
+    graphics.fillStyle(0x16a34a, 1);
+    graphics.fillCircle(x, y + 4, 22);
+    graphics.fillCircle(x - 16, y + 12, 16);
+    graphics.fillCircle(x + 16, y + 12, 16);
+  }
+
+  drawLamp(graphics, x, y) {
+    graphics.fillStyle(0x334155, 1);
+    graphics.fillRoundedRect(x - 3, y, 6, 48, 3);
+    graphics.fillStyle(0xfbbf24, 1);
+    graphics.fillCircle(x, y - 10, 8);
+    graphics.fillStyle(0xfef3c7, 0.18);
+    graphics.fillCircle(x, y - 10, 24);
+  }
+
   drawSpaceBackground() {
     const zone = getLobbyZoneDefinition(this.spaceType);
     const background = this.add.graphics();
+    const plazaX = 86;
+    const plazaY = 106;
+    const plazaWidth = WORLD_WIDTH - 172;
+    const plazaHeight = 550;
+    const roadY = 680;
 
     background.fillGradientStyle(0x0f172a, 0x0f172a, 0x020617, 0x020617, 1);
     background.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     background.fillStyle(this.theme.surfaceColor, 1);
-    background.fillRoundedRect(72, 72, WORLD_WIDTH - 144, WORLD_HEIGHT - 144, 36);
-    background.lineStyle(4, this.theme.accentColor, 0.55);
-    background.strokeRoundedRect(72, 72, WORLD_WIDTH - 144, WORLD_HEIGHT - 144, 36);
+    background.fillRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 32);
+    background.lineStyle(4, this.theme.accentColor, 0.34);
+    background.strokeRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 32);
 
-    background.fillStyle(this.theme.furnitureColor, 1);
-    background.fillRoundedRect(170, 180, WORLD_WIDTH - 340, 120, 28);
-    background.fillRoundedRect(170, 340, 220, 180, 24);
-    background.fillRoundedRect(WORLD_WIDTH - 390, 340, 220, 180, 24);
-    background.fillRoundedRect(150, WORLD_HEIGHT - 232, WORLD_WIDTH - 300, 128, 30);
+    for (let row = 0; row < 12; row += 1) {
+      for (let column = 0; column < 25; column += 1) {
+        const tileX = plazaX + 14 + column * 42;
+        const tileY = plazaY + 14 + row * 42;
+        const tileColor = (row + column) % 2 === 0 ? 0x708094 : 0x64748b;
+        background.fillStyle(tileColor, 0.9);
+        background.fillRoundedRect(tileX, tileY, 34, 34, 8);
+      }
+    }
+
+    background.fillStyle(0x1f2937, 1);
+    background.fillRect(0, roadY, WORLD_WIDTH, WORLD_HEIGHT - roadY);
+
+    for (let x = 0; x < WORLD_WIDTH; x += 74) {
+      background.fillStyle(0xf8fafc, 0.34);
+      background.fillRect(x + 8, roadY + 74, 42, 4);
+    }
+
+    for (let stripeIndex = 0; stripeIndex < 7; stripeIndex += 1) {
+      background.fillStyle(0xf8fafc, 0.82);
+      background.fillRect(WORLD_WIDTH / 2 - 54 + stripeIndex * 16, roadY - 2, 10, 84);
+    }
+
+    this.drawBuildingBlock(background, 126, 132, 214, 148, {
+      bodyColor: 0x6d5f7d,
+      roofColor: 0x433252,
+      trimColor: this.theme.accentColor,
+    });
+    this.drawBuildingBlock(background, WORLD_WIDTH - 340, 132, 214, 148, {
+      bodyColor: 0x5d7084,
+      roofColor: 0x26384d,
+      trimColor: this.theme.accentColor,
+    });
+    this.drawBuildingBlock(background, 112, 360, 176, 166, {
+      bodyColor: 0x7b6047,
+      roofColor: 0x5b3b28,
+      trimColor: this.theme.accentColor,
+    });
+    this.drawBuildingBlock(background, WORLD_WIDTH - 288, 360, 176, 166, {
+      bodyColor: 0x506d69,
+      roofColor: 0x2b4541,
+      trimColor: this.theme.accentColor,
+    });
+
+    background.fillStyle(0xe2d3a0, 0.9);
+    background.fillRoundedRect(WORLD_WIDTH / 2 - 210, plazaY + 238, 420, 18, 9);
+    background.fillRoundedRect(WORLD_WIDTH / 2 - 9, plazaY + 118, 18, 228, 9);
+
+    this.drawBench(background, WORLD_WIDTH / 2 + 196, roadY - 58);
+    this.drawBench(background, WORLD_WIDTH / 2 - 228, roadY - 58);
+    this.drawLamp(background, WORLD_WIDTH / 2 - 164, plazaY + 148);
+    this.drawLamp(background, WORLD_WIDTH / 2 + 164, plazaY + 148);
+    this.drawTree(background, 170, roadY - 24);
+    this.drawTree(background, 298, roadY - 24);
+    this.drawTree(background, WORLD_WIDTH - 170, roadY - 24);
+    this.drawTree(background, WORLD_WIDTH - 298, roadY - 24);
 
     this.add
-      .text(WORLD_WIDTH / 2, 132, zone.label, {
+      .text(WORLD_WIDTH / 2, 392, zone.label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '24px',
-        color: Phaser.Display.Color.IntegerToColor(zone.accentColor).rgba,
+        fontSize: '44px',
+        color: '#f8fafc',
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setAlpha(0.28);
   }
 }

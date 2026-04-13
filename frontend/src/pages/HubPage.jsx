@@ -2795,7 +2795,7 @@ export default function HubPage() {
                 <span>
                   이 구역 접속 {currentZonePopulation}명 · 이용 가능한 공간 {isLoading ? '...' : spaces.length}개
                 </span>
-                <span>입구 앞에서 Space 또는 Enter를 누르면 해당 공간으로 들어갑니다.</span>
+                <span>입구 앞에서 위쪽 방향키를 누르면 해당 공간으로 들어갑니다.</span>
               </article>
 
               <div className="lobby-quick-actions">
