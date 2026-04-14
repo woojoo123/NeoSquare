@@ -22,10 +22,16 @@ import {
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
 import { getPrimarySpace, resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
+import { useSessionMedia } from '../lib/useSessionMedia';
 import { useAuthStore } from '../store/authStore';
 
 const STUDY_RECRUIT_PREFIX = '[스터디 모집]';
 const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY', 'MENTORING'];
+const CHAT_SCOPE_PUBLIC = 'PUBLIC';
+const CHAT_SCOPE_WHISPER = 'WHISPER';
+const CHAT_VARIANT_TEXT = 'TEXT';
+const CHAT_VARIANT_EMOJI = 'EMOJI';
+const QUICK_EMOJI_OPTIONS = ['😀', '👍', '🙌', '❤️', '😂'];
 
 function getDefaultReservationDateTime() {
   const now = new Date();
@@ -35,30 +41,6 @@ function getDefaultReservationDateTime() {
   const localOffset = now.getTimezoneOffset();
   const localDate = new Date(now.getTime() - localOffset * 60 * 1000);
   return localDate.toISOString().slice(0, 16);
-}
-
-function formatRealtimeConnectionStatus(status) {
-  if (status === 'connecting') {
-    return '연결 중';
-  }
-
-  if (status === 'reconnecting') {
-    return '재연결 중';
-  }
-
-  if (status === 'connected') {
-    return '연결됨';
-  }
-
-  if (status === 'disconnected') {
-    return '연결 종료';
-  }
-
-  if (status === 'error') {
-    return '오류';
-  }
-
-  return '대기 중';
 }
 
 function buildStudyRecruitmentMessage(topic, note) {
@@ -106,59 +88,6 @@ function formatStudyParticipantCount(count) {
   return `${count}명 참여 중`;
 }
 
-function getLabelInitial(label) {
-  const trimmedLabel = label?.trim();
-
-  if (!trimmedLabel) {
-    return '?';
-  }
-
-  return trimmedLabel.charAt(0).toUpperCase();
-}
-
-function getSpaceGuideContent(spaceType, selectedParticipant, joinedStudySessionCount) {
-  if (spaceType === 'STUDY') {
-    return {
-      eyebrow: '스터디 흐름',
-      title: '가이드',
-      summary: '채팅이나 스터디 탭에서 바로 같이 공부할 흐름을 열 수 있습니다.',
-      steps: [
-        '스터디 주제를 적고 세션을 만듭니다.',
-        joinedStudySessionCount > 0
-          ? '참여 중인 세션이 있으면 바로 입장해 이어서 진행합니다.'
-          : '현재 열린 세션 목록을 보고 바로 참여합니다.',
-        '필요하면 채팅으로 모집 메시지를 남깁니다.',
-      ],
-    };
-  }
-
-  if (spaceType === 'MENTORING') {
-    return {
-      eyebrow: '멘토링 흐름',
-      title: '가이드',
-      summary: '상대를 선택한 뒤 요청이나 예약을 바로 보낼 수 있습니다.',
-      steps: [
-        selectedParticipant
-          ? `${selectedParticipant.label}님을 선택했습니다. 바로 요청이나 예약을 보낼 수 있습니다.`
-          : '참가자 목록에서 대화할 상대를 먼저 고릅니다.',
-        '빠른 멘토링 요청으로 대화를 시작합니다.',
-        '시간을 맞춰 진행하려면 예약 제안을 보냅니다.',
-      ],
-    };
-  }
-
-  return {
-    eyebrow: '메인광장 흐름',
-    title: '가이드',
-    summary: '방향키로 움직이고 문 앞에서 위쪽 방향키로 입장합니다.',
-    steps: [
-      '주변 참가자를 확인합니다.',
-      '문 앞에서 위쪽 방향키로 입장합니다.',
-      '필요하면 채팅이나 참가자 탭을 확인합니다.',
-    ],
-  };
-}
-
 export default function SpacePage() {
   const { spaceId } = useParams();
   const location = useLocation();
@@ -182,6 +111,7 @@ export default function SpacePage() {
   const [reservationNotice, setReservationNotice] = useState('');
   const [reservationError, setReservationError] = useState('');
   const [chatInput, setChatInput] = useState('');
+  const [chatScope, setChatScope] = useState(CHAT_SCOPE_PUBLIC);
   const [studyTopic, setStudyTopic] = useState('');
   const [studyNote, setStudyNote] = useState('');
   const [studyStatus, setStudyStatus] = useState('idle');
@@ -190,9 +120,10 @@ export default function SpacePage() {
   const [studySessions, setStudySessions] = useState([]);
   const [studySessionsStatus, setStudySessionsStatus] = useState('idle');
   const [studySessionsError, setStudySessionsError] = useState('');
-  const [activeDrawer, setActiveDrawer] = useState('guide');
+  const [activeDrawer, setActiveDrawer] = useState(null);
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [isSupportPanelOpen, setIsSupportPanelOpen] = useState(false);
+  const [isEmojiPaletteOpen, setIsEmojiPaletteOpen] = useState(false);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -202,15 +133,27 @@ export default function SpacePage() {
       ? location.state.entryFromSpaceType
       : null;
   const chatInputRef = useRef(null);
+  const chatMessagesEndRef = useRef(null);
   const studyTopicInputRef = useRef(null);
   const utilityMenuRef = useRef(null);
   const {
-    connectionStatus,
+    localVideoRef,
+    hasLocalPreview,
+    cameraOn,
+    microphoneOn,
+    statusMessage: mediaStatusMessage,
+    errorMessage: mediaErrorMessage,
+    startLocalPreview,
+    toggleCamera,
+    toggleMicrophone,
+    stopLocalPreview,
+  } = useSessionMedia();
+  const {
     lastError,
     remoteEvent,
     remoteUsers,
     chatMessages,
-    reconnectAttempt,
+    latestChatMessage,
     sendChatMessage,
     sendUserMove,
   } = useLobbyRealtime({
@@ -226,22 +169,10 @@ export default function SpacePage() {
     [remoteUsers, selectedParticipantId]
   );
   const spaceDefinition = getLobbyZoneDefinition(space?.type);
-  const arrivalDefinition = spawnFromSpaceType ? getLobbyZoneDefinition(spawnFromSpaceType) : null;
   const currentAvatarOrder = useMemo(() => {
     const resolvedIndex = AVATAR_PRESETS.findIndex((preset) => preset.id === selectedAvatarId);
     return resolvedIndex >= 0 ? resolvedIndex + 1 : 1;
   }, [selectedAvatarId]);
-  const worldParticipantCount = remoteUsers.length + 1;
-  const visiblePresenceUsers = useMemo(() => remoteUsers.slice(0, 5), [remoteUsers]);
-  const hiddenPresenceCount = Math.max(remoteUsers.length - visiblePresenceUsers.length, 0);
-  const joinedStudySessions = useMemo(
-    () => studySessions.filter((studySession) => studySession.joined),
-    [studySessions]
-  );
-  const guideContent = useMemo(
-    () => getSpaceGuideContent(space?.type, selectedParticipant, joinedStudySessions.length),
-    [joinedStudySessions.length, selectedParticipant, space?.type]
-  );
   const primarySpace = useMemo(() => getPrimarySpace(spaceDirectory), [spaceDirectory]);
   const connectedSpaces = useMemo(
     () =>
@@ -253,11 +184,7 @@ export default function SpacePage() {
     [space?.type, spaceDirectory]
   );
   const drawerTabs = useMemo(() => {
-    const tabs = [
-      { id: 'guide', label: '가이드' },
-      { id: 'people', label: '참가자' },
-      { id: 'chat', label: '채팅' },
-    ];
+    const tabs = [{ id: 'chat', label: '채팅' }];
 
     if (space?.type === 'STUDY') {
       tabs.push({ id: 'study', label: '스터디' });
@@ -269,6 +196,10 @@ export default function SpacePage() {
 
     return tabs;
   }, [space?.type]);
+  const chatTargetValue =
+    chatScope === CHAT_SCOPE_WHISPER && selectedParticipant
+      ? String(selectedParticipant.userId)
+      : CHAT_SCOPE_PUBLIC;
 
   useEffect(() => {
     if (!currentUser?.id) {
@@ -300,23 +231,17 @@ export default function SpacePage() {
     if (!space?.type) {
       return;
     }
-
-    if (space.type === 'STUDY') {
-      setActiveDrawer('study');
-      return;
-    }
-
-    if (space.type === 'MENTORING') {
-      setActiveDrawer('mentoring');
-      return;
-    }
-
-    setActiveDrawer('guide');
+    setActiveDrawer(null);
+    setIsSupportPanelOpen(false);
   }, [space?.id, space?.type]);
 
   useEffect(() => {
+    if (activeDrawer == null) {
+      return;
+    }
+
     if (!drawerTabs.some((tab) => tab.id === activeDrawer)) {
-      setActiveDrawer(drawerTabs[0]?.id || 'guide');
+      setActiveDrawer(drawerTabs[0]?.id || null);
     }
   }, [activeDrawer, drawerTabs]);
 
@@ -353,6 +278,16 @@ export default function SpacePage() {
       setSelectedParticipantId(null);
     }
   }, [remoteUsers, selectedParticipantId]);
+
+  useEffect(() => {
+    if (chatScope === CHAT_SCOPE_WHISPER && !selectedParticipant) {
+      setChatScope(CHAT_SCOPE_PUBLIC);
+    }
+  }, [chatScope, selectedParticipant]);
+
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [chatMessages]);
 
   useEffect(() => {
     let isMounted = true;
@@ -489,14 +424,31 @@ export default function SpacePage() {
     };
   }, [clearAuth, navigate, space?.id, space?.type]);
 
+  const focusChatComposer = () => {
+    setActiveDrawer('chat');
+    setIsSupportPanelOpen(true);
+    setIsEmojiPaletteOpen(false);
+    window.requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
+  };
+
+  const handleActivateWhisper = (participant = selectedParticipant) => {
+    if (!participant?.userId) {
+      return;
+    }
+
+    setSelectedParticipantId(participant.userId);
+    setChatScope(CHAT_SCOPE_WHISPER);
+    focusChatComposer();
+  };
+
   const selectParticipant = (participant) => {
     if (!participant?.userId) {
       return;
     }
 
     setSelectedParticipantId(participant.userId);
-    setIsSupportPanelOpen(true);
-    setActiveDrawer(space?.type === 'MENTORING' ? 'mentoring' : 'people');
     setRequestNotice('');
     setRequestError('');
     setReservationNotice('');
@@ -504,19 +456,49 @@ export default function SpacePage() {
     setStudyNotice('');
     setStudyError('');
 
-    if (!requestMessage.trim()) {
+    if (space?.type === 'MENTORING' && !requestMessage.trim()) {
       setRequestMessage(`${participant.label}님, 잠깐 이야기 나눌 수 있을까요?`);
     }
 
-    if (!reservationMessage.trim()) {
+    if (space?.type === 'MENTORING' && !reservationMessage.trim()) {
       setReservationMessage(`${participant.label}님과 시간을 맞춰 멘토링을 진행하고 싶어요.`);
     }
+    handleActivateWhisper(participant);
+  };
+
+  const handleSetPublicChat = () => {
+    setChatScope(CHAT_SCOPE_PUBLIC);
+    focusChatComposer();
+  };
+
+  const handleChatTargetChange = (event) => {
+    const nextValue = event.target.value;
+
+    if (nextValue === CHAT_SCOPE_PUBLIC) {
+      handleSetPublicChat();
+      return;
+    }
+
+    const nextParticipant =
+      remoteUsers.find((user) => String(user.userId) === String(nextValue)) || null;
+
+    if (!nextParticipant) {
+      setChatScope(CHAT_SCOPE_PUBLIC);
+      return;
+    }
+
+    handleActivateWhisper(nextParticipant);
   };
 
   const handleChatSubmit = (event) => {
     event.preventDefault();
 
-    const didSend = sendChatMessage(chatInput);
+    const didSend = sendChatMessage(chatInput, {
+      scope: chatScope,
+      variant: CHAT_VARIANT_TEXT,
+      recipientUserId: selectedParticipant?.userId ?? null,
+      recipientNickname: selectedParticipant?.label ?? '',
+    });
 
     if (didSend) {
       setChatInput('');
@@ -524,17 +506,22 @@ export default function SpacePage() {
   };
 
   const handleMentionParticipant = () => {
-    if (!selectedParticipant) {
+    handleActivateWhisper();
+  };
+
+  const handleSendEmojiMessage = (emoji) => {
+    const didSend = sendChatMessage(emoji, {
+      scope: chatScope,
+      variant: CHAT_VARIANT_EMOJI,
+      recipientUserId: selectedParticipant?.userId ?? null,
+      recipientNickname: selectedParticipant?.label ?? '',
+    });
+
+    if (!didSend) {
       return;
     }
 
-    setActiveDrawer('chat');
-    setChatInput((currentValue) =>
-      currentValue.trim()
-        ? currentValue
-        : `${selectedParticipant.label}님, 잠깐 이야기 가능하실까요?`
-    );
-    chatInputRef.current?.focus();
+    setIsEmojiPaletteOpen(false);
   };
 
   const handleCreateRequest = async (event) => {
@@ -743,30 +730,9 @@ export default function SpacePage() {
     handleMoveToSpace(targetSpace);
   };
 
-  const handleOpenStudyComposer = () => {
-    setIsSupportPanelOpen(true);
-    setActiveDrawer('study');
-    window.requestAnimationFrame(() => {
-      studyTopicInputRef.current?.focus();
-    });
-  };
-
   const handleOpenMentoringComposer = () => {
     setIsSupportPanelOpen(true);
     setActiveDrawer('mentoring');
-  };
-
-  const handleOpenParticipantList = () => {
-    setIsSupportPanelOpen(true);
-    setActiveDrawer('people');
-  };
-
-  const handleOpenChatPanel = () => {
-    setIsSupportPanelOpen(true);
-    setActiveDrawer('chat');
-    window.requestAnimationFrame(() => {
-      chatInputRef.current?.focus();
-    });
   };
 
   const handleReturnToPrimarySpace = async () => {
@@ -795,6 +761,8 @@ export default function SpacePage() {
   };
 
   const handleToggleSupportDrawer = (drawerId) => {
+    setIsEmojiPaletteOpen(false);
+
     if (isSupportPanelOpen && activeDrawer === drawerId) {
       setIsSupportPanelOpen(false);
       return;
@@ -802,16 +770,6 @@ export default function SpacePage() {
 
     setActiveDrawer(drawerId);
     setIsSupportPanelOpen(true);
-  };
-
-  const handleOpenAvatarMenuAction = () => {
-    setIsUtilityMenuOpen(false);
-    handleOpenAvatarOnboarding();
-  };
-
-  const handleOpenHubMenuAction = () => {
-    setIsUtilityMenuOpen(false);
-    navigate('/hub');
   };
 
   const handleReturnToPrimarySpaceMenuAction = async () => {
@@ -823,106 +781,98 @@ export default function SpacePage() {
     setIsSupportPanelOpen(false);
   };
 
-  const activeDrawerLabel =
-    drawerTabs.find((tab) => tab.id === activeDrawer)?.label || '가이드';
+  const handleToggleEmojiPalette = () => {
+    setIsSupportPanelOpen(false);
+    setActiveDrawer(null);
+    setIsEmojiPaletteOpen((currentValue) => !currentValue);
+  };
 
-  const activeDrawerDescription =
-    activeDrawer === 'guide'
-      ? '움직임과 입장 방법을 빠르게 확인합니다.'
-      : activeDrawer === 'people'
-      ? '현재 공간에 함께 있는 참가자를 확인합니다.'
-      : activeDrawer === 'chat'
-        ? '현재 공간에 있는 사람들과 바로 대화합니다.'
-        : activeDrawer === 'study'
-            ? '스터디 세션을 열거나 참여합니다.'
-            : activeDrawer === 'mentoring'
-              ? '요청이나 예약으로 멘토링을 이어갑니다.'
-              : '현재 공간에서 필요한 도구를 확인합니다.';
+  const handleToggleCameraDock = async () => {
+    setIsEmojiPaletteOpen(false);
 
-  const renderDrawerContent = () => {
-    if (activeDrawer === 'people') {
-      return (
-        <div className="space-hud-stack">
-          <section className="space-hud-card">
-            <h3>선택한 참가자</h3>
-            {!selectedParticipant ? (
-              <p className="app-note">
-                월드에서 다른 아바타를 클릭하거나 아래 목록에서 한 명을 선택하면 바로 상호작용할 수 있습니다.
-              </p>
-            ) : (
-              <>
-                <strong>{selectedParticipant.label}</strong>
-                <p className="app-note">지금 같은 공간에 있습니다. 바로 말을 걸거나 요청을 시작할 수 있습니다.</p>
-                <div className="space-selected-actions">
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleMentionParticipant}
-                  >
-                    채팅으로 말 걸기
-                  </button>
-                  {space?.type === 'MENTORING' ? (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={handleOpenMentoringComposer}
-                    >
-                      멘토링 요청 열기
-                    </button>
-                  ) : null}
-                </div>
-              </>
-            )}
-          </section>
+    if (!hasLocalPreview) {
+      const stream = await startLocalPreview();
 
-          <section className="space-hud-card">
-            <h3>현재 참가자</h3>
-            {remoteUsers.length === 0 ? (
-              <p className="app-note">
-                아직 이 공간에 보이는 다른 참가자가 없습니다. 다른 계정으로 같은 공간에 들어와 보세요.
-              </p>
-            ) : (
-              <ul className="space-participant-list">
-                {remoteUsers.map((user) => {
-                  const isSelected =
-                    String(user.userId) === String(selectedParticipant?.userId);
+      if (!stream) {
+        return;
+      }
 
-                  return (
-                    <li
-                      key={user.userId}
-                      className={`space-participant-card ${
-                        isSelected ? 'space-participant-card--selected' : ''
-                      }`}
-                    >
-                      <div>
-                        <strong>{user.label}</strong>
-                        <p>{spaceDefinition.label}에서 함께 이동 중</p>
-                      </div>
-                      <button
-                        type="button"
-                        className={isSelected ? 'secondary-button' : 'primary-button'}
-                        onClick={() => selectParticipant(user)}
-                      >
-                        {isSelected ? '선택됨' : '상호작용'}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
-      );
+      if (stream.getAudioTracks()[0]?.enabled) {
+        toggleMicrophone();
+      }
+
+      return;
     }
 
+    const nextCameraOn = toggleCamera();
+
+    if (!nextCameraOn && !microphoneOn) {
+      stopLocalPreview();
+    }
+  };
+
+  const handleToggleMicrophoneDock = async () => {
+    setIsEmojiPaletteOpen(false);
+
+    if (!hasLocalPreview) {
+      const stream = await startLocalPreview();
+
+      if (!stream) {
+        return;
+      }
+
+      if (stream.getVideoTracks()[0]?.enabled) {
+        toggleCamera();
+      }
+
+      return;
+    }
+
+    const nextMicrophoneOn = toggleMicrophone();
+
+    if (!nextMicrophoneOn && !cameraOn) {
+      stopLocalPreview();
+    }
+  };
+
+  const activeDrawerLabel = drawerTabs.find((tab) => tab.id === activeDrawer)?.label || '채팅';
+
+  const activeDrawerDescription =
+    activeDrawer === 'chat'
+      ? ''
+      : activeDrawer === 'study'
+          ? '스터디 세션을 열거나 참여합니다.'
+          : activeDrawer === 'mentoring'
+            ? '요청이나 예약으로 멘토링을 이어갑니다.'
+            : '현재 공간에서 필요한 도구를 확인합니다.';
+
+  const renderDrawerContent = () => {
     if (activeDrawer === 'chat') {
       return (
         <section className="lobby-chat-panel space-hud-chat-panel">
           <div className="lobby-chat-header">
             <div>
               <h3>{spaceDefinition.label} 채팅</h3>
-              <p className="app-note">이 공간에 접속한 사용자끼리만 메시지가 공유됩니다.</p>
             </div>
+          </div>
+
+          <div className="space-chat-target-bar">
+            <label className="space-chat-target-label" htmlFor="space-chat-target-select">
+              대상
+            </label>
+            <select
+              id="space-chat-target-select"
+              className="space-chat-target-select"
+              value={chatTargetValue}
+              onChange={handleChatTargetChange}
+            >
+              <option value={CHAT_SCOPE_PUBLIC}>All</option>
+              {remoteUsers.map((user) => (
+                <option key={user.userId} value={String(user.userId)}>
+                  {user.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="lobby-chat-messages">
@@ -932,15 +882,23 @@ export default function SpacePage() {
               chatMessages.map((message) => (
                 <article
                   key={message.id}
-                  className={`chat-message ${message.isMine ? 'chat-message--mine' : ''}`}
+                  className={`chat-message ${message.isMine ? 'chat-message--mine' : ''} ${
+                    message.scope === CHAT_SCOPE_WHISPER ? 'chat-message--whisper' : ''
+                  } ${message.variant === CHAT_VARIANT_EMOJI ? 'chat-message--emoji' : ''}`}
                 >
                   <span className="chat-message__meta">
                     {message.isMine ? '나' : message.nickname}
+                    {message.scope === CHAT_SCOPE_WHISPER
+                      ? message.isMine
+                        ? ` · ${message.recipientNickname || '선택한 참가자'}님께 귓속말`
+                        : ' · 귓속말'
+                      : ' · 전체'}
                   </span>
                   <p>{message.content}</p>
                 </article>
               ))
             )}
+            <div ref={chatMessagesEndRef} />
           </div>
 
           <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
@@ -948,12 +906,16 @@ export default function SpacePage() {
               ref={chatInputRef}
               type="text"
               className="app-input"
-              placeholder="메시지를 입력하세요"
+              placeholder={
+                chatScope === CHAT_SCOPE_WHISPER && selectedParticipant
+                  ? `${selectedParticipant.label}님께 귓속말을 입력하세요`
+                  : '메시지를 입력하세요'
+              }
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
             />
             <button type="submit" className="primary-button">
-              전송
+              {chatScope === CHAT_SCOPE_WHISPER ? '귓속말' : '전송'}
             </button>
           </form>
         </section>
@@ -1056,7 +1018,7 @@ export default function SpacePage() {
             <h3>선택한 참가자</h3>
             {!selectedParticipant ? (
               <p className="app-note">
-                아바타를 클릭하거나 참가자 탭에서 한 명을 선택하면 요청과 예약을 바로 보낼 수 있습니다.
+                아바타 가까이에서 Space를 누르거나 클릭해 상대를 선택하면 요청과 예약을 바로 보낼 수 있습니다.
               </p>
             ) : (
               <>
@@ -1142,26 +1104,7 @@ export default function SpacePage() {
       );
     }
 
-    return (
-      <div className="space-hud-stack">
-        {arrivalDefinition ? (
-          <section className="space-hud-card space-hud-card--accent space-hud-card--compact">
-            <span className="space-arrival-banner__eyebrow">이전 공간</span>
-            <strong>{arrivalDefinition.label}에서 이동했습니다.</strong>
-          </section>
-        ) : null}
-
-        <section className="space-hud-card">
-          <h3>가이드</h3>
-          <p className="app-note">{guideContent.summary}</p>
-          <ol className="space-guide-list">
-            {guideContent.steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        </section>
-      </div>
-    );
+    return null;
   };
 
   return (
@@ -1171,6 +1114,7 @@ export default function SpacePage() {
           <section className="space-world-stage space-world-stage--immersive">
             <div className="space-world-stage__canvas">
               <SpaceGame
+                currentUserId={currentUser?.id ?? null}
                 playerLabel={currentUser?.nickname || '나'}
                 spaceType={space.type}
                 avatarPresetId={avatarPresetId}
@@ -1180,12 +1124,13 @@ export default function SpacePage() {
                 onSpaceEnter={handleSpacePortalEnter}
                 onParticipantSelect={selectParticipant}
                 remoteEvent={remoteEvent}
+                chatMessageEvent={latestChatMessage}
               />
             </div>
 
             <header className="space-top-overlay">
               <div className="space-top-overlay__brand">
-              <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
+                <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
               </div>
 
               <div className="space-top-overlay__title" aria-label="현재 공간">
@@ -1193,10 +1138,6 @@ export default function SpacePage() {
               </div>
 
               <div className="space-top-overlay__meta">
-                <span className="space-top-overlay__chip">{`${worldParticipantCount}명 접속 중`}</span>
-                <span className="space-top-overlay__chip">
-                  {formatRealtimeConnectionStatus(connectionStatus)}
-                </span>
                 <div className="space-utility-menu-wrap" ref={utilityMenuRef}>
                   <button
                     type="button"
@@ -1218,21 +1159,6 @@ export default function SpacePage() {
                       ) : null}
                       <button
                         type="button"
-                        className="space-utility-menu__item"
-                        onClick={handleOpenAvatarMenuAction}
-                        disabled={!currentUser?.id}
-                      >
-                        아바타 변경
-                      </button>
-                      <button
-                        type="button"
-                        className="space-utility-menu__item"
-                        onClick={handleOpenHubMenuAction}
-                      >
-                        활동 허브 열기
-                      </button>
-                      <button
-                        type="button"
                         className="space-utility-menu__item space-utility-menu__item--danger"
                         onClick={handleLogout}
                       >
@@ -1244,68 +1170,9 @@ export default function SpacePage() {
               </div>
             </header>
 
-            <aside className="space-presence-strip" aria-label="현재 공간 참가자">
-              <div className="space-presence-strip__list">
-                <button
-                  type="button"
-                  className="space-presence-chip space-presence-chip--current"
-                  disabled
-                  aria-label={`${currentUser?.nickname || '나'}로 접속 중`}
-                >
-                  <span className="space-presence-chip__avatar">
-                    {getLabelInitial(currentUser?.nickname || '나')}
-                  </span>
-                  <span className="space-presence-chip__label">{currentUser?.nickname || '나'}</span>
-                </button>
-
-                {visiblePresenceUsers.map((user) => {
-                  const isSelected =
-                    String(user.userId) === String(selectedParticipant?.userId);
-
-                  return (
-                    <button
-                      key={user.userId}
-                      type="button"
-                      className={`space-presence-chip ${isSelected ? 'space-presence-chip--selected' : ''}`}
-                      onClick={() => selectParticipant(user)}
-                    >
-                      <span className="space-presence-chip__avatar">
-                        {getLabelInitial(user.label)}
-                      </span>
-                      <span className="space-presence-chip__label">{user.label}</span>
-                    </button>
-                  );
-                })}
-
-                {hiddenPresenceCount > 0 ? (
-                  <div className="space-presence-chip space-presence-chip--more" aria-label={`추가 참가자 ${hiddenPresenceCount}명`}>
-                    <span className="space-presence-chip__avatar">+{hiddenPresenceCount}</span>
-                  </div>
-                ) : null}
-              </div>
-            </aside>
-
             {avatarNotice ? <p className="space-toast space-toast--success">{avatarNotice}</p> : null}
             {lastError ? <p className="space-toast space-toast--error">{lastError}</p> : null}
-
-            <nav className="space-support-rail" aria-label="메타버스 도구">
-              {drawerTabs.map((tab) => {
-                const isActive = isSupportPanelOpen && activeDrawer === tab.id;
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className={`space-support-rail__button ${
-                      isActive ? 'space-support-rail__button--active' : ''
-                    }`}
-                    onClick={() => handleToggleSupportDrawer(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </nav>
+            {mediaErrorMessage ? <p className="space-toast space-toast--error">{mediaErrorMessage}</p> : null}
 
             {isSupportPanelOpen ? (
               <aside className="space-hud-drawer" aria-label="메타버스 도구 패널">
@@ -1313,7 +1180,7 @@ export default function SpacePage() {
                   <div className="space-hud-drawer__header">
                     <div>
                       <h2>{activeDrawerLabel}</h2>
-                      <p>{activeDrawerDescription}</p>
+                      {activeDrawerDescription ? <p>{activeDrawerDescription}</p> : null}
                     </div>
                     <button
                       type="button"
@@ -1328,11 +1195,106 @@ export default function SpacePage() {
               </aside>
             ) : null}
 
-            <div className="space-world-overlay space-world-overlay--controls">
-              <span>이동: 방향키</span>
-              <span>상호작용: 클릭</span>
-              <span>입장: 위쪽 방향키</span>
-            </div>
+            {isEmojiPaletteOpen ? (
+              <section className="space-emoji-popover" aria-label="빠른 이모지">
+                <div className="space-emoji-popover__header">
+                  <strong>빠른 이모지</strong>
+                  <span>
+                    {chatScope === CHAT_SCOPE_WHISPER && selectedParticipant
+                      ? `${selectedParticipant.label}님께 전송`
+                      : 'All'}
+                  </span>
+                </div>
+                <div className="space-emoji-popover__grid">
+                  {QUICK_EMOJI_OPTIONS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      className="space-emoji-popover__button"
+                      onClick={() => handleSendEmojiMessage(emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="space-bottom-bar" aria-label="메타버스 컨트롤 바">
+              <div className="space-bottom-bar__left">
+                <button
+                  type="button"
+                  className={`space-bottom-bar__action ${
+                    microphoneOn ? 'space-bottom-bar__action--active' : ''
+                  }`}
+                  onClick={handleToggleMicrophoneDock}
+                >
+                  마이크
+                </button>
+                <button
+                  type="button"
+                  className={`space-bottom-bar__action ${
+                    cameraOn ? 'space-bottom-bar__action--active' : ''
+                  }`}
+                  onClick={handleToggleCameraDock}
+                >
+                  카메라
+                </button>
+                <button
+                  type="button"
+                  className={`space-bottom-bar__action ${
+                    isEmojiPaletteOpen ? 'space-bottom-bar__action--active' : ''
+                  }`}
+                  onClick={handleToggleEmojiPalette}
+                >
+                  이모지
+                </button>
+                <button
+                  type="button"
+                  className={`space-bottom-bar__action ${
+                    isSupportPanelOpen && activeDrawer === 'chat'
+                      ? 'space-bottom-bar__action--active'
+                      : ''
+                  }`}
+                  onClick={() => handleToggleSupportDrawer('chat')}
+                >
+                  채팅
+                </button>
+              </div>
+
+              <div className="space-bottom-bar__center">
+                <span>이동: 방향키</span>
+                <span>대화: Space / 클릭</span>
+                <span>입장: 위쪽 방향키</span>
+              </div>
+
+              <div className="space-bottom-bar__right">
+                {hasLocalPreview ? (
+                  <div className="space-bottom-bar__preview">
+                    {cameraOn ? (
+                      <video
+                        ref={localVideoRef}
+                        className="space-bottom-bar__video"
+                        autoPlay
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="space-bottom-bar__preview-placeholder">
+                        {currentUser?.nickname || '나'}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-bottom-bar__status">
+                    <span>{microphoneOn ? '마이크 켜짐' : '마이크 꺼짐'}</span>
+                    <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
+                    {mediaStatusMessage ? <span>{mediaStatusMessage}</span> : null}
+                  </div>
+                )}
+              </div>
+            </section>
+
           </section>
         ) : (
           <section className="space-world-stage space-world-stage--immersive">

@@ -20,6 +20,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeWebSocketHandler.class);
+    private static final String CHAT_SCOPE_PUBLIC = "PUBLIC";
+    private static final String CHAT_SCOPE_WHISPER = "WHISPER";
 
     private final ObjectMapper objectMapper;
     private final MentoringSessionSignalingService mentoringSessionSignalingService;
@@ -161,7 +163,8 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 sendCurrentSpaceParticipants(session, spaceId);
                 broadcastToSpace(spaceId, normalizedMessage, session);
             }
-            case USER_MOVE, CHAT_SEND -> broadcastToSpace(spaceId, normalizedMessage, session);
+            case USER_MOVE -> broadcastToSpace(spaceId, normalizedMessage, session);
+            case CHAT_SEND -> handleSpaceChatMessage(session, normalizedMessage, spaceId);
             case USER_LEAVE -> {
                 broadcastToSpace(spaceId, normalizedMessage, session);
                 realtimeSessionRegistry.clearSessionSpace(session);
@@ -255,6 +258,45 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void handleSpaceChatMessage(
+            WebSocketSession session,
+            WebSocketMessage normalizedMessage,
+            Long spaceId
+    ) throws Exception {
+        String chatScope = extractChatScope(normalizedMessage.payload());
+
+        if (CHAT_SCOPE_WHISPER.equals(chatScope)) {
+            Long recipientUserId = extractRequiredLongPayloadValue(normalizedMessage.payload(), "recipientUserId");
+
+            if (recipientUserId.equals(normalizedMessage.senderId())) {
+                throw new IllegalArgumentException("귓속말 대상은 다른 참가자여야 합니다.");
+            }
+
+            broadcastWhisperToUserInSpace(spaceId, recipientUserId, normalizedMessage, session);
+            return;
+        }
+
+        broadcastToSpace(spaceId, normalizedMessage, session);
+    }
+
+    private void broadcastWhisperToUserInSpace(
+            Long spaceId,
+            Long recipientUserId,
+            WebSocketMessage outboundMessage,
+            WebSocketSession sourceSession
+    ) throws Exception {
+        Set<WebSocketSession> targetSessions =
+                realtimeSessionRegistry.findOpenSessionsInSpaceByUserId(spaceId, recipientUserId);
+
+        for (WebSocketSession targetSession : targetSessions) {
+            if (sourceSession != null && targetSession.getId().equals(sourceSession.getId())) {
+                continue;
+            }
+
+            sendMessage(targetSession, outboundMessage);
+        }
+    }
+
     private boolean isSpaceRealtimeEvent(WebSocketEventType eventType) {
         return eventType == WebSocketEventType.USER_ENTER
                 || eventType == WebSocketEventType.USER_LEAVE
@@ -336,6 +378,42 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
         String value = valueNode.asText();
         return value.isBlank() ? null : value;
+    }
+
+    private Long extractRequiredLongPayloadValue(JsonNode payload, String fieldName) {
+        String value = extractStringPayloadValue(payload, fieldName);
+
+        if (value == null) {
+            JsonNode valueNode = payload == null ? null : payload.get(fieldName);
+
+            if (valueNode != null && valueNode.isNumber()) {
+                return valueNode.longValue();
+            }
+
+            throw new IllegalArgumentException("WebSocket " + fieldName + " is required.");
+        }
+
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("WebSocket " + fieldName + " must be numeric.");
+        }
+    }
+
+    private String extractChatScope(JsonNode payload) {
+        String chatScope = extractStringPayloadValue(payload, "scope");
+
+        if (chatScope == null) {
+            return CHAT_SCOPE_PUBLIC;
+        }
+
+        String normalizedScope = chatScope.trim().toUpperCase();
+
+        if (CHAT_SCOPE_PUBLIC.equals(normalizedScope) || CHAT_SCOPE_WHISPER.equals(normalizedScope)) {
+            return normalizedScope;
+        }
+
+        throw new IllegalArgumentException("Unsupported chat scope.");
     }
 
     private void sendMessage(WebSocketSession session, WebSocketMessage message) throws Exception {

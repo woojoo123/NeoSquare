@@ -4,6 +4,7 @@ const GAME_WIDTH = 1100;
 const GAME_HEIGHT = 720;
 
 export default function SpaceGame({
+  currentUserId,
   playerLabel,
   spaceType,
   avatarPresetId,
@@ -13,6 +14,7 @@ export default function SpaceGame({
   onSpaceEnter,
   onParticipantSelect,
   remoteEvent,
+  chatMessageEvent,
 }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
@@ -21,6 +23,7 @@ export default function SpaceGame({
   const onSpaceEnterRef = useRef(onSpaceEnter);
   const onParticipantSelectRef = useRef(onParticipantSelect);
   const pendingRemoteEventsRef = useRef([]);
+  const pendingChatEventsRef = useRef([]);
   const connectedSpacesKey = Array.isArray(connectedSpaces)
     ? connectedSpaces.map((space) => `${space.id}:${space.type}`).join('|')
     : '';
@@ -51,6 +54,19 @@ export default function SpaceGame({
   }, [remoteEvent]);
 
   useEffect(() => {
+    if (!chatMessageEvent) {
+      return;
+    }
+
+    if (!sceneRef.current) {
+      pendingChatEventsRef.current.push(chatMessageEvent);
+      return;
+    }
+
+    sceneRef.current.applyChatMessage(chatMessageEvent);
+  }, [chatMessageEvent]);
+
+  useEffect(() => {
     if (!containerRef.current) {
       return undefined;
     }
@@ -69,6 +85,7 @@ export default function SpaceGame({
       }
 
       const spaceScene = new SpaceScene({
+        currentUserId,
         playerLabel,
         spaceType,
         avatarPresetId,
@@ -90,6 +107,10 @@ export default function SpaceGame({
             scene.applyRemoteEvent(queuedEvent);
           });
           pendingRemoteEventsRef.current = [];
+          pendingChatEventsRef.current.forEach((queuedEvent) => {
+            scene.applyChatMessage(queuedEvent);
+          });
+          pendingChatEventsRef.current = [];
         },
       });
 
@@ -121,6 +142,7 @@ export default function SpaceGame({
       isDisposed = true;
       sceneRef.current = null;
       pendingRemoteEventsRef.current = [];
+      pendingChatEventsRef.current = [];
       if (gameRef.current) {
         gameRef.current.destroy(true);
       } else {
@@ -128,7 +150,7 @@ export default function SpaceGame({
       }
       gameRef.current = null;
     };
-  }, [avatarPresetId, connectedSpacesKey, playerLabel, spaceType, spawnFromSpaceType]);
+  }, [avatarPresetId, connectedSpacesKey, currentUserId, playerLabel, spaceType, spawnFromSpaceType]);
 
   return (
     <div className="space-game-shell">

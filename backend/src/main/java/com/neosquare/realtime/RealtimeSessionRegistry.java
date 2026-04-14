@@ -76,6 +76,18 @@ public class RealtimeSessionRegistry {
         return findOpenSessionsFromMap(sessionsBySpaceId, spaceId);
     }
 
+    public Set<WebSocketSession> findOpenSessionsInSpaceByUserId(Long spaceId, Long userId) {
+        Set<WebSocketSession> userSessions = findOpenSessions(userId);
+
+        if (userSessions.isEmpty()) {
+            return Set.of();
+        }
+
+        return userSessions.stream()
+                .filter(session -> findSpaceId(session).map(spaceId::equals).orElse(false))
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
     public Optional<Long> findUserId(WebSocketSession session) {
         return Optional.ofNullable(userIdBySessionId.get(session.getId()));
     }

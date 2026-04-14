@@ -15,12 +15,16 @@ const WORLD_HEIGHT = 840;
 const PLAYER_SPEED = 250;
 const WORLD_PADDING = 56;
 const PORTAL_ENTRY_DISTANCE = 92;
+const PARTICIPANT_INTERACTION_DISTANCE = 96;
 const PORTAL_SPAWN_OFFSET_Y = 112;
+const CAMERA_ZOOM = 1.02;
 const AVATAR_HIT_AREA_WIDTH = 68;
 const AVATAR_HIT_AREA_HEIGHT = 96;
 const AVATAR_RING_Y = 16;
 const AVATAR_NAME_OFFSET_Y = 42;
 const AVATAR_WALK_FRAME_DURATION = 140;
+const CHAT_BUBBLE_DURATION_MS = 3600;
+const EMOJI_BUBBLE_DURATION_MS = 2200;
 
 const SPACE_PORTAL_LAYOUTS = {
   MAIN: [
@@ -35,6 +39,12 @@ const SPACE_PORTAL_LAYOUTS = {
     { targetType: 'MAIN', x: 1024, y: 650 },
     { targetType: 'STUDY', x: 256, y: 650 },
   ],
+};
+
+const DEFAULT_SPAWN_POSITIONS = {
+  MAIN: { x: WORLD_WIDTH / 2, y: 384 },
+  STUDY: { x: WORLD_WIDTH / 2, y: 404 },
+  MENTORING: { x: WORLD_WIDTH / 2, y: 404 },
 };
 
 function getSpaceTheme(spaceType) {
@@ -104,6 +114,7 @@ function getPortalDefinitions(spaceType, connectedSpaces) {
 
 export default class SpaceScene extends Phaser.Scene {
   constructor({
+    currentUserId = null,
     playerLabel = '나',
     spaceType = 'MAIN',
     avatarPresetId,
@@ -115,6 +126,7 @@ export default class SpaceScene extends Phaser.Scene {
     onParticipantSelect,
   } = {}) {
     super(`SpaceScene-${spaceType}`);
+    this.currentUserId = currentUserId;
     this.playerLabel = playerLabel;
     this.spaceType = spaceType;
     this.avatarPresetId = avatarPresetId;
@@ -127,11 +139,13 @@ export default class SpaceScene extends Phaser.Scene {
     this.player = null;
     this.playerAvatar = null;
     this.cursors = null;
+    this.interactionKey = null;
     this.remotePlayers = new Map();
     this.theme = getSpaceTheme(spaceType);
     this.portals = [];
     this.portalPrompt = null;
     this.activePortalTargetType = null;
+    this.activeParticipantUserId = null;
     this.isEnteringPortal = false;
   }
 
@@ -149,6 +163,8 @@ export default class SpaceScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#0f172a');
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.setRoundPixels(true);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
 
     this.drawSpaceBackground();
     this.portals = this.drawPortals();
@@ -165,12 +181,15 @@ export default class SpaceScene extends Phaser.Scene {
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.input.keyboard?.addCapture([
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
       Phaser.Input.Keyboard.KeyCodes.UP,
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
       Phaser.Input.Keyboard.KeyCodes.RIGHT,
     ]);
-    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+    this.interactionKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE) || null;
+    this.cameras.main.centerOn(spawnPosition.x, spawnPosition.y);
+    this.cameras.main.startFollow(this.player, true, 0.16, 0.16);
 
     this.portalPrompt = this.add
       .text(WORLD_WIDTH / 2, 86, '', {
@@ -183,7 +202,7 @@ export default class SpaceScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setScrollFactor(0);
 
-    this.refreshPortalPrompt();
+    this.refreshInteractionState();
     this.onPlayerMove?.({ x: this.player.x, y: this.player.y });
     this.onSceneReady?.(this);
   }
@@ -242,12 +261,22 @@ export default class SpaceScene extends Phaser.Scene {
         x: this.player.x,
         y: this.player.y,
       });
-      this.refreshPortalPrompt();
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
       this.handlePortalEnter();
     }
+
+    if (this.interactionKey && Phaser.Input.Keyboard.JustDown(this.interactionKey)) {
+      this.handleParticipantInteract();
+    }
+
+    this.refreshInteractionState();
+
+    this.refreshChatBubble(this.playerAvatar);
+    this.remotePlayers.forEach((remotePlayer) => {
+      this.refreshChatBubble(remotePlayer);
+    });
   }
 
   applyRemoteEvent(event) {
@@ -277,6 +306,23 @@ export default class SpaceScene extends Phaser.Scene {
     }
   }
 
+  applyChatMessage(chatMessage) {
+    if (!chatMessage?.senderId || !chatMessage?.content) {
+      return;
+    }
+
+    const targetAvatar =
+      chatMessage.senderId === this.currentUserId
+        ? this.playerAvatar
+        : this.remotePlayers.get(chatMessage.senderId) || null;
+
+    if (!targetAvatar) {
+      return;
+    }
+
+    this.showChatBubble(targetAvatar, chatMessage);
+  }
+
   handlePortalEnter() {
     if (!this.activePortalTargetType || this.isEnteringPortal) {
       return;
@@ -286,6 +332,25 @@ export default class SpaceScene extends Phaser.Scene {
     this.onSpaceEnter?.(this.activePortalTargetType);
     this.time.delayedCall(450, () => {
       this.isEnteringPortal = false;
+    });
+  }
+
+  handleParticipantInteract() {
+    if (this.isTypingContextActive() || !this.activeParticipantUserId) {
+      return;
+    }
+
+    const remotePlayer = this.remotePlayers.get(this.activeParticipantUserId);
+
+    if (!remotePlayer) {
+      return;
+    }
+
+    this.onParticipantSelect?.({
+      userId: this.activeParticipantUserId,
+      label: remotePlayer.nameLabel?.text || '참가자',
+      x: remotePlayer.container.x,
+      y: remotePlayer.container.y,
     });
   }
 
@@ -307,10 +372,7 @@ export default class SpaceScene extends Phaser.Scene {
       }
     }
 
-    return {
-      x: WORLD_WIDTH / 2,
-      y: WORLD_HEIGHT / 2,
-    };
+    return DEFAULT_SPAWN_POSITIONS[this.spaceType] || DEFAULT_SPAWN_POSITIONS.MAIN;
   }
 
   addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
@@ -457,9 +519,43 @@ export default class SpaceScene extends Phaser.Scene {
     );
   }
 
-  refreshPortalPrompt() {
+  resolveActiveParticipant() {
+    if (!this.player) {
+      return null;
+    }
+
+    let nearestParticipant = null;
+
+    this.remotePlayers.forEach((remotePlayer, userId) => {
+      const distance = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        remotePlayer.container.x,
+        remotePlayer.container.y
+      );
+
+      if (distance > PARTICIPANT_INTERACTION_DISTANCE) {
+        return;
+      }
+
+      if (!nearestParticipant || distance < nearestParticipant.distance) {
+        nearestParticipant = {
+          userId,
+          label: remotePlayer.nameLabel?.text || '참가자',
+          distance,
+        };
+      }
+    });
+
+    return nearestParticipant;
+  }
+
+  refreshInteractionState() {
     const activePortal = this.resolveActivePortal();
+    const activeParticipant = this.resolveActiveParticipant();
+
     this.activePortalTargetType = activePortal?.targetType ?? null;
+    this.activeParticipantUserId = activeParticipant?.userId ?? null;
 
     this.portals.forEach((portal) => {
       const isActive = activePortal?.targetType === portal.targetType;
@@ -477,16 +573,35 @@ export default class SpaceScene extends Phaser.Scene {
       portal.sign.setScale(isActive ? 1.04 : 1);
     });
 
+    this.remotePlayers.forEach((remotePlayer, userId) => {
+      this.setAvatarInteractableState(
+        remotePlayer,
+        String(userId) === String(this.activeParticipantUserId)
+      );
+    });
+
     if (!this.portalPrompt) {
       return;
     }
 
-    if (!activePortal) {
+    if (!activePortal && !activeParticipant) {
       this.portalPrompt.setText('');
       return;
     }
 
-    this.portalPrompt.setText(`${activePortal.label} 입장 가능 · 위쪽 방향키`);
+    if (activePortal && activeParticipant) {
+      this.portalPrompt.setText(
+        `${activeParticipant.label}님과 대화 · Space\n${activePortal.label} 입장 · 위쪽 방향키`
+      );
+      return;
+    }
+
+    if (activePortal) {
+      this.portalPrompt.setText(`${activePortal.label} 입장 · 위쪽 방향키`);
+      return;
+    }
+
+    this.portalPrompt.setText(`${activeParticipant.label}님과 대화 · Space`);
   }
 
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
@@ -509,8 +624,21 @@ export default class SpaceScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0);
     const badge = this.add.circle(21, -16, 4, palette.accentColorValue, 1);
+    const chatBubbleContainer = this.add.container(0, -72).setVisible(false);
+    const chatBubbleBackground = this.add.graphics();
+    const chatBubbleText = this.add
+      .text(0, 0, '', {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '13px',
+        color: '#0f172a',
+        align: 'center',
+        wordWrap: { width: 168 },
+      })
+      .setOrigin(0.5);
 
-    avatar.add([shadow, focusRing, sprite, badge, nameLabel]);
+    chatBubbleContainer.add([chatBubbleBackground, chatBubbleText]);
+
+    avatar.add([shadow, focusRing, sprite, badge, chatBubbleContainer, nameLabel]);
 
     const avatarState = {
       container: avatar,
@@ -519,11 +647,16 @@ export default class SpaceScene extends Phaser.Scene {
       sprite,
       badge,
       nameLabel,
+      chatBubbleContainer,
+      chatBubbleBackground,
+      chatBubbleText,
+      chatBubbleExpiresAt: 0,
       avatarPresetId,
       direction: 'down',
       step: 0,
       animationElapsed: 0,
       isHovered: false,
+      isInteractable: false,
     };
 
     focusRing.setAlpha(focusAlpha);
@@ -576,8 +709,121 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     avatarState.isHovered = isHovered;
-    avatarState.focusRing.setAlpha(isHovered ? 0.92 : 0);
-    avatarState.nameLabel.setColor(isHovered ? '#f8fafc' : '#e2e8f0');
+    this.syncAvatarHighlightState(avatarState);
+  }
+
+  setAvatarInteractableState(avatarState, isInteractable) {
+    if (!avatarState?.focusRing || !avatarState?.nameLabel) {
+      return;
+    }
+
+    avatarState.isInteractable = isInteractable;
+    this.syncAvatarHighlightState(avatarState);
+  }
+
+  syncAvatarHighlightState(avatarState) {
+    if (!avatarState?.focusRing || !avatarState?.nameLabel) {
+      return;
+    }
+
+    const focusAlpha = avatarState.isHovered ? 0.92 : avatarState.isInteractable ? 0.56 : 0;
+    avatarState.focusRing.setAlpha(focusAlpha);
+    avatarState.nameLabel.setColor(
+      avatarState.isHovered || avatarState.isInteractable ? '#f8fafc' : '#e2e8f0'
+    );
+  }
+
+  isTypingContextActive() {
+    if (typeof document === 'undefined') {
+      return false;
+    }
+
+    const activeElement = document.activeElement;
+
+    if (!activeElement) {
+      return false;
+    }
+
+    const tagName = activeElement.tagName?.toLowerCase();
+
+    return (
+      activeElement.isContentEditable ||
+      tagName === 'input' ||
+      tagName === 'textarea' ||
+      tagName === 'select'
+    );
+  }
+
+  showChatBubble(avatarState, chatMessage) {
+    if (!avatarState?.chatBubbleContainer || !avatarState.chatBubbleBackground || !avatarState.chatBubbleText) {
+      return;
+    }
+
+    const isEmoji = chatMessage.variant === 'EMOJI';
+    const isWhisper = chatMessage.scope === 'WHISPER';
+    const bubbleText = isEmoji
+      ? chatMessage.content
+      : chatMessage.content.length > 52
+        ? `${chatMessage.content.slice(0, 52)}...`
+        : chatMessage.content;
+
+    avatarState.chatBubbleText.setText(bubbleText);
+    avatarState.chatBubbleText.setStyle({
+      fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+      fontSize: isEmoji ? '28px' : '13px',
+      color: isWhisper ? '#f8fafc' : '#0f172a',
+      align: 'center',
+      wordWrap: { width: isEmoji ? 72 : 168 },
+    });
+
+    const textBounds = avatarState.chatBubbleText.getBounds();
+    const paddingX = isEmoji ? 16 : 14;
+    const paddingY = isEmoji ? 12 : 10;
+    const bubbleWidth = textBounds.width + paddingX * 2;
+    const bubbleHeight = textBounds.height + paddingY * 2;
+    const bubbleBackground = avatarState.chatBubbleBackground;
+
+    bubbleBackground.clear();
+    bubbleBackground.fillStyle(isWhisper ? 0x4338ca : 0xf8fafc, 0.96);
+    bubbleBackground.lineStyle(2, isWhisper ? 0xc4b5fd : 0xe2e8f0, 0.92);
+    bubbleBackground.fillRoundedRect(
+      -bubbleWidth / 2,
+      -bubbleHeight / 2,
+      bubbleWidth,
+      bubbleHeight,
+      16
+    );
+    bubbleBackground.strokeRoundedRect(
+      -bubbleWidth / 2,
+      -bubbleHeight / 2,
+      bubbleWidth,
+      bubbleHeight,
+      16
+    );
+    bubbleBackground.fillTriangle(
+      0,
+      bubbleHeight / 2 + 8,
+      -10,
+      bubbleHeight / 2 - 2,
+      10,
+      bubbleHeight / 2 - 2
+    );
+
+    avatarState.chatBubbleContainer.y = isEmoji ? -82 : -96;
+    avatarState.chatBubbleContainer.setVisible(true);
+    avatarState.chatBubbleExpiresAt =
+      this.time.now + (isEmoji ? EMOJI_BUBBLE_DURATION_MS : CHAT_BUBBLE_DURATION_MS);
+  }
+
+  refreshChatBubble(avatarState) {
+    if (!avatarState?.chatBubbleContainer) {
+      return;
+    }
+
+    if (avatarState.chatBubbleExpiresAt && avatarState.chatBubbleExpiresAt <= this.time.now) {
+      avatarState.chatBubbleContainer.setVisible(false);
+      avatarState.chatBubbleExpiresAt = 0;
+    }
   }
 
   drawPortals() {

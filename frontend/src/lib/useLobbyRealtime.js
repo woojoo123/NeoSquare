@@ -8,6 +8,10 @@ const REMOTE_EVENT_TYPES = new Set(['user_enter', 'user_move', 'user_leave']);
 const CHAT_MESSAGE_LIMIT = 80;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 5000;
+const CHAT_SCOPE_PUBLIC = 'PUBLIC';
+const CHAT_SCOPE_WHISPER = 'WHISPER';
+const CHAT_VARIANT_TEXT = 'TEXT';
+const CHAT_VARIANT_EMOJI = 'EMOJI';
 
 function toNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -66,14 +70,27 @@ function normalizeChatMessage(message, currentUserId, activeSpaceId) {
 
   const payload = message?.payload || {};
   const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
+  const recipientUserId = toNumber(payload.recipientUserId);
   const content = typeof payload.content === 'string' ? payload.content.trim() : '';
   const messageSpaceId = toNumber(payload.spaceId);
+  const scope =
+    typeof payload.scope === 'string' ? payload.scope.trim().toUpperCase() : CHAT_SCOPE_PUBLIC;
+  const variant =
+    typeof payload.variant === 'string' ? payload.variant.trim().toUpperCase() : CHAT_VARIANT_TEXT;
 
   if (!senderId || !content) {
     return null;
   }
 
   if (activeSpaceId && messageSpaceId && messageSpaceId !== activeSpaceId) {
+    return null;
+  }
+
+  if (
+    scope === CHAT_SCOPE_WHISPER &&
+    senderId !== currentUserId &&
+    recipientUserId !== currentUserId
+  ) {
     return null;
   }
 
@@ -89,6 +106,14 @@ function normalizeChatMessage(message, currentUserId, activeSpaceId) {
       payload.userName ||
       `사용자 ${senderId}`,
     content,
+    scope,
+    variant,
+    recipientUserId,
+    recipientNickname:
+      payload.recipientNickname ||
+      payload.recipientLabel ||
+      payload.recipientUserNickname ||
+      null,
     timestamp: message.timestamp || new Date().toISOString(),
     isMine: senderId === currentUserId,
     clientMessageId: payload.clientMessageId || null,
@@ -118,6 +143,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
   const [remoteEvent, setRemoteEvent] = useState(null);
   const [remoteUsers, setRemoteUsers] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
+  const [latestChatMessage, setLatestChatMessage] = useState(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const socketRef = useRef(null);
   const hasEnteredRef = useRef(false);
@@ -180,10 +206,25 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
     lastMovePositionRef.current = nextPosition;
   }
 
-  function sendChatMessage(content) {
+  function sendChatMessage(content, options = {}) {
     const trimmedContent = typeof content === 'string' ? content.trim() : '';
+    const scope =
+      typeof options.scope === 'string' && options.scope.trim()
+        ? options.scope.trim().toUpperCase()
+        : CHAT_SCOPE_PUBLIC;
+    const variant =
+      typeof options.variant === 'string' && options.variant.trim()
+        ? options.variant.trim().toUpperCase()
+        : CHAT_VARIANT_TEXT;
+    const recipientUserId = toNumber(options.recipientUserId);
+    const recipientNickname =
+      typeof options.recipientNickname === 'string' ? options.recipientNickname.trim() : '';
 
     if (!trimmedContent || !userId || !spaceId || !nickname) {
+      return false;
+    }
+
+    if (scope === CHAT_SCOPE_WHISPER && !recipientUserId) {
       return false;
     }
 
@@ -204,21 +245,30 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
           content: trimmedContent,
           nickname,
           clientMessageId,
+          scope,
+          variant,
+          recipientUserId,
+          recipientNickname: recipientNickname || null,
         },
       })
     );
 
-    setChatMessages((previousMessages) =>
-      appendChatMessage(previousMessages, {
-        id: clientMessageId,
-        senderId: userId,
-        nickname,
-        content: trimmedContent,
-        timestamp: new Date().toISOString(),
-        isMine: true,
-        clientMessageId,
-      })
-    );
+    const optimisticMessage = {
+      id: clientMessageId,
+      senderId: userId,
+      nickname,
+      content: trimmedContent,
+      scope,
+      variant,
+      recipientUserId,
+      recipientNickname: recipientNickname || null,
+      timestamp: new Date().toISOString(),
+      isMine: true,
+      clientMessageId,
+    };
+
+    setChatMessages((previousMessages) => appendChatMessage(previousMessages, optimisticMessage));
+    setLatestChatMessage(optimisticMessage);
 
     return true;
   }
@@ -231,6 +281,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
       setRemoteEvent(null);
       setRemoteUsers([]);
       setChatMessages([]);
+      setLatestChatMessage(null);
       setReconnectAttempt(0);
       socketRef.current = null;
       hasEnteredRef.current = false;
@@ -260,6 +311,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
     function resetPresenceState() {
       setRemoteEvent(null);
       setRemoteUsers([]);
+      setLatestChatMessage(null);
       hasEnteredRef.current = false;
       lastMoveSentAtRef.current = 0;
       lastMovePositionRef.current = null;
@@ -373,9 +425,8 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
         const nextChatMessage = normalizeChatMessage(parsedMessage, userId, spaceId);
 
         if (nextChatMessage) {
-          setChatMessages((previousMessages) =>
-            appendChatMessage(previousMessages, nextChatMessage)
-          );
+          setChatMessages((previousMessages) => appendChatMessage(previousMessages, nextChatMessage));
+          setLatestChatMessage(nextChatMessage);
         }
 
         if (
@@ -423,6 +474,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
           setRemoteEvent(null);
           setRemoteUsers([]);
           setChatMessages([]);
+          setLatestChatMessage(null);
           hasEnteredRef.current = false;
           lastMoveSentAtRef.current = 0;
           lastMovePositionRef.current = null;
@@ -496,6 +548,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
     remoteEvent,
     remoteUsers,
     chatMessages,
+    latestChatMessage,
     reconnectAttempt,
     sendChatMessage,
     sendUserMove,
