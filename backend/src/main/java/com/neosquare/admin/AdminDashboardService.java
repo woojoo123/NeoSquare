@@ -66,7 +66,9 @@ public class AdminDashboardService {
                 pendingMentorApplications.size(),
                 pendingCourseApplications.size(),
                 pendingMentorApplications.stream().map(MentorApplicationResponse::from).toList(),
-                pendingCourseApplications.stream().map(MentorCourseApplicationResponse::from).toList(),
+                pendingCourseApplications.stream()
+                        .map(application -> MentorCourseApplicationResponse.from(application, null))
+                        .toList(),
                 mentors.stream().map(this::toAdminMentorOverview).toList(),
                 courses.stream().map(this::toAdminCourseOverview).toList()
         );

@@ -30,6 +30,8 @@ import com.neosquare.mentoring.UserNotFoundException;
 import com.neosquare.mentor.InvalidMentorApplicationStateException;
 import com.neosquare.mentor.InvalidMentorAvailabilityException;
 import com.neosquare.mentor.InvalidMentorCourseApplicationStateException;
+import com.neosquare.mentor.InvalidMentorCourseScheduleException;
+import com.neosquare.mentor.InvalidMentorCourseSessionEntryException;
 import com.neosquare.mentor.MentorApplicationAccessDeniedException;
 import com.neosquare.mentor.MentorApplicationNotFoundException;
 import com.neosquare.mentor.MentorCourseApplicationAccessDeniedException;
@@ -239,6 +241,30 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(InvalidMentorCourseScheduleException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentorCourseScheduleException(
+            InvalidMentorCourseScheduleException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(InvalidMentorCourseSessionEntryException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentorCourseSessionEntryException(
+            InvalidMentorCourseSessionEntryException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(DuplicateMentoringFeedbackException.class)

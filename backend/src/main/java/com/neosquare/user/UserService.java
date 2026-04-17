@@ -1,6 +1,7 @@
 package com.neosquare.user;
 
 import java.util.List;
+import java.util.Objects;
 
 import com.neosquare.mentor.MentorAvailabilitySlotRepository;
 import com.neosquare.mentor.MentorAvailabilitySlotResponse;
@@ -9,6 +10,8 @@ import com.neosquare.mentor.MentorCourseApplicationStatus;
 import com.neosquare.mentor.MentorCourseCurriculumItemRepository;
 import com.neosquare.mentor.MentorCourseCurriculumItemResponse;
 import com.neosquare.mentor.MentorCourseRepository;
+import com.neosquare.mentor.MentorCourseScheduleItemRepository;
+import com.neosquare.mentor.MentorCourseScheduleItemResponse;
 import com.neosquare.mentor.MentorCourseResponse;
 import com.neosquare.mentor.MentorCourseStatus;
 
@@ -23,19 +26,22 @@ public class UserService {
     private final MentorCourseRepository mentorCourseRepository;
     private final MentorCourseApplicationRepository mentorCourseApplicationRepository;
     private final MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository;
+    private final MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository;
 
     public UserService(
             UserRepository userRepository,
             MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository,
             MentorCourseRepository mentorCourseRepository,
             MentorCourseApplicationRepository mentorCourseApplicationRepository,
-            MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository
+            MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository,
+            MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository
     ) {
         this.userRepository = userRepository;
         this.mentorAvailabilitySlotRepository = mentorAvailabilitySlotRepository;
         this.mentorCourseRepository = mentorCourseRepository;
         this.mentorCourseApplicationRepository = mentorCourseApplicationRepository;
         this.mentorCourseCurriculumItemRepository = mentorCourseCurriculumItemRepository;
+        this.mentorCourseScheduleItemRepository = mentorCourseScheduleItemRepository;
     }
 
     @Transactional(readOnly = true)
@@ -69,6 +75,32 @@ public class UserService {
                         mentorCourseCurriculumItemRepository.findAllByCourse_IdOrderBySequenceAscIdAsc(course.getId())
                                 .stream()
                                 .map(MentorCourseCurriculumItemResponse::from)
+                                .toList(),
+                        mentorCourseScheduleItemRepository.findAllByCourse_IdOrderBySequenceAscIdAsc(course.getId())
+                                .stream()
+                                .map(scheduleItem -> {
+                                    List<String> approvedApplicantNicknames = mentorCourseApplicationRepository
+                                            .findAllByCourse_IdAndStatusOrderByCreatedAtDescIdDesc(
+                                                    course.getId(),
+                                                    MentorCourseApplicationStatus.APPROVED
+                                            )
+                                            .stream()
+                                            .filter(application -> application.getAssignedScheduleItem() != null)
+                                            .filter(application ->
+                                                    Objects.equals(
+                                                            application.getAssignedScheduleItem().getId(),
+                                                            scheduleItem.getId()
+                                                    )
+                                            )
+                                            .map(application -> application.getApplicant().getNickname())
+                                            .toList();
+
+                                    return MentorCourseScheduleItemResponse.from(
+                                            scheduleItem,
+                                            approvedApplicantNicknames.size(),
+                                            approvedApplicantNicknames
+                                    );
+                                })
                                 .toList()
                 ))
                 .toList();

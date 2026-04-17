@@ -4,6 +4,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.neosquare.mentor.MentorCourseApplication;
+import com.neosquare.mentor.MentorCourseApplicationRepository;
+import com.neosquare.mentor.MentorCourseApplicationStatus;
+import com.neosquare.mentor.MentorCourseSessionAccessPolicy;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringRequestStatus;
@@ -23,26 +27,33 @@ public class MentoringSessionSignalingService {
 
     private static final String MENTORING_SESSION_SCOPE = "mentoring_session";
     private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
+    private static final String MENTOR_COURSE_SESSION_SCOPE = "mentor_course_session";
     private static final String STUDY_SESSION_SCOPE = "study_session";
 
     private final MentoringRequestRepository mentoringRequestRepository;
     private final MentoringReservationRepository mentoringReservationRepository;
+    private final MentorCourseApplicationRepository mentorCourseApplicationRepository;
     private final StudySessionRepository studySessionRepository;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
     private final MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy;
+    private final MentorCourseSessionAccessPolicy mentorCourseSessionAccessPolicy;
 
     public MentoringSessionSignalingService(
             MentoringRequestRepository mentoringRequestRepository,
             MentoringReservationRepository mentoringReservationRepository,
+            MentorCourseApplicationRepository mentorCourseApplicationRepository,
             StudySessionRepository studySessionRepository,
             RealtimeSessionRegistry realtimeSessionRegistry,
-            MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy
+            MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy,
+            MentorCourseSessionAccessPolicy mentorCourseSessionAccessPolicy
     ) {
         this.mentoringRequestRepository = mentoringRequestRepository;
         this.mentoringReservationRepository = mentoringReservationRepository;
+        this.mentorCourseApplicationRepository = mentorCourseApplicationRepository;
         this.studySessionRepository = studySessionRepository;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
         this.mentoringReservationSessionAccessPolicy = mentoringReservationSessionAccessPolicy;
+        this.mentorCourseSessionAccessPolicy = mentorCourseSessionAccessPolicy;
     }
 
     public boolean supports(WebSocketEventType eventType) {
@@ -69,6 +80,10 @@ public class MentoringSessionSignalingService {
 
         if (RESERVATION_SESSION_SCOPE.equals(scope)) {
             return routeReservationSignal(incomingMessage, payload);
+        }
+
+        if (MENTOR_COURSE_SESSION_SCOPE.equals(scope)) {
+            return routeMentorCourseSignal(incomingMessage, payload);
         }
 
         if (STUDY_SESSION_SCOPE.equals(scope)) {
@@ -154,6 +169,34 @@ public class MentoringSessionSignalingService {
         mentoringReservationSessionAccessPolicy.validateSessionEntry(mentoringReservation);
 
         Long targetUserId = mentoringReservation.resolveCounterpartUserId(incomingMessage.senderId());
+        Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessions(targetUserId);
+
+        if (targetSessions.isEmpty()) {
+            throw new IllegalStateException("Target participant is not connected.");
+        }
+
+        return new SignalRouteResult(
+                targetSessions,
+                WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
+        );
+    }
+
+    private SignalRouteResult routeMentorCourseSignal(WebSocketMessage incomingMessage, JsonNode payload) {
+        Long applicationId = extractLong(payload, "applicationId", "Course session applicationId is required.");
+        MentorCourseApplication application = mentorCourseApplicationRepository.findDetailById(applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Course application not found."));
+
+        if (application.getStatus() != MentorCourseApplicationStatus.APPROVED) {
+            throw new IllegalStateException("Course application is not approved.");
+        }
+
+        if (!application.isParticipant(incomingMessage.senderId())) {
+            throw new IllegalStateException("Signal sender is not a participant of this course session.");
+        }
+
+        mentorCourseSessionAccessPolicy.validateSessionEntry(application);
+
+        Long targetUserId = application.resolveCounterpartUserId(incomingMessage.senderId());
         Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessions(targetUserId);
 
         if (targetSessions.isEmpty()) {

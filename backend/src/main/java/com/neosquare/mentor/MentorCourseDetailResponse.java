@@ -24,14 +24,16 @@ public record MentorCourseDetailResponse(
         String mentorInterests,
         String mentorSpecialties,
         String mentorAvatarUrl,
-        List<MentorCourseCurriculumItemResponse> curriculumItems
+        List<MentorCourseCurriculumItemResponse> curriculumItems,
+        List<MentorCourseScheduleItemResponse> scheduleItems
 ) {
 
     public static MentorCourseDetailResponse of(
             MentorCourse course,
             User mentor,
             int approvedApplicationCount,
-            List<MentorCourseCurriculumItemResponse> curriculumItems
+            List<MentorCourseCurriculumItemResponse> curriculumItems,
+            List<MentorCourseScheduleItemResponse> scheduleItems
     ) {
         return new MentorCourseDetailResponse(
                 course.getId(),
@@ -52,7 +54,8 @@ public record MentorCourseDetailResponse(
                 mentor.getProfile().getInterests(),
                 mentor.getProfile().getSpecialties(),
                 mentor.getProfile().getAvatarUrl(),
-                curriculumItems
+                curriculumItems,
+                scheduleItems
         );
     }
 }

@@ -44,6 +44,14 @@ public class MentorCourseApplication {
     @JoinColumn(name = "applicant_id", nullable = false)
     private User applicant;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "preferred_schedule_item_id")
+    private MentorCourseScheduleItem preferredScheduleItem;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_schedule_item_id")
+    private MentorCourseScheduleItem assignedScheduleItem;
+
     @Column(nullable = false, length = 500)
     private String message;
 
@@ -66,18 +74,29 @@ public class MentorCourseApplication {
     protected MentorCourseApplication() {
     }
 
-    private MentorCourseApplication(MentorCourse course, User applicant, String message) {
+    private MentorCourseApplication(
+            MentorCourse course,
+            User applicant,
+            MentorCourseScheduleItem preferredScheduleItem,
+            String message
+    ) {
         this.course = Objects.requireNonNull(course);
         this.applicant = Objects.requireNonNull(applicant);
+        this.preferredScheduleItem = preferredScheduleItem;
         this.message = Objects.requireNonNull(message);
         this.status = MentorCourseApplicationStatus.PENDING;
     }
 
-    public static MentorCourseApplication create(MentorCourse course, User applicant, String message) {
-        return new MentorCourseApplication(course, applicant, message);
+    public static MentorCourseApplication create(
+            MentorCourse course,
+            User applicant,
+            MentorCourseScheduleItem preferredScheduleItem,
+            String message
+    ) {
+        return new MentorCourseApplication(course, applicant, preferredScheduleItem, message);
     }
 
-    public void resubmit(String message) {
+    public void resubmit(MentorCourseScheduleItem preferredScheduleItem, String message) {
         if (status == MentorCourseApplicationStatus.PENDING) {
             throw new InvalidMentorCourseApplicationStateException(
                     "Your course application is already pending review."
@@ -90,14 +109,17 @@ public class MentorCourseApplication {
             );
         }
 
+        this.preferredScheduleItem = preferredScheduleItem;
+        this.assignedScheduleItem = null;
         this.message = Objects.requireNonNull(message);
         this.status = MentorCourseApplicationStatus.PENDING;
         this.reviewNote = null;
         this.reviewedAt = null;
     }
 
-    public void approve(String reviewNote) {
+    public void approve(MentorCourseScheduleItem assignedScheduleItem, String reviewNote) {
         ensurePending("approved");
+        this.assignedScheduleItem = assignedScheduleItem;
         this.status = MentorCourseApplicationStatus.APPROVED;
         this.reviewNote = reviewNote;
         this.reviewedAt = Instant.now();
@@ -122,6 +144,24 @@ public class MentorCourseApplication {
 
     public boolean isMentor(Long userId) {
         return Objects.equals(course.getMentor().getId(), userId);
+    }
+
+    public boolean isParticipant(Long userId) {
+        return isApplicant(userId) || isMentor(userId);
+    }
+
+    public Long resolveCounterpartUserId(Long userId) {
+        if (isApplicant(userId)) {
+            return course.getMentor().getId();
+        }
+
+        if (isMentor(userId)) {
+            return applicant.getId();
+        }
+
+        throw new MentorCourseApplicationAccessDeniedException(
+                "Only course session participants can resolve a counterpart."
+        );
     }
 
     @PrePersist
@@ -154,6 +194,14 @@ public class MentorCourseApplication {
 
     public User getApplicant() {
         return applicant;
+    }
+
+    public MentorCourseScheduleItem getPreferredScheduleItem() {
+        return preferredScheduleItem;
+    }
+
+    public MentorCourseScheduleItem getAssignedScheduleItem() {
+        return assignedScheduleItem;
     }
 
     public String getMessage() {

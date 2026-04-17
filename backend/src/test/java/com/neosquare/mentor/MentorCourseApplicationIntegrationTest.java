@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
+
 import com.neosquare.auth.JwtTokenProvider;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
@@ -37,6 +39,9 @@ class MentorCourseApplicationIntegrationTest {
     private MentorCourseRepository mentorCourseRepository;
 
     @Autowired
+    private MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -47,18 +52,22 @@ class MentorCourseApplicationIntegrationTest {
         User mentor = saveMentor("mentor@neo.square", "Mentor");
         User applicant = saveUser("applicant@neo.square", "Applicant");
         MentorCourse course = savePublishedCourse(mentor, "실전 코드 리뷰", 2);
+        MentorCourseScheduleItem preferredScheduleItem = saveScheduleItem(course, 1, "1회차");
 
         mockMvc.perform(post("/api/mentor-courses/{courseId}/applications", course.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearerToken(applicant))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "preferredScheduleItemId": %d,
                                   "message": "실무 코드 리뷰를 받고 싶습니다."
                                 }
-                                """))
+                                """.formatted(preferredScheduleItem.getId())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.courseTitle").value("실전 코드 리뷰"))
                 .andExpect(jsonPath("$.data.applicantNickname").value("Applicant"))
+                .andExpect(jsonPath("$.data.preferredScheduleItemId").value(preferredScheduleItem.getId()))
+                .andExpect(jsonPath("$.data.preferredScheduleTitle").value("1회차"))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
 
         mockMvc.perform(get("/api/mentor-courses/applications/me")
@@ -80,11 +89,14 @@ class MentorCourseApplicationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "assignedScheduleItemId": %d,
                                   "reviewNote": "다음 주부터 시작해 봅시다."
                                 }
-                                """))
+                                """.formatted(preferredScheduleItem.getId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.assignedScheduleItemId").value(preferredScheduleItem.getId()))
+                .andExpect(jsonPath("$.data.assignedScheduleTitle").value("1회차"))
                 .andExpect(jsonPath("$.data.reviewNote").value("다음 주부터 시작해 봅시다."));
     }
 
@@ -141,6 +153,61 @@ class MentorCourseApplicationIntegrationTest {
                 .andExpect(jsonPath("$.message").value("This course is already full."));
     }
 
+    @Test
+    void approvedParticipantCanLoadCourseSessionEntry() throws Exception {
+        User mentor = saveMentor("mentor-session@neo.square", "MentorSession");
+        User applicant = saveUser("applicant-session@neo.square", "ApplicantSession");
+        MentorCourse course = savePublishedCourse(mentor, "세션 입장 테스트", 2);
+        MentorCourseScheduleItem scheduleItem = mentorCourseScheduleItemRepository.save(
+                MentorCourseScheduleItem.create(
+                        course,
+                        1,
+                        "실시간 1회차",
+                        "세션 입장 검증용 회차",
+                        Instant.now().minusSeconds(300L),
+                        Instant.now().plusSeconds(3300L)
+                )
+        );
+
+        mockMvc.perform(post("/api/mentor-courses/{courseId}/applications", course.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(applicant))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "preferredScheduleItemId": %d,
+                                  "message": "세션 입장 테스트를 진행합니다."
+                                }
+                                """.formatted(scheduleItem.getId())))
+                .andExpect(status().isCreated());
+
+        Long applicationId = mentorCourseApplicationRepository.findAll().stream()
+                .filter(application -> "ApplicantSession".equals(application.getApplicant().getNickname()))
+                .findFirst()
+                .orElseThrow()
+                .getId();
+
+        mockMvc.perform(patch("/api/mentor-courses/applications/{applicationId}/approve", applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assignedScheduleItemId": %d,
+                                  "reviewNote": "지금 바로 입장 가능합니다."
+                                }
+                                """.formatted(scheduleItem.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sessionEntryOpenAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.sessionEntryCloseAt").isNotEmpty());
+
+        mockMvc.perform(get("/api/mentor-courses/applications/{applicationId}/session-entry", applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(applicant)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.assignedScheduleItemId").value(scheduleItem.getId()))
+                .andExpect(jsonPath("$.data.sessionEntryOpenAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.sessionEntryCloseAt").isNotEmpty());
+    }
+
     @Autowired
     private MentorCourseApplicationRepository mentorCourseApplicationRepository;
 
@@ -174,6 +241,18 @@ class MentorCourseApplicationIntegrationTest {
                 0,
                 capacity,
                 MentorCourseStatus.PUBLISHED
+        ));
+    }
+
+    private MentorCourseScheduleItem saveScheduleItem(MentorCourse course, int sequence, String title) {
+        Instant startsAt = Instant.parse("2026-05-01T10:00:00Z").plusSeconds(sequence * 86400L);
+        return mentorCourseScheduleItemRepository.save(MentorCourseScheduleItem.create(
+                course,
+                sequence,
+                title,
+                title + " 설명",
+                startsAt,
+                startsAt.plusSeconds(5400L)
         ));
     }
 

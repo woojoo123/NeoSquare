@@ -31,6 +31,8 @@ import com.neosquare.mentor.MentorCourseApplicationRepository;
 import com.neosquare.mentor.MentorCourseCurriculumItem;
 import com.neosquare.mentor.MentorCourseCurriculumItemRepository;
 import com.neosquare.mentor.MentorCourseRepository;
+import com.neosquare.mentor.MentorCourseScheduleItem;
+import com.neosquare.mentor.MentorCourseScheduleItemRepository;
 import com.neosquare.mentor.MentorCourseStatus;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
@@ -52,6 +54,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     private final MentorCourseRepository mentorCourseRepository;
     private final MentorCourseApplicationRepository mentorCourseApplicationRepository;
     private final MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository;
+    private final MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository;
     private final PasswordEncoder passwordEncoder;
 
     public LocalDemoDataInitializer(
@@ -65,6 +68,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
             MentorCourseRepository mentorCourseRepository,
             MentorCourseApplicationRepository mentorCourseApplicationRepository,
             MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository,
+            MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository,
             PasswordEncoder passwordEncoder
     ) {
         this.userRepository = userRepository;
@@ -77,6 +81,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         this.mentorCourseRepository = mentorCourseRepository;
         this.mentorCourseApplicationRepository = mentorCourseApplicationRepository;
         this.mentorCourseCurriculumItemRepository = mentorCourseCurriculumItemRepository;
+        this.mentorCourseScheduleItemRepository = mentorCourseScheduleItemRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -92,6 +97,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         seedMentorAvailability(mina, seoyeon);
         seedMentorCourses(mina, seoyeon);
         seedMentorCourseCurriculum();
+        seedMentorCourseSchedules();
         seedMentorCourseApplications(mina, seoyeon, jisu, hyunwoo);
 
         if (
@@ -212,15 +218,17 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         MentorCourseApplication pendingApplication = MentorCourseApplication.create(
                 backendReviewCourse,
                 jisu,
+                null,
                 "현재 진행 중인 스프링 프로젝트 구조를 같이 리뷰받고 싶어요."
         );
 
         MentorCourseApplication approvedApplication = MentorCourseApplication.create(
                 portfolioCourse,
                 hyunwoo,
+                null,
                 "포트폴리오 발표 흐름과 프로젝트 설명 방식을 점검받고 싶습니다."
         );
-        approvedApplication.approve("이번 주 토요일 세션으로 진행해 봅시다.");
+        approvedApplication.approve(null, "이번 주 토요일 세션으로 진행해 봅시다.");
 
         mentorCourseApplicationRepository.saveAll(List.of(pendingApplication, approvedApplication));
     }
@@ -279,6 +287,78 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
                         2,
                         "프로젝트 설명 문장 다듬기",
                         "문제 정의, 해결 과정, 기술 선택 이유를 짧고 강하게 전달하는 방식으로 정리합니다."
+                )
+        ));
+    }
+
+    private void seedMentorCourseSchedules() {
+        if (mentorCourseScheduleItemRepository.count() > 0 || mentorCourseRepository.count() == 0) {
+            return;
+        }
+
+        MentorCourse backendReviewCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "백엔드 API 구조 리뷰".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+        MentorCourse systemDesignCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "시스템 설계 면접 준비".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+        MentorCourse portfolioCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "프론트 포트폴리오 구조 정리".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+
+        Instant now = Instant.now().truncatedTo(ChronoUnit.HOURS);
+
+        mentorCourseScheduleItemRepository.saveAll(List.of(
+                MentorCourseScheduleItem.create(
+                        backendReviewCourse,
+                        1,
+                        "1회차 · 현재 API 구조 진단",
+                        "현재 프로젝트 구조와 예외 응답 설계를 함께 점검합니다.",
+                        now.plus(3, ChronoUnit.DAYS),
+                        now.plus(3, ChronoUnit.DAYS).plus(90, ChronoUnit.MINUTES)
+                ),
+                MentorCourseScheduleItem.create(
+                        backendReviewCourse,
+                        2,
+                        "2회차 · 리팩터링 우선순위 정리",
+                        "서비스 분리와 테스트 보강 포인트를 정리합니다.",
+                        now.plus(10, ChronoUnit.DAYS),
+                        now.plus(10, ChronoUnit.DAYS).plus(90, ChronoUnit.MINUTES)
+                ),
+                MentorCourseScheduleItem.create(
+                        systemDesignCourse,
+                        1,
+                        "1회차 · 요구사항 분석",
+                        "면접 문제를 요구사항과 제약 조건으로 분해합니다.",
+                        now.plus(5, ChronoUnit.DAYS),
+                        now.plus(5, ChronoUnit.DAYS).plus(120, ChronoUnit.MINUTES)
+                ),
+                MentorCourseScheduleItem.create(
+                        systemDesignCourse,
+                        2,
+                        "2회차 · 설계 발표 리허설",
+                        "설계 근거와 트레이드오프 설명을 발표 흐름으로 다듬습니다.",
+                        now.plus(12, ChronoUnit.DAYS),
+                        now.plus(12, ChronoUnit.DAYS).plus(120, ChronoUnit.MINUTES)
+                ),
+                MentorCourseScheduleItem.create(
+                        portfolioCourse,
+                        1,
+                        "1회차 · 포트폴리오 구조 리뷰",
+                        "전체 섹션 흐름과 프로젝트 배열을 점검합니다.",
+                        now.plus(4, ChronoUnit.DAYS),
+                        now.plus(4, ChronoUnit.DAYS).plus(100, ChronoUnit.MINUTES)
+                ),
+                MentorCourseScheduleItem.create(
+                        portfolioCourse,
+                        2,
+                        "2회차 · 발표 스토리라인 정리",
+                        "프로젝트 설명 순서와 전달력을 함께 다듬습니다.",
+                        now.plus(11, ChronoUnit.DAYS),
+                        now.plus(11, ChronoUnit.DAYS).plus(100, ChronoUnit.MINUTES)
                 )
         ));
     }

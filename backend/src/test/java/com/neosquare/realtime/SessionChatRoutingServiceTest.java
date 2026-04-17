@@ -11,6 +11,8 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.neosquare.mentor.MentorCourseApplicationRepository;
+import com.neosquare.mentor.MentorCourseSessionAccessPolicy;
 import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringReservation;
@@ -31,6 +33,7 @@ class SessionChatRoutingServiceTest {
 
     private MentoringRequestRepository mentoringRequestRepository;
     private MentoringReservationRepository mentoringReservationRepository;
+    private MentorCourseApplicationRepository mentorCourseApplicationRepository;
     private StudySessionRepository studySessionRepository;
     private RealtimeSessionRegistry realtimeSessionRegistry;
     private SessionChatRoutingService sessionChatRoutingService;
@@ -39,14 +42,17 @@ class SessionChatRoutingServiceTest {
     void setUp() {
         mentoringRequestRepository = mock(MentoringRequestRepository.class);
         mentoringReservationRepository = mock(MentoringReservationRepository.class);
+        mentorCourseApplicationRepository = mock(MentorCourseApplicationRepository.class);
         studySessionRepository = mock(StudySessionRepository.class);
         realtimeSessionRegistry = mock(RealtimeSessionRegistry.class);
         sessionChatRoutingService = new SessionChatRoutingService(
                 mentoringRequestRepository,
                 mentoringReservationRepository,
+                mentorCourseApplicationRepository,
                 studySessionRepository,
                 realtimeSessionRegistry,
-                new MentoringReservationSessionAccessPolicy()
+                new MentoringReservationSessionAccessPolicy(),
+                new MentorCourseSessionAccessPolicy()
         );
     }
 

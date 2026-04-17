@@ -61,6 +61,17 @@ public class MentorCourseApplicationController {
         );
     }
 
+    @GetMapping("/applications/{applicationId}/session-entry")
+    public ApiResponse<MentorCourseApplicationResponse> getApplicationSessionEntry(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long applicationId
+    ) {
+        return ApiResponse.success(
+                "Course session entry retrieved.",
+                mentorCourseApplicationService.getApplicationSessionEntry(authUser, applicationId)
+        );
+    }
+
     @PatchMapping("/applications/{applicationId}/approve")
     public ApiResponse<MentorCourseApplicationResponse> approveApplication(
             @AuthenticationPrincipal AuthUserPrincipal authUser,

@@ -31,6 +31,9 @@ public record MentorCourseCreateRequest(
         @NotNull(message = "curriculumItems is required.")
         @Valid
         List<MentorCourseCurriculumItemRequest> curriculumItems,
+        @NotNull(message = "scheduleItems is required.")
+        @Valid
+        List<MentorCourseScheduleItemRequest> scheduleItems,
         @NotNull(message = "status is required.")
         MentorCourseStatus status
 ) {

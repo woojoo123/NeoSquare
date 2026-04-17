@@ -53,6 +53,8 @@ class MentorManagementIntegrationTest {
     @Test
     void mentorCanManageProfileAvailabilityAndCourses() throws Exception {
         User mentor = saveMentor("mentor@neo.square", "Mentor");
+        Instant firstSessionStart = nextDayAt(DayOfWeek.FRIDAY, 20, 0);
+        Instant secondSessionStart = nextDayAt(DayOfWeek.SATURDAY, 20, 0);
 
         mockMvc.perform(patch("/api/mentor-management/profile")
                         .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor))
@@ -115,13 +117,33 @@ class MentorManagementIntegrationTest {
                                       "description": "리팩터링 우선순위를 함께 정리합니다."
                                     }
                                   ],
+                                  "scheduleItems": [
+                                    {
+                                      "title": "1회차 코드 진단",
+                                      "description": "현재 프로젝트 구조를 함께 진단합니다.",
+                                      "startsAt": "%s",
+                                      "endsAt": "%s"
+                                    },
+                                    {
+                                      "title": "2회차 개선안 점검",
+                                      "description": "정리된 리팩터링 계획을 검토합니다.",
+                                      "startsAt": "%s",
+                                      "endsAt": "%s"
+                                    }
+                                  ],
                                   "status": "PUBLISHED"
                                 }
-                                """))
+                                """.formatted(
+                                        firstSessionStart,
+                                        firstSessionStart.plusSeconds(90 * 60L),
+                                        secondSessionStart,
+                                        secondSessionStart.plusSeconds(90 * 60L)
+                                )))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.title").value("실전 백엔드 코드 리뷰"))
                 .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
-                .andExpect(jsonPath("$.data.curriculumItems.length()").value(2));
+                .andExpect(jsonPath("$.data.curriculumItems.length()").value(2))
+                .andExpect(jsonPath("$.data.scheduleItems.length()").value(2));
 
         mockMvc.perform(get("/api/mentor-management/profile")
                         .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor)))
@@ -129,7 +151,8 @@ class MentorManagementIntegrationTest {
                 .andExpect(jsonPath("$.data.availabilitySlots.length()").value(2))
                 .andExpect(jsonPath("$.data.courses.length()").value(1))
                 .andExpect(jsonPath("$.data.courses[0].title").value("실전 백엔드 코드 리뷰"))
-                .andExpect(jsonPath("$.data.courses[0].curriculumItems.length()").value(2));
+                .andExpect(jsonPath("$.data.courses[0].curriculumItems.length()").value(2))
+                .andExpect(jsonPath("$.data.courses[0].scheduleItems.length()").value(2));
 
         mockMvc.perform(get("/api/users/mentors"))
                 .andExpect(status().isOk())
@@ -138,7 +161,8 @@ class MentorManagementIntegrationTest {
                 .andExpect(jsonPath("$.data[0].availabilitySlots.length()").value(2))
                 .andExpect(jsonPath("$.data[0].courses.length()").value(1))
                 .andExpect(jsonPath("$.data[0].courses[0].title").value("실전 백엔드 코드 리뷰"))
-                .andExpect(jsonPath("$.data[0].courses[0].curriculumItems.length()").value(2));
+                .andExpect(jsonPath("$.data[0].courses[0].curriculumItems.length()").value(2))
+                .andExpect(jsonPath("$.data[0].courses[0].scheduleItems.length()").value(2));
 
         Long courseId = mentorCourseRepository.findAll().stream()
                 .filter(course -> "실전 백엔드 코드 리뷰".equals(course.getTitle()))
@@ -151,7 +175,8 @@ class MentorManagementIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.title").value("실전 백엔드 코드 리뷰"))
                 .andExpect(jsonPath("$.data.mentorNickname").value("Mentor"))
-                .andExpect(jsonPath("$.data.curriculumItems.length()").value(2));
+                .andExpect(jsonPath("$.data.curriculumItems.length()").value(2))
+                .andExpect(jsonPath("$.data.scheduleItems.length()").value(2));
     }
 
     @Test

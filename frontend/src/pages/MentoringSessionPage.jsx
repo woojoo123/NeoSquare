@@ -3,12 +3,14 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import { completeMentoringRequest, getMentoringRequest } from '../api/mentoring';
+import { getMentorCourseApplicationSessionEntry } from '../api/mentorCourseApplications';
 import {
   completeReservation,
   getReservation,
   getReservationSessionEntry,
 } from '../api/reservations';
 import AppLayout from '../components/AppLayout';
+import { getCourseSessionEntryState } from '../lib/courseSessionEntryState';
 import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
 import { useSessionMedia } from '../lib/useSessionMedia';
@@ -83,9 +85,43 @@ function normalizeReservationSession(rawValue) {
   };
 }
 
+function normalizeCourseApplicationSession(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const application = rawValue.item || rawValue.courseApplication || rawValue.application || rawValue;
+
+  return {
+    id: application.id,
+    status: application.status || 'PENDING',
+    message: application.message || '',
+    requesterId: application.applicantId ?? null,
+    requesterLabel: application.applicantNickname || '수강자',
+    applicantId: application.applicantId ?? null,
+    applicantLabel: application.applicantNickname || '수강자',
+    mentorId: application.mentorId ?? null,
+    mentorLabel: application.mentorNickname || '멘토',
+    reservedAt: application.assignedScheduleStartsAt || null,
+    assignedScheduleTitle: application.assignedScheduleTitle || '',
+    assignedScheduleStartsAt: application.assignedScheduleStartsAt || null,
+    assignedScheduleEndsAt: application.assignedScheduleEndsAt || null,
+    sessionEntryOpenAt: application.sessionEntryOpenAt || null,
+    sessionEntryCloseAt: application.sessionEntryCloseAt || null,
+    courseTitle: application.courseTitle || '수업',
+    sessionSource: 'course_application',
+    createdAt: application.createdAt || null,
+    completedAt: null,
+  };
+}
+
 function normalizeSessionEntry(rawValue, sessionSource = 'request') {
   if (sessionSource === 'reservation') {
     return normalizeReservationSession(rawValue);
+  }
+
+  if (sessionSource === 'course_application') {
+    return normalizeCourseApplicationSession(rawValue);
   }
 
   return normalizeSessionRequest(rawValue);
@@ -110,6 +146,10 @@ function formatSessionRole(role) {
     return '요청자';
   }
 
+  if (role === 'Learner') {
+    return '수강자';
+  }
+
   if (role === 'Mentor') {
     return '멘토';
   }
@@ -124,6 +164,10 @@ function formatSessionStatus(status) {
 
   if (status === 'ACCEPTED') {
     return '수락됨';
+  }
+
+  if (status === 'APPROVED') {
+    return '승인됨';
   }
 
   if (status === 'REJECTED') {
@@ -249,6 +293,74 @@ function getReservationSessionGateCopy(sessionRequest, entryState) {
   };
 }
 
+function getCourseSessionGateCopy(sessionRequest, entryState) {
+  if (!sessionRequest || sessionRequest.sessionSource !== 'course_application') {
+    return null;
+  }
+
+  if (sessionRequest.status === 'PENDING') {
+    return {
+      tone: 'pending',
+      title: '수업 신청 승인 대기 중',
+      detail: '멘토가 신청을 승인하고 회차를 배정해야 세션 입장이 열립니다.',
+    };
+  }
+
+  if (sessionRequest.status === 'REJECTED') {
+    return {
+      tone: 'muted',
+      title: '수업 신청이 반려되었습니다',
+      detail: '이 신청으로는 수업 세션을 시작할 수 없습니다.',
+    };
+  }
+
+  if (sessionRequest.status === 'CANCELED') {
+    return {
+      tone: 'muted',
+      title: '수업 신청이 취소되었습니다',
+      detail: '취소된 신청은 더 이상 세션에 입장할 수 없습니다.',
+    };
+  }
+
+  if (!sessionRequest.assignedScheduleStartsAt) {
+    return {
+      tone: 'pending',
+      title: '배정된 회차가 없습니다',
+      detail: '회차가 확정되어야 세션 입장 시간과 연결이 열립니다.',
+    };
+  }
+
+  if (entryState?.status === 'ready') {
+    return {
+      tone: 'accepted',
+      title: '지금 수업 세션에 입장할 수 있습니다',
+      detail: '배정된 회차 참가자만 영상 연결과 채팅을 사용할 수 있습니다.',
+    };
+  }
+
+  if (entryState?.status === 'upcoming') {
+    return {
+      tone: 'pending',
+      title: '아직 입장 가능 시간이 아닙니다',
+      detail: '수업 시작 10분 전부터 연결과 채팅이 열립니다.',
+    };
+  }
+
+  if (entryState?.status === 'expired') {
+    return {
+      tone: 'muted',
+      title: '입장 가능 시간이 종료되었습니다',
+      detail: '해당 회차의 수업 세션 입장 시간이 지나 더 이상 연결을 시작할 수 없습니다.',
+    };
+  }
+
+  return {
+    tone: 'info',
+    title: '입장 상태를 확인할 수 없습니다',
+    detail: '배정 회차 정보를 다시 확인한 뒤 세션에 입장해 주세요.',
+  };
+}
+
 export default function MentoringSessionPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -256,17 +368,28 @@ export default function MentoringSessionPage() {
   const sessionTypeHint = new URLSearchParams(location.search).get('type');
   const hasReservationState = Boolean(location.state?.reservation);
   const hasRequestState = Boolean(location.state?.request);
+  const hasCourseApplicationState = Boolean(location.state?.courseApplication);
   const hintedSessionSource =
-    hasReservationState || sessionTypeHint === 'reservation' ? 'reservation' : 'request';
+    hasCourseApplicationState || sessionTypeHint === 'course_application'
+      ? 'course_application'
+      : hasReservationState || sessionTypeHint === 'reservation'
+        ? 'reservation'
+        : 'request';
   const initialSessionEntry =
     hintedSessionSource === 'request'
       ? normalizeSessionEntry(location.state?.request, 'request')
-      : normalizeSessionEntry(location.state?.reservation, 'reservation');
+      : hintedSessionSource === 'reservation'
+        ? normalizeSessionEntry(location.state?.reservation, 'reservation')
+        : normalizeSessionEntry(location.state?.courseApplication, 'course_application');
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const [sessionRequest, setSessionRequest] = useState(initialSessionEntry);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(hintedSessionSource === 'reservation' || !initialSessionEntry);
+  const [isLoading, setIsLoading] = useState(
+    hintedSessionSource === 'reservation' ||
+      hintedSessionSource === 'course_application' ||
+      !initialSessionEntry
+  );
   const [chatInput, setChatInput] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [sessionExitStatus, setSessionExitStatus] = useState('idle');
@@ -275,10 +398,20 @@ export default function MentoringSessionPage() {
   const endSessionTimeoutRef = useRef(null);
   const isReservationSession =
     (sessionRequest?.sessionSource || hintedSessionSource) === 'reservation';
+  const isCourseSession =
+    (sessionRequest?.sessionSource || hintedSessionSource) === 'course_application';
   const numericSessionId = Number(requestId);
   const hasRealtimeSessionId = Number.isFinite(numericSessionId);
-  const realtimeSessionScope = isReservationSession ? 'reservation_session' : 'mentoring_session';
-  const realtimeSessionIdField = isReservationSession ? 'reservationId' : 'requestId';
+  const realtimeSessionScope = isCourseSession
+    ? 'mentor_course_session'
+    : isReservationSession
+      ? 'reservation_session'
+      : 'mentoring_session';
+  const realtimeSessionIdField = isCourseSession
+    ? 'applicationId'
+    : isReservationSession
+      ? 'reservationId'
+      : 'requestId';
   const reservationEntryState = useMemo(() => {
     if (!isReservationSession || !sessionRequest) {
       return null;
@@ -286,16 +419,29 @@ export default function MentoringSessionPage() {
 
     return getReservationEntryState(sessionRequest, reservationClock);
   }, [isReservationSession, reservationClock, sessionRequest]);
+  const courseEntryState = useMemo(() => {
+    if (!isCourseSession || !sessionRequest) {
+      return null;
+    }
+
+    return getCourseSessionEntryState(sessionRequest, reservationClock);
+  }, [isCourseSession, reservationClock, sessionRequest]);
   const reservationSessionGate = getReservationSessionGateCopy(
     sessionRequest,
     reservationEntryState
   );
+  const courseSessionGate = getCourseSessionGateCopy(sessionRequest, courseEntryState);
   const canUseReservationSession =
     !isReservationSession ||
     (sessionRequest?.status === 'ACCEPTED' && reservationEntryState?.canEnter);
+  const canUseCourseSession =
+    !isCourseSession ||
+    (sessionRequest?.status === 'APPROVED' && courseEntryState?.canEnter);
+  const canUseScheduledSession = canUseReservationSession && canUseCourseSession;
+  const activeSessionStatus = isCourseSession ? 'APPROVED' : 'ACCEPTED';
   const canUseLiveSession =
     Boolean(hasRealtimeSessionId && sessionRequest?.id && currentUser?.id) &&
-    canUseReservationSession &&
+    canUseScheduledSession &&
     !isLoading;
   const {
     localVideoRef,
@@ -333,7 +479,8 @@ export default function MentoringSessionPage() {
     userId: currentUser?.id,
     localStream,
     isInitiator: Boolean(
-      sessionRequest?.requesterId && currentUser?.id === sessionRequest.requesterId
+      (isCourseSession ? sessionRequest?.applicantId : sessionRequest?.requesterId) &&
+        currentUser?.id === (isCourseSession ? sessionRequest?.applicantId : sessionRequest?.requesterId)
     ),
   });
   const {
@@ -344,7 +491,7 @@ export default function MentoringSessionPage() {
   } = useMentoringSessionChat({
     enabled: Boolean(
       canUseLiveSession &&
-      sessionRequest?.status === 'ACCEPTED' &&
+      sessionRequest?.status === activeSessionStatus &&
       currentUser?.nickname
     ),
     sessionId: hasRealtimeSessionId ? numericSessionId : null,
@@ -387,7 +534,10 @@ export default function MentoringSessionPage() {
   }, [currentUser, setCurrentUser]);
 
   useEffect(() => {
-    const shouldLoadFromServer = hintedSessionSource === 'reservation' || !hasRequestState;
+    const shouldLoadFromServer =
+      hintedSessionSource === 'reservation' ||
+      hintedSessionSource === 'course_application' ||
+      !hasRequestState;
 
     if (!shouldLoadFromServer) {
       return;
@@ -426,6 +576,22 @@ export default function MentoringSessionPage() {
           }
         }
 
+        if (
+          hintedSessionSource === 'course_application' &&
+          error?.response?.status === 409 &&
+          location.state?.courseApplication
+        ) {
+          if (!isMounted) {
+            return;
+          }
+
+          setSessionRequest(
+            normalizeSessionEntry(location.state.courseApplication, 'course_application')
+          );
+          setErrorMessage('');
+          return;
+        }
+
         if (!isMounted) {
           return;
         }
@@ -447,14 +613,14 @@ export default function MentoringSessionPage() {
     return () => {
       isMounted = false;
     };
-  }, [hasRequestState, hintedSessionSource, requestId]);
+  }, [hasRequestState, hintedSessionSource, location.state, requestId]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [sessionMessages]);
 
   useEffect(() => {
-    if (!isReservationSession) {
+    if (!isReservationSession && !isCourseSession) {
       return undefined;
     }
 
@@ -465,7 +631,7 @@ export default function MentoringSessionPage() {
     return () => {
       window.clearInterval(timerId);
     };
-  }, [isReservationSession]);
+  }, [isCourseSession, isReservationSession]);
 
   useEffect(() => {
     return () => {
@@ -477,7 +643,9 @@ export default function MentoringSessionPage() {
 
   let myRole = 'Participant';
 
-  if (sessionRequest && currentUser?.id === sessionRequest.requesterId) {
+  if (isCourseSession && sessionRequest && currentUser?.id === sessionRequest.applicantId) {
+    myRole = 'Learner';
+  } else if (sessionRequest && currentUser?.id === sessionRequest.requesterId) {
     myRole = 'Requester';
   } else if (sessionRequest && currentUser?.id === sessionRequest.mentorId) {
     myRole = 'Mentor';
@@ -486,14 +654,16 @@ export default function MentoringSessionPage() {
   const counterpartName =
     sessionRequest && myRole === 'Requester'
       ? sessionRequest.mentorLabel
+      : sessionRequest && myRole === 'Learner'
+        ? sessionRequest.mentorLabel
       : sessionRequest && myRole === 'Mentor'
-        ? sessionRequest.requesterLabel
+        ? sessionRequest.applicantLabel || sessionRequest.requesterLabel
         : sessionRequest?.requesterLabel || sessionRequest?.mentorLabel;
 
   const handleSessionChatSubmit = (event) => {
     event.preventDefault();
 
-    if (!canUseReservationSession) {
+    if (!canUseScheduledSession) {
       return;
     }
 
@@ -522,7 +692,7 @@ export default function MentoringSessionPage() {
   };
 
   const handleStartVideoCall = async () => {
-    if (!canUseReservationSession) {
+    if (!canUseScheduledSession) {
       return;
     }
 
@@ -540,7 +710,7 @@ export default function MentoringSessionPage() {
   };
 
   const handleRetryVideoCall = async () => {
-    if (!canUseReservationSession) {
+    if (!canUseScheduledSession) {
       return;
     }
 
@@ -557,6 +727,15 @@ export default function MentoringSessionPage() {
   };
 
   const handleEndSession = async () => {
+    if (isCourseSession) {
+      cleanupSessionResources();
+      navigateToLobby({
+        refreshMentoring: true,
+        sessionMessage: '수업 세션 화면을 나갔습니다. 허브에서 다음 회차와 신청 상태를 계속 확인할 수 있습니다.',
+      });
+      return;
+    }
+
     if (
       sessionExitStatus === 'ending' ||
       sessionExitStatus === 'ended' ||
@@ -686,7 +865,7 @@ export default function MentoringSessionPage() {
               : '상대 미연결';
 
   const primaryVideoActionLabel =
-    !canUseReservationSession && isReservationSession
+    !canUseScheduledSession && (isReservationSession || isCourseSession)
       ? '입장 가능 시간 대기'
       : mediaErrorMessage && !hasLocalPreview
       ? '권한 다시 요청'
@@ -695,12 +874,29 @@ export default function MentoringSessionPage() {
         : hasLocalPreview
           ? '영상 연결 시작'
           : '카메라/마이크 준비';
+  const sessionGate = isCourseSession ? courseSessionGate : reservationSessionGate;
+  const scheduledEntryState = isCourseSession ? courseEntryState : reservationEntryState;
+  const sessionTypeLabel = isCourseSession
+    ? '수업 세션'
+    : isReservationSession
+      ? '예약 멘토링'
+      : '요청 멘토링';
+  const sessionReferenceLabel = isCourseSession
+    ? '수업 신청'
+    : isReservationSession
+      ? '예약'
+      : '요청';
+  const sessionStartLabel = isCourseSession ? '배정 회차 시작' : '예약 시각';
 
   return (
     <AppLayout
-      eyebrow="멘토링"
-      title="멘토링 세션"
-      description="수락된 멘토링 요청 또는 예약을 기준으로 대화와 영상 연결을 이어가는 세션 화면입니다."
+      eyebrow="세션"
+      title={isCourseSession ? '수업 세션' : '멘토링 세션'}
+      description={
+        isCourseSession
+          ? '배정된 수업 회차를 기준으로 멘토와 수강자가 영상 연결과 채팅을 이어가는 세션 화면입니다.'
+          : '수락된 멘토링 요청 또는 예약을 기준으로 대화와 영상 연결을 이어가는 세션 화면입니다.'
+      }
       panelClassName="app-panel--wide"
     >
       {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
@@ -712,29 +908,39 @@ export default function MentoringSessionPage() {
           <section className="session-hero">
             <div className="session-hero__main">
               <p className="session-hero__eyebrow">
-                {isReservationSession ? '예약 세션' : '세션 준비 완료'}
+                {isCourseSession
+                  ? '수업 세션'
+                  : isReservationSession
+                    ? '예약 세션'
+                    : '세션 준비 완료'}
               </p>
               <h2>{counterpartName || '알 수 없는 사용자'}</h2>
               <p className="session-hero__summary">
-                {sessionRequest.message || '저장된 멘토링 요약이 없습니다.'}
+                {sessionRequest.message || (isCourseSession ? '저장된 수업 신청 메모가 없습니다.' : '저장된 멘토링 요약이 없습니다.')}
               </p>
               <div className="session-meta-list">
-                <span className="session-meta-pill">
-                  유형: {isReservationSession ? '예약 멘토링' : '요청 멘토링'}
-                </span>
+                <span className="session-meta-pill">유형: {sessionTypeLabel}</span>
                 <span className="session-meta-pill">역할: {formatSessionRole(myRole)}</span>
                 <span className="session-meta-pill">상태: {formatSessionStatus(sessionRequest.status)}</span>
                 <span className="session-meta-pill">
-                  {isReservationSession ? '예약' : '요청'} #{sessionRequest.id}
+                  {sessionReferenceLabel} #{sessionRequest.id}
                 </span>
+                {isCourseSession && sessionRequest.courseTitle ? (
+                  <span className="session-meta-pill">수업: {sessionRequest.courseTitle}</span>
+                ) : null}
+                {isCourseSession && sessionRequest.assignedScheduleTitle ? (
+                  <span className="session-meta-pill">회차: {sessionRequest.assignedScheduleTitle}</span>
+                ) : null}
                 {sessionRequest.reservedAt ? (
                   <span className="session-meta-pill">
-                    예약 시각: {formatSessionTimestamp(sessionRequest.reservedAt)}
+                    {sessionStartLabel}: {formatSessionTimestamp(sessionRequest.reservedAt)}
                   </span>
                 ) : null}
               </div>
               <p className="app-note">
-                {isReservationSession
+                {isCourseSession
+                  ? '배정된 수업 회차에서 이어지는 세션입니다. 회차 참가자만 이 화면에서 연결과 채팅을 사용할 수 있습니다.'
+                  : isReservationSession
                   ? '수락된 예약에서 이어진 세션입니다. 이 화면에서 동일한 멘토링 작업 공간을 계속 사용할 수 있습니다.'
                   : '영상 멘토링으로 넘어가기 전 이 화면에서 대화와 연결 준비를 이어갈 수 있습니다.'}
               </p>
@@ -749,13 +955,17 @@ export default function MentoringSessionPage() {
                 className="secondary-button"
                 onClick={handleEndSession}
                 disabled={
-                  sessionExitStatus === 'ending' ||
-                  sessionExitStatus === 'ended' ||
-                  sessionRequest.status !== 'ACCEPTED' ||
-                  !canUseReservationSession
+                  isCourseSession
+                    ? sessionExitStatus === 'ending'
+                    : sessionExitStatus === 'ending' ||
+                      sessionExitStatus === 'ended' ||
+                      sessionRequest.status !== 'ACCEPTED' ||
+                      !canUseScheduledSession
                 }
               >
-                {sessionExitStatus === 'ending'
+                {isCourseSession
+                  ? '세션 나가기'
+                  : sessionExitStatus === 'ending'
                   ? '세션 종료 중...'
                   : sessionRequest.status === 'COMPLETED'
                     ? '세션 종료 완료'
@@ -772,27 +982,29 @@ export default function MentoringSessionPage() {
             </div>
           </section>
 
-          {reservationSessionGate ? (
-            <section className={`session-status-card session-status-card--${reservationSessionGate.tone}`}>
+          {sessionGate ? (
+            <section className={`session-status-card session-status-card--${sessionGate.tone}`}>
               <div>
-                <p className="session-status-card__eyebrow">예약 입장 상태</p>
-                <h3>{reservationSessionGate.title}</h3>
-                <p>{reservationSessionGate.detail}</p>
+                <p className="session-status-card__eyebrow">
+                  {isCourseSession ? '수업 세션 입장 상태' : '예약 입장 상태'}
+                </p>
+                <h3>{sessionGate.title}</h3>
+                <p>{sessionGate.detail}</p>
               </div>
               <div className="session-status-card__meta">
-                {reservationEntryState?.reservedAt ? (
+                {scheduledEntryState?.reservedAt ? (
                   <span className="session-meta-pill">
-                    예약 시각: {formatSessionTimestamp(reservationEntryState.reservedAt)}
+                    {sessionStartLabel}: {formatSessionTimestamp(scheduledEntryState.reservedAt)}
                   </span>
                 ) : null}
-                {reservationEntryState?.entryOpenAt ? (
+                {scheduledEntryState?.entryOpenAt ? (
                   <span className="session-meta-pill">
-                    입장 오픈: {formatSessionTimestamp(reservationEntryState.entryOpenAt)}
+                    입장 오픈: {formatSessionTimestamp(scheduledEntryState.entryOpenAt)}
                   </span>
                 ) : null}
-                {reservationEntryState?.entryCloseAt ? (
+                {scheduledEntryState?.entryCloseAt ? (
                   <span className="session-meta-pill">
-                    입장 마감: {formatSessionTimestamp(reservationEntryState.entryCloseAt)}
+                    입장 마감: {formatSessionTimestamp(scheduledEntryState.entryCloseAt)}
                   </span>
                 ) : null}
               </div>
@@ -827,15 +1039,17 @@ export default function MentoringSessionPage() {
             >
               <div className="session-video-header">
                 <div>
-                  <h2>영상 멘토링 영역</h2>
+                  <h2>{isCourseSession ? '영상 수업 영역' : '영상 멘토링 영역'}</h2>
                   <p className="app-note">
-                    {isReservationSession
+                    {isCourseSession
+                      ? '이 영역에서 배정된 수업 회차 참가자와 영상 연결을 준비하고 상대 영상을 확인할 수 있습니다.'
+                      : isReservationSession
                       ? '이 영역에서 예약 세션 참가자와 영상 연결을 준비하고 상대 영상을 확인할 수 있습니다.'
                       : '이 영역에서 시그널링과 피어 연결을 준비하고 상대 영상을 확인할 수 있습니다.'}
                   </p>
-                  {isReservationSession && !canUseReservationSession ? (
+                  {(isReservationSession || isCourseSession) && !canUseScheduledSession ? (
                     <p className="app-note">
-                      예약 입장 가능 시간이 되면 이 영역의 연결 버튼과 채팅 입력이 함께 활성화됩니다.
+                      입장 가능 시간이 되면 이 영역의 연결 버튼과 채팅 입력이 함께 활성화됩니다.
                     </p>
                   ) : null}
                 </div>
@@ -914,7 +1128,7 @@ export default function MentoringSessionPage() {
                   }
                   disabled={
                     sessionExitStatus === 'ending' ||
-                    !canUseReservationSession ||
+                    !canUseScheduledSession ||
                     videoCallStatus === 'preparing' ||
                     videoCallStatus === 'connecting'
                   }
@@ -929,7 +1143,7 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleCamera}
-                  disabled={!hasLocalPreview || sessionExitStatus === 'ending' || !canUseReservationSession}
+                  disabled={!hasLocalPreview || sessionExitStatus === 'ending' || !canUseScheduledSession}
                 >
                   {cameraOn ? '카메라 끄기' : '카메라 켜기'}
                 </button>
@@ -937,7 +1151,7 @@ export default function MentoringSessionPage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleToggleMicrophone}
-                  disabled={!hasLocalPreview || sessionExitStatus === 'ending' || !canUseReservationSession}
+                  disabled={!hasLocalPreview || sessionExitStatus === 'ending' || !canUseScheduledSession}
                 >
                   {microphoneOn ? '마이크 끄기' : '마이크 켜기'}
                 </button>
@@ -950,12 +1164,12 @@ export default function MentoringSessionPage() {
                   <h2>세션 채팅</h2>
                   <p className="app-note">
                     {`상태: ${formatSessionChatStatus(sessionChatStatus)}. 이 채팅은 ${
-                      isReservationSession ? '예약' : '요청'
+                      sessionReferenceLabel
                     } #${sessionRequest.id} 기준으로 동작합니다.`}
                   </p>
-                  {isReservationSession && !canUseReservationSession ? (
+                  {(isReservationSession || isCourseSession) && !canUseScheduledSession ? (
                     <p className="app-note">
-                      예약 입장 가능 시간이 되면 채팅 입력도 자동으로 열립니다.
+                      입장 가능 시간이 되면 채팅 입력도 자동으로 열립니다.
                     </p>
                   ) : null}
                 </div>
@@ -990,18 +1204,18 @@ export default function MentoringSessionPage() {
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   disabled={
-                    sessionRequest.status !== 'ACCEPTED' ||
+                    sessionRequest.status !== activeSessionStatus ||
                     sessionExitStatus === 'ending' ||
-                    !canUseReservationSession
+                    !canUseScheduledSession
                   }
                 />
                 <button
                   type="submit"
                   className="primary-button"
                   disabled={
-                    sessionRequest.status !== 'ACCEPTED' ||
+                    sessionRequest.status !== activeSessionStatus ||
                     sessionExitStatus === 'ending' ||
-                    !canUseReservationSession
+                    !canUseScheduledSession
                   }
                 >
                   전송
@@ -1011,13 +1225,20 @@ export default function MentoringSessionPage() {
           </section>
         </section>
       ) : (
-        <p className="app-note">입장 가능한 멘토링 세션을 찾지 못했습니다.</p>
+        <p className="app-note">입장 가능한 세션을 찾지 못했습니다.</p>
       )}
     </AppLayout>
   );
 }
 
 async function loadSessionEntry(sessionId, sessionSourceHint) {
+  if (sessionSourceHint === 'course_application') {
+    return {
+      data: await getMentorCourseApplicationSessionEntry(sessionId),
+      sessionSource: 'course_application',
+    };
+  }
+
   if (sessionSourceHint === 'reservation') {
     return {
       data: await getReservationSessionEntry(sessionId),
@@ -1043,8 +1264,19 @@ async function loadSessionEntry(sessionId, sessionSourceHint) {
     }
   }
 
+  try {
+    return {
+      data: await getReservationSessionEntry(sessionId),
+      sessionSource: 'reservation',
+    };
+  } catch (reservationError) {
+    if (reservationError?.response?.status !== 404) {
+      throw reservationError;
+    }
+  }
+
   return {
-    data: await getReservationSessionEntry(sessionId),
-    sessionSource: 'reservation',
+    data: await getMentorCourseApplicationSessionEntry(sessionId),
+    sessionSource: 'course_application',
   };
 }

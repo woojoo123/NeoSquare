@@ -19,6 +19,13 @@ export async function getReceivedMentorCourseApplications() {
   return unwrapApiResponse(response);
 }
 
+export async function getMentorCourseApplicationSessionEntry(applicationId) {
+  const response = await axiosInstance.get(
+    `/mentor-courses/applications/${applicationId}/session-entry`
+  );
+  return unwrapApiResponse(response);
+}
+
 export async function approveMentorCourseApplication(applicationId, payload = {}) {
   const response = await axiosInstance.patch(
     `/mentor-courses/applications/${applicationId}/approve`,

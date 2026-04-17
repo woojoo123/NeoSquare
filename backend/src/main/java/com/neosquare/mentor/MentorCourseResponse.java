@@ -15,6 +15,7 @@ public record MentorCourseResponse(
         int approvedApplicationCount,
         int remainingCapacity,
         List<MentorCourseCurriculumItemResponse> curriculumItems,
+        List<MentorCourseScheduleItemResponse> scheduleItems,
         MentorCourseStatus status,
         Instant createdAt,
         Instant updatedAt
@@ -32,7 +33,8 @@ public record MentorCourseResponse(
     public static MentorCourseResponse from(
             MentorCourse course,
             int approvedApplicationCount,
-            List<MentorCourseCurriculumItemResponse> curriculumItems
+            List<MentorCourseCurriculumItemResponse> curriculumItems,
+            List<MentorCourseScheduleItemResponse> scheduleItems
     ) {
         return new MentorCourseResponse(
                 course.getId(),
@@ -45,6 +47,7 @@ public record MentorCourseResponse(
                 approvedApplicationCount,
                 Math.max(course.getCapacity() - approvedApplicationCount, 0),
                 curriculumItems,
+                scheduleItems,
                 course.getStatus(),
                 course.getCreatedAt(),
                 course.getUpdatedAt()
@@ -52,10 +55,10 @@ public record MentorCourseResponse(
     }
 
     public static int compareForPublicList(MentorCourse left, MentorCourse right) {
-        return PUBLIC_COMPARATOR.compare(from(left, 0, List.of()), from(right, 0, List.of()));
+        return PUBLIC_COMPARATOR.compare(from(left, 0, List.of(), List.of()), from(right, 0, List.of(), List.of()));
     }
 
     public static int compareForOwnerList(MentorCourse left, MentorCourse right) {
-        return OWNER_COMPARATOR.compare(from(left, 0, List.of()), from(right, 0, List.of()));
+        return OWNER_COMPARATOR.compare(from(left, 0, List.of(), List.of()), from(right, 0, List.of(), List.of()));
     }
 }

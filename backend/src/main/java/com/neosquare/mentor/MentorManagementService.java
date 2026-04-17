@@ -8,6 +8,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 import com.neosquare.auth.AuthUserPrincipal;
 import com.neosquare.mentoring.InvalidReservationTimeException;
@@ -33,19 +34,22 @@ public class MentorManagementService {
     private final MentorCourseRepository mentorCourseRepository;
     private final MentorCourseApplicationRepository mentorCourseApplicationRepository;
     private final MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository;
+    private final MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository;
 
     public MentorManagementService(
             UserRepository userRepository,
             MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository,
             MentorCourseRepository mentorCourseRepository,
             MentorCourseApplicationRepository mentorCourseApplicationRepository,
-            MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository
+            MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository,
+            MentorCourseScheduleItemRepository mentorCourseScheduleItemRepository
     ) {
         this.userRepository = userRepository;
         this.mentorAvailabilitySlotRepository = mentorAvailabilitySlotRepository;
         this.mentorCourseRepository = mentorCourseRepository;
         this.mentorCourseApplicationRepository = mentorCourseApplicationRepository;
         this.mentorCourseCurriculumItemRepository = mentorCourseCurriculumItemRepository;
+        this.mentorCourseScheduleItemRepository = mentorCourseScheduleItemRepository;
     }
 
     @Transactional(readOnly = true)
@@ -130,11 +134,13 @@ public class MentorManagementService {
         ));
 
         syncCourseCurriculum(course, request.curriculumItems());
+        syncCourseSchedule(course, request.scheduleItems());
 
         return MentorCourseResponse.from(
                 course,
                 0,
-                loadCurriculumResponses(course.getId())
+                loadCurriculumResponses(course.getId()),
+                loadScheduleResponses(course.getId())
         );
     }
 
@@ -159,6 +165,7 @@ public class MentorManagementService {
         );
 
         syncCourseCurriculum(course, request.curriculumItems());
+        syncCourseSchedule(course, request.scheduleItems());
 
         return MentorCourseResponse.from(
                 course,
@@ -166,7 +173,8 @@ public class MentorManagementService {
                         course.getId(),
                         MentorCourseApplicationStatus.APPROVED
                 )),
-                loadCurriculumResponses(course.getId())
+                loadCurriculumResponses(course.getId()),
+                loadScheduleResponses(course.getId())
         );
     }
 
@@ -244,7 +252,8 @@ public class MentorManagementService {
                                 course.getId(),
                                 MentorCourseApplicationStatus.APPROVED
                         )),
-                        loadCurriculumResponses(course.getId())
+                        loadCurriculumResponses(course.getId()),
+                        loadScheduleResponses(course.getId())
                 ))
                 .toList();
     }
@@ -274,10 +283,97 @@ public class MentorManagementService {
         mentorCourseCurriculumItemRepository.saveAll(itemsToSave);
     }
 
+    private void syncCourseSchedule(
+            MentorCourse course,
+            List<MentorCourseScheduleItemRequest> scheduleItems
+    ) {
+        mentorCourseScheduleItemRepository.deleteAllByCourse_Id(course.getId());
+
+        if (scheduleItems == null || scheduleItems.isEmpty()) {
+            return;
+        }
+
+        validateScheduleRequests(scheduleItems);
+
+        List<MentorCourseScheduleItem> itemsToSave = new ArrayList<>();
+
+        for (int index = 0; index < scheduleItems.size(); index++) {
+            MentorCourseScheduleItemRequest itemRequest = scheduleItems.get(index);
+            itemsToSave.add(MentorCourseScheduleItem.create(
+                    course,
+                    index + 1,
+                    itemRequest.title().trim(),
+                    normalizeOptionalText(itemRequest.description()),
+                    itemRequest.startsAt(),
+                    itemRequest.endsAt()
+            ));
+        }
+
+        mentorCourseScheduleItemRepository.saveAll(itemsToSave);
+    }
+
+    private void validateScheduleRequests(List<MentorCourseScheduleItemRequest> scheduleItems) {
+        List<MentorCourseScheduleItemRequest> sortedItems = scheduleItems.stream()
+                .sorted(Comparator.comparing(MentorCourseScheduleItemRequest::startsAt))
+                .toList();
+
+        for (int index = 0; index < sortedItems.size(); index++) {
+            MentorCourseScheduleItemRequest currentItem = sortedItems.get(index);
+
+            if (!currentItem.startsAt().isBefore(currentItem.endsAt())) {
+                throw new InvalidMentorCourseScheduleException(
+                        "Course schedule start time must be before end time."
+                );
+            }
+
+            if (index == 0) {
+                continue;
+            }
+
+            MentorCourseScheduleItemRequest previousItem = sortedItems.get(index - 1);
+
+            if (currentItem.startsAt().isBefore(previousItem.endsAt())) {
+                throw new InvalidMentorCourseScheduleException(
+                        "Course schedule items cannot overlap."
+                );
+            }
+        }
+    }
+
     private List<MentorCourseCurriculumItemResponse> loadCurriculumResponses(Long courseId) {
         return mentorCourseCurriculumItemRepository.findAllByCourse_IdOrderBySequenceAscIdAsc(courseId)
                 .stream()
                 .map(MentorCourseCurriculumItemResponse::from)
+                .toList();
+    }
+
+    private List<MentorCourseScheduleItemResponse> loadScheduleResponses(Long courseId) {
+        List<MentorCourseApplication> approvedApplications = mentorCourseApplicationRepository
+                .findAllByCourse_IdAndStatusOrderByCreatedAtDescIdDesc(
+                        courseId,
+                        MentorCourseApplicationStatus.APPROVED
+                );
+
+        return mentorCourseScheduleItemRepository.findAllByCourse_IdOrderBySequenceAscIdAsc(courseId)
+                .stream()
+                .map(scheduleItem -> {
+                    List<String> approvedApplicantNicknames = approvedApplications.stream()
+                            .filter(application -> application.getAssignedScheduleItem() != null)
+                            .filter(application ->
+                                    Objects.equals(
+                                            application.getAssignedScheduleItem().getId(),
+                                            scheduleItem.getId()
+                                    )
+                            )
+                            .map(application -> application.getApplicant().getNickname())
+                            .toList();
+
+                    return MentorCourseScheduleItemResponse.from(
+                            scheduleItem,
+                            approvedApplicantNicknames.size(),
+                            approvedApplicantNicknames
+                    );
+                })
                 .toList();
     }
 
