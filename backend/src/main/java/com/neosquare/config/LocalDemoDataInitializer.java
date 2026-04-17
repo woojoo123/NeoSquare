@@ -1,6 +1,8 @@
 package com.neosquare.config;
 
 import java.time.Instant;
+import java.time.DayOfWeek;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -21,6 +23,15 @@ import com.neosquare.mentoring.MentoringReservationRepository;
 import com.neosquare.notification.Notification;
 import com.neosquare.notification.NotificationRepository;
 import com.neosquare.notification.NotificationType;
+import com.neosquare.mentor.MentorAvailabilitySlot;
+import com.neosquare.mentor.MentorAvailabilitySlotRepository;
+import com.neosquare.mentor.MentorCourse;
+import com.neosquare.mentor.MentorCourseApplication;
+import com.neosquare.mentor.MentorCourseApplicationRepository;
+import com.neosquare.mentor.MentorCourseCurriculumItem;
+import com.neosquare.mentor.MentorCourseCurriculumItemRepository;
+import com.neosquare.mentor.MentorCourseRepository;
+import com.neosquare.mentor.MentorCourseStatus;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
 import com.neosquare.user.UserRole;
@@ -37,6 +48,10 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     private final MentoringFeedbackRepository mentoringFeedbackRepository;
     private final MentoringReservationFeedbackRepository mentoringReservationFeedbackRepository;
     private final NotificationRepository notificationRepository;
+    private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
+    private final MentorCourseRepository mentorCourseRepository;
+    private final MentorCourseApplicationRepository mentorCourseApplicationRepository;
+    private final MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository;
     private final PasswordEncoder passwordEncoder;
 
     public LocalDemoDataInitializer(
@@ -46,6 +61,10 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
             MentoringFeedbackRepository mentoringFeedbackRepository,
             MentoringReservationFeedbackRepository mentoringReservationFeedbackRepository,
             NotificationRepository notificationRepository,
+            MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository,
+            MentorCourseRepository mentorCourseRepository,
+            MentorCourseApplicationRepository mentorCourseApplicationRepository,
+            MentorCourseCurriculumItemRepository mentorCourseCurriculumItemRepository,
             PasswordEncoder passwordEncoder
     ) {
         this.userRepository = userRepository;
@@ -54,6 +73,10 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         this.mentoringFeedbackRepository = mentoringFeedbackRepository;
         this.mentoringReservationFeedbackRepository = mentoringReservationFeedbackRepository;
         this.notificationRepository = notificationRepository;
+        this.mentorAvailabilitySlotRepository = mentorAvailabilitySlotRepository;
+        this.mentorCourseRepository = mentorCourseRepository;
+        this.mentorCourseApplicationRepository = mentorCourseApplicationRepository;
+        this.mentorCourseCurriculumItemRepository = mentorCourseCurriculumItemRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -64,6 +87,12 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
         User jisu = findOrCreateUser("jisu@neosquare.local", "지수", UserRole.USER);
         User hyunwoo = findOrCreateUser("hyunwoo@neosquare.local", "현우", UserRole.USER);
         User seoyeon = findOrCreateUser("seoyeon@neosquare.local", "서연", UserRole.MENTOR);
+
+        seedMentorProfiles(mina, seoyeon);
+        seedMentorAvailability(mina, seoyeon);
+        seedMentorCourses(mina, seoyeon);
+        seedMentorCourseCurriculum();
+        seedMentorCourseApplications(mina, seoyeon, jisu, hyunwoo);
 
         if (
                 mentoringRequestRepository.count() > 0 ||
@@ -84,10 +113,174 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     }
 
     private User findOrCreateUser(String email, String nickname, UserRole role) {
-        return userRepository.findByEmail(email)
+        User user = userRepository.findByEmail(email)
                 .orElseGet(() -> userRepository.save(
                         User.create(email, passwordEncoder.encode(DEMO_PASSWORD), nickname, role)
                 ));
+
+        if (role == UserRole.MENTOR || role == UserRole.ADMIN) {
+            user.getProfile().enableMentoring();
+        }
+
+        return user;
+    }
+
+    private void seedMentorProfiles(User mina, User seoyeon) {
+        mina.getProfile().update(
+                "백엔드 설계와 실무 면접 준비를 함께 정리하는 멘토입니다.",
+                "API 설계, 테스트 코드, 커리어 상담",
+                "Spring Boot, JPA, 시스템 설계",
+                mina.getProfile().getAvatarUrl(),
+                true
+        );
+
+        seoyeon.getProfile().update(
+                "프론트엔드 구조와 포트폴리오 흐름을 함께 다듬는 멘토입니다.",
+                "React, UI 구조, 발표 준비",
+                "React, TypeScript, 포트폴리오 리뷰",
+                seoyeon.getProfile().getAvatarUrl(),
+                true
+        );
+    }
+
+    private void seedMentorAvailability(User mina, User seoyeon) {
+        if (mentorAvailabilitySlotRepository.count() > 0) {
+            return;
+        }
+
+        mentorAvailabilitySlotRepository.saveAll(List.of(
+                MentorAvailabilitySlot.create(mina, DayOfWeek.MONDAY, LocalTime.of(19, 0), LocalTime.of(22, 0)),
+                MentorAvailabilitySlot.create(mina, DayOfWeek.THURSDAY, LocalTime.of(20, 0), LocalTime.of(23, 0)),
+                MentorAvailabilitySlot.create(seoyeon, DayOfWeek.TUESDAY, LocalTime.of(19, 30), LocalTime.of(22, 30)),
+                MentorAvailabilitySlot.create(seoyeon, DayOfWeek.SATURDAY, LocalTime.of(10, 0), LocalTime.of(13, 0))
+        ));
+    }
+
+    private void seedMentorCourses(User mina, User seoyeon) {
+        if (mentorCourseRepository.count() > 0) {
+            return;
+        }
+
+        mentorCourseRepository.saveAll(List.of(
+                MentorCourse.create(
+                        mina,
+                        "백엔드 API 구조 리뷰",
+                        "실전 프로젝트 기준으로 API 설계와 예외 처리 패턴을 점검합니다.",
+                        "컨트롤러, 서비스, 예외 처리, 테스트 코드까지 실제 프로젝트 구조를 기준으로 리뷰합니다.",
+                        "ONLINE",
+                        0,
+                        5,
+                        MentorCourseStatus.PUBLISHED
+                ),
+                MentorCourse.create(
+                        mina,
+                        "시스템 설계 면접 준비",
+                        "주니어 개발자용 시스템 설계 면접 대비 세션입니다.",
+                        "요구사항 정리, 트레이드오프 설명, 설계 발표 흐름까지 단계별로 연습합니다.",
+                        "ONLINE",
+                        0,
+                        4,
+                        MentorCourseStatus.PUBLISHED
+                ),
+                MentorCourse.create(
+                        seoyeon,
+                        "프론트 포트폴리오 구조 정리",
+                        "React 포트폴리오를 사용자 흐름 관점에서 리빌드합니다.",
+                        "섹션 구성, 프로젝트 설명 방식, 발표 흐름까지 같이 정리하는 실습형 멘토링입니다.",
+                        "HYBRID",
+                        0,
+                        6,
+                        MentorCourseStatus.PUBLISHED
+                )
+        ));
+    }
+
+    private void seedMentorCourseApplications(User mina, User seoyeon, User jisu, User hyunwoo) {
+        if (mentorCourseApplicationRepository.count() > 0 || mentorCourseRepository.count() == 0) {
+            return;
+        }
+
+        MentorCourse backendReviewCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "백엔드 API 구조 리뷰".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+        MentorCourse portfolioCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "프론트 포트폴리오 구조 정리".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+
+        MentorCourseApplication pendingApplication = MentorCourseApplication.create(
+                backendReviewCourse,
+                jisu,
+                "현재 진행 중인 스프링 프로젝트 구조를 같이 리뷰받고 싶어요."
+        );
+
+        MentorCourseApplication approvedApplication = MentorCourseApplication.create(
+                portfolioCourse,
+                hyunwoo,
+                "포트폴리오 발표 흐름과 프로젝트 설명 방식을 점검받고 싶습니다."
+        );
+        approvedApplication.approve("이번 주 토요일 세션으로 진행해 봅시다.");
+
+        mentorCourseApplicationRepository.saveAll(List.of(pendingApplication, approvedApplication));
+    }
+
+    private void seedMentorCourseCurriculum() {
+        if (mentorCourseCurriculumItemRepository.count() > 0 || mentorCourseRepository.count() == 0) {
+            return;
+        }
+
+        MentorCourse backendReviewCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "백엔드 API 구조 리뷰".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+        MentorCourse systemDesignCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "시스템 설계 면접 준비".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+        MentorCourse portfolioCourse = mentorCourseRepository.findAll().stream()
+                .filter(course -> "프론트 포트폴리오 구조 정리".equals(course.getTitle()))
+                .findFirst()
+                .orElseThrow();
+
+        mentorCourseCurriculumItemRepository.saveAll(List.of(
+                MentorCourseCurriculumItem.create(
+                        backendReviewCourse,
+                        1,
+                        "현재 프로젝트 구조 진단",
+                        "컨트롤러, 서비스, 예외 처리, 테스트 코드 구조를 함께 점검합니다."
+                ),
+                MentorCourseCurriculumItem.create(
+                        backendReviewCourse,
+                        2,
+                        "리팩터링 우선순위 정리",
+                        "중복 제거, 계층 분리, 예외 응답 규칙을 우선순위 기준으로 정리합니다."
+                ),
+                MentorCourseCurriculumItem.create(
+                        systemDesignCourse,
+                        1,
+                        "요구사항 해석 연습",
+                        "문제를 빠르게 구조화하고 핵심 제약 조건을 뽑아내는 법을 연습합니다."
+                ),
+                MentorCourseCurriculumItem.create(
+                        systemDesignCourse,
+                        2,
+                        "설계 발표 구조 만들기",
+                        "면접 답변 흐름과 트레이드오프 설명 순서를 정리합니다."
+                ),
+                MentorCourseCurriculumItem.create(
+                        portfolioCourse,
+                        1,
+                        "포트폴리오 흐름 재구성",
+                        "첫 화면, 프로젝트 순서, 섹션 강조점을 사용자 관점으로 다시 짭니다."
+                ),
+                MentorCourseCurriculumItem.create(
+                        portfolioCourse,
+                        2,
+                        "프로젝트 설명 문장 다듬기",
+                        "문제 정의, 해결 과정, 기술 선택 이유를 짧고 강하게 전달하는 방식으로 정리합니다."
+                )
+        ));
     }
 
     private RequestSeedData seedMentoringRequests(User mina, User jisu, User hyunwoo, User seoyeon) {

@@ -3,6 +3,7 @@ package com.neosquare.common;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.neosquare.admin.AdminAccessDeniedException;
 import com.neosquare.auth.DuplicateEmailException;
 import com.neosquare.auth.DuplicateNicknameException;
 import com.neosquare.auth.InvalidCredentialsException;
@@ -11,6 +12,8 @@ import com.neosquare.mentoring.DuplicateMentoringFeedbackException;
 import com.neosquare.mentoring.DuplicateMentoringReservationFeedbackException;
 import com.neosquare.mentoring.InvalidMentoringRequestStateException;
 import com.neosquare.mentoring.InvalidMentoringReservationStateException;
+import com.neosquare.mentoring.InvalidMentoringReservationSessionEntryException;
+import com.neosquare.mentoring.InvalidMentoringTargetRoleException;
 import com.neosquare.mentoring.InvalidReservationTimeException;
 import com.neosquare.mentoring.MentoringFeedbackAccessDeniedException;
 import com.neosquare.mentoring.MentoringFeedbackNotFoundException;
@@ -20,9 +23,19 @@ import com.neosquare.mentoring.MentoringReservationAccessDeniedException;
 import com.neosquare.mentoring.MentoringReservationFeedbackAccessDeniedException;
 import com.neosquare.mentoring.MentoringReservationFeedbackNotFoundException;
 import com.neosquare.mentoring.MentoringReservationNotFoundException;
+import com.neosquare.mentoring.MentoringReservationScheduleConflictException;
 import com.neosquare.mentoring.SelfMentoringRequestException;
 import com.neosquare.mentoring.SelfMentoringReservationException;
 import com.neosquare.mentoring.UserNotFoundException;
+import com.neosquare.mentor.InvalidMentorApplicationStateException;
+import com.neosquare.mentor.InvalidMentorAvailabilityException;
+import com.neosquare.mentor.InvalidMentorCourseApplicationStateException;
+import com.neosquare.mentor.MentorApplicationAccessDeniedException;
+import com.neosquare.mentor.MentorApplicationNotFoundException;
+import com.neosquare.mentor.MentorCourseApplicationAccessDeniedException;
+import com.neosquare.mentor.MentorCourseApplicationNotFoundException;
+import com.neosquare.mentor.MentorCourseNotFoundException;
+import com.neosquare.mentor.MentorManagementAccessDeniedException;
 import com.neosquare.notification.InvalidNotificationStateException;
 import com.neosquare.notification.NotificationAccessDeniedException;
 import com.neosquare.notification.NotificationNotFoundException;
@@ -216,6 +229,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    @ExceptionHandler(InvalidMentoringTargetRoleException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentoringTargetRoleException(
+            InvalidMentoringTargetRoleException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
     @ExceptionHandler(DuplicateMentoringFeedbackException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateMentoringFeedbackException(
             DuplicateMentoringFeedbackException exception
@@ -312,6 +337,54 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
+    @ExceptionHandler(MentorApplicationAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentorApplicationAccessDeniedException(
+            MentorApplicationAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(MentorManagementAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentorManagementAccessDeniedException(
+            MentorManagementAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(AdminAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAdminAccessDeniedException(
+            AdminAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    @ExceptionHandler(MentorCourseApplicationAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleMentorCourseApplicationAccessDeniedException(
+            MentorCourseApplicationAccessDeniedException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
     @ExceptionHandler(InvalidStudySessionRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidStudySessionRequestException(
             InvalidStudySessionRequestException exception
@@ -372,9 +445,57 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
+    @ExceptionHandler(MentorApplicationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentorApplicationNotFoundException(
+            MentorApplicationNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(MentorCourseNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentorCourseNotFoundException(
+            MentorCourseNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(MentorCourseApplicationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMentorCourseApplicationNotFoundException(
+            MentorCourseApplicationNotFoundException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
     @ExceptionHandler(InvalidMentoringReservationStateException.class)
     public ResponseEntity<ErrorResponse> handleInvalidMentoringReservationStateException(
             InvalidMentoringReservationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidMentoringReservationSessionEntryException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentoringReservationSessionEntryException(
+            InvalidMentoringReservationSessionEntryException exception
     ) {
         ErrorResponse response = ErrorResponse.of(
                 HttpStatus.CONFLICT,
@@ -394,6 +515,54 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(MentoringReservationScheduleConflictException.class)
+    public ResponseEntity<ErrorResponse> handleMentoringReservationScheduleConflictException(
+            MentoringReservationScheduleConflictException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidMentorApplicationStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentorApplicationStateException(
+            InvalidMentorApplicationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidMentorAvailabilityException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentorAvailabilityException(
+            InvalidMentorAvailabilityException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(InvalidMentorCourseApplicationStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMentorCourseApplicationStateException(
+            InvalidMentorCourseApplicationStateException exception
+    ) {
+        ErrorResponse response = ErrorResponse.of(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(RuntimeException.class)

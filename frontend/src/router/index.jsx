@@ -2,14 +2,16 @@ import { Suspense, lazy } from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
+import HubPage from '../pages/HubPage.jsx';
 import AuthNavigationHandler from './AuthNavigationHandler';
 import GuestOnlyRoute from './GuestOnlyRoute';
 import RequireAuth from './RequireAuth';
 
 const LandingPage = lazy(() => import('../pages/LandingPage.tsx'));
+const LobbyPage = lazy(() => import('../pages/LobbyPage.tsx'));
 const EntryAvatarPage = lazy(() => import('../pages/EntryAvatarPage.tsx'));
-const HubPage = lazy(() => import('../pages/HubPage'));
 const LoginPage = lazy(() => import('../pages/LoginPage.tsx'));
+const CourseDetailPage = lazy(() => import('../pages/CourseDetailPage'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
 const SpacePage = lazy(() => import('../pages/SpacePage'));
 const StudySessionPage = lazy(() => import('../pages/StudySessionPage'));
@@ -49,11 +51,15 @@ const router = createBrowserRouter([
         children: [
           {
             path: '/lobby',
-            element: withSuspense(<LandingPage />, '로비 화면을 준비하고 있습니다...'),
+            element: withSuspense(<LobbyPage />, '로비 화면을 준비하고 있습니다...'),
           },
           {
             path: '/hub',
-            element: withSuspense(<HubPage />, '활동 허브를 불러오는 중입니다...'),
+            element: <HubPage />,
+          },
+          {
+            path: '/courses/:courseId',
+            element: withSuspense(<CourseDetailPage />, '수업 상세를 준비하고 있습니다...'),
           },
           {
             path: '/enter',
