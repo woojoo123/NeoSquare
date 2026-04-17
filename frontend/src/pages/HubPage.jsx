@@ -62,6 +62,7 @@ import {
   dismissLobbyNotification,
   getDismissedLobbyNotificationIds,
 } from '../lib/lobbyNotificationStorage';
+import { getCourseSessionEntryState } from '../lib/courseSessionEntryState';
 import { getPrimarySpacePathFromSpaces } from '../lib/primarySpaceNavigation';
 import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useAuthStore } from '../store/authStore';
@@ -76,6 +77,16 @@ const DAY_OF_WEEK_LABELS = {
   SUNDAY: '일요일',
 };
 
+const DAY_OF_WEEK_KEYS = [
+  'SUNDAY',
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+];
+
 const DEFAULT_MENTOR_COURSE_FORM = {
   title: '',
   summary: '',
@@ -83,6 +94,7 @@ const DEFAULT_MENTOR_COURSE_FORM = {
   meetingType: 'ONLINE',
   price: '0',
   capacity: '1',
+  scheduleItems: [],
   curriculumItems: [
     {
       id: 'curriculum-draft-initial',
@@ -118,12 +130,36 @@ function createCurriculumDraft() {
   };
 }
 
+function createScheduleDraft() {
+  return {
+    id: `schedule-draft-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    title: '',
+    description: '',
+    startsAt: '',
+    endsAt: '',
+  };
+}
+
 function normalizeTimeValue(value) {
   if (!value) {
     return '';
   }
 
   return String(value).slice(0, 5);
+}
+
+function normalizeDateTimeLocalValue(value) {
+  if (!value) {
+    return '';
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return '';
+  }
+
+  return toDateTimeLocalValue(parsedDate);
 }
 
 function normalizeAvailabilitySlots(rawValue) {
@@ -174,6 +210,20 @@ function normalizeMentorCourses(rawValue) {
     approvedApplicationCount: Number(course.approvedApplicationCount ?? 0) || 0,
     remainingCapacity:
       Number(course.remainingCapacity ?? course.capacity ?? 0) || 0,
+    scheduleItems: Array.isArray(course.scheduleItems)
+      ? course.scheduleItems.map((item, itemIndex) => ({
+          id: item.id ?? `course-schedule-${index}-${itemIndex}`,
+          sequence: item.sequence ?? itemIndex + 1,
+          title: item.title || '',
+          description: item.description || '',
+          startsAt: item.startsAt || null,
+          endsAt: item.endsAt || null,
+          approvedApplicationCount: Number(item.approvedApplicationCount ?? 0) || 0,
+          approvedApplicantNicknames: Array.isArray(item.approvedApplicantNicknames)
+            ? item.approvedApplicantNicknames
+            : [],
+        }))
+      : [],
     curriculumItems: Array.isArray(course.curriculumItems)
       ? course.curriculumItems.map((item, itemIndex) => ({
           id: item.id ?? `course-curriculum-${index}-${itemIndex}`,
@@ -238,6 +288,30 @@ function normalizeMentorCourseApplications(rawValue) {
     mentorNickname: application.mentorNickname || '멘토',
     applicantId: application.applicantId ?? null,
     applicantNickname: application.applicantNickname || '신청자',
+    preferredScheduleItemId: application.preferredScheduleItemId ?? null,
+    preferredScheduleTitle: application.preferredScheduleTitle || '',
+    preferredScheduleStartsAt: application.preferredScheduleStartsAt || null,
+    preferredScheduleEndsAt: application.preferredScheduleEndsAt || null,
+    assignedScheduleItemId: application.assignedScheduleItemId ?? null,
+    assignedScheduleTitle: application.assignedScheduleTitle || '',
+    assignedScheduleStartsAt: application.assignedScheduleStartsAt || null,
+    assignedScheduleEndsAt: application.assignedScheduleEndsAt || null,
+    sessionEntryOpenAt: application.sessionEntryOpenAt || null,
+    sessionEntryCloseAt: application.sessionEntryCloseAt || null,
+    courseScheduleItems: Array.isArray(application.courseScheduleItems)
+      ? application.courseScheduleItems.map((item, itemIndex) => ({
+          id: item.id ?? `application-course-schedule-${index}-${itemIndex}`,
+          sequence: item.sequence ?? itemIndex + 1,
+          title: item.title || '',
+          description: item.description || '',
+          startsAt: item.startsAt || null,
+          endsAt: item.endsAt || null,
+          approvedApplicationCount: Number(item.approvedApplicationCount ?? 0) || 0,
+          approvedApplicantNicknames: Array.isArray(item.approvedApplicantNicknames)
+            ? item.approvedApplicantNicknames
+            : [],
+        }))
+      : [],
     message: application.message || '',
     status: application.status || 'PENDING',
     reviewNote: application.reviewNote || '',
@@ -645,6 +719,102 @@ function formatAvailabilitySlot(slot) {
   return `${DAY_OF_WEEK_LABELS[slot.dayOfWeek] || slot.dayOfWeek} ${slot.startTime} - ${slot.endTime}`;
 }
 
+function toDateTimeLocalValue(date) {
+  const localOffset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - localOffset * 60 * 1000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function createDateFromAvailability(baseDate, timeValue) {
+  const [hourValue = '0', minuteValue = '0'] = String(timeValue || '00:00').split(':');
+  const nextDate = new Date(baseDate);
+  nextDate.setHours(Number(hourValue), Number(minuteValue), 0, 0);
+  return nextDate;
+}
+
+function buildMentorReservationSuggestions(
+  availabilitySlots,
+  nowTimestamp = Date.now(),
+  horizonDays = 14
+) {
+  if (!Array.isArray(availabilitySlots) || availabilitySlots.length === 0) {
+    return [];
+  }
+
+  const suggestions = [];
+  const startOfToday = new Date(nowTimestamp);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  for (let offset = 0; offset < horizonDays; offset += 1) {
+    const currentDate = new Date(startOfToday);
+    currentDate.setDate(startOfToday.getDate() + offset);
+
+    const dayOfWeekKey = DAY_OF_WEEK_KEYS[currentDate.getDay()];
+
+    availabilitySlots
+      .filter((slot) => slot.dayOfWeek === dayOfWeekKey)
+      .forEach((slot, index) => {
+        const startDate = createDateFromAvailability(currentDate, slot.startTime);
+        const endDate = createDateFromAvailability(currentDate, slot.endTime);
+
+        if (startDate.getTime() <= nowTimestamp) {
+          return;
+        }
+
+        suggestions.push({
+          id: `${dayOfWeekKey}-${slot.startTime}-${offset}-${index}`,
+          dateKey: currentDate.toISOString().slice(0, 10),
+          dateLabel: currentDate.toLocaleDateString('ko-KR', {
+            month: 'long',
+            day: 'numeric',
+            weekday: 'short',
+          }),
+          timeLabel: `${slot.startTime} - ${slot.endTime}`,
+          startsAt: startDate.toISOString(),
+          endsAt: endDate.toISOString(),
+          inputValue: toDateTimeLocalValue(startDate),
+        });
+      });
+  }
+
+  return suggestions.sort(
+    (leftSuggestion, rightSuggestion) =>
+      getTimestampValue(leftSuggestion.startsAt) - getTimestampValue(rightSuggestion.startsAt)
+  );
+}
+
+function groupReservationSuggestionsByDate(suggestions) {
+  return suggestions.reduce((groups, suggestion) => {
+    const currentGroup = groups.find((group) => group.dateKey === suggestion.dateKey);
+
+    if (currentGroup) {
+      currentGroup.items.push(suggestion);
+      return groups;
+    }
+
+    groups.push({
+      dateKey: suggestion.dateKey,
+      dateLabel: suggestion.dateLabel,
+      items: [suggestion],
+    });
+    return groups;
+  }, []);
+}
+
+function chunkItems(items, chunkSize) {
+  if (!Array.isArray(items) || chunkSize <= 0) {
+    return [];
+  }
+
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
 function normalizeSearchText(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -744,6 +914,95 @@ function formatReservationEntryWindow(entryState) {
   return `${formatDateTime(entryState.entryOpenAt)}부터 ${formatDateTime(entryState.entryCloseAt)}까지`;
 }
 
+function formatCourseSessionEntryStatusLabel(entryState) {
+  if (!entryState) {
+    return '수업 세션 상태를 확인할 수 없습니다.';
+  }
+
+  if (entryState.status === 'upcoming') {
+    return '입장 대기 중';
+  }
+
+  if (entryState.status === 'ready') {
+    return '지금 입장 가능';
+  }
+
+  if (entryState.status === 'expired') {
+    return '입장 시간 종료';
+  }
+
+  return '입장 정보 없음';
+}
+
+function formatCourseSessionEntryWindow(entryState) {
+  if (!entryState?.entryOpenAt || !entryState?.entryCloseAt) {
+    return '수업 세션 입장 시간 정보가 없습니다.';
+  }
+
+  return `${formatDateTime(entryState.entryOpenAt)}부터 ${formatDateTime(entryState.entryCloseAt)}까지`;
+}
+
+function getCourseSessionAccessCopy(application, entryState, perspective = 'sent') {
+  if (application.status === 'PENDING') {
+    return perspective === 'received'
+      ? {
+          headline: '수업 신청 검토 필요',
+          detail: '승인하면서 회차를 배정하면 해당 회차의 세션 입장 시간이 자동으로 열립니다.',
+        }
+      : {
+          headline: '멘토 검토 대기 중',
+          detail: '승인되면 배정된 회차 기준으로 수업 세션 입장 시간이 열립니다.',
+        };
+  }
+
+  if (application.status === 'REJECTED') {
+    return {
+      headline: '수업 신청이 반려되었습니다',
+      detail: '이 신청으로는 수업 세션에 입장할 수 없습니다.',
+    };
+  }
+
+  if (application.status === 'CANCELED') {
+    return {
+      headline: '수업 신청이 취소되었습니다',
+      detail: '취소된 신청으로는 수업 세션을 시작할 수 없습니다.',
+    };
+  }
+
+  if (!application.assignedScheduleItemId) {
+    return {
+      headline: '확정 회차가 없습니다',
+      detail: '승인된 뒤 회차가 배정되어야 수업 세션 입장이 열립니다.',
+    };
+  }
+
+  if (entryState?.status === 'ready') {
+    return {
+      headline: '지금 수업 세션에 입장할 수 있습니다',
+      detail: '배정된 회차 참가자만 세션 화면으로 이동할 수 있습니다.',
+    };
+  }
+
+  if (entryState?.status === 'upcoming') {
+    return {
+      headline: '입장 가능 시간 전입니다',
+      detail: '수업 시작 10분 전부터 세션 입장이 열립니다.',
+    };
+  }
+
+  if (entryState?.status === 'expired') {
+    return {
+      headline: '입장 가능 시간이 종료되었습니다',
+      detail: '해당 회차의 세션 입장 가능 시간이 지나 더 이상 이 세션에 입장할 수 없습니다.',
+    };
+  }
+
+  return {
+    headline: '수업 세션 상태를 확인할 수 없습니다',
+    detail: '배정된 회차 정보가 완전하지 않아 세션 입장 가능 여부를 계산하지 못했습니다.',
+  };
+}
+
 function getReservationAccessCopy(reservation, entryState, perspective = 'sent') {
   if (reservation.status === 'PENDING') {
     return perspective === 'received'
@@ -818,6 +1077,10 @@ function formatNotificationTypeLabel(type) {
     return '세션 입장';
   }
 
+  if (type === 'course_session_ready') {
+    return '수업 세션';
+  }
+
   return '알림';
 }
 
@@ -846,14 +1109,17 @@ function buildHubNotifications({
   sentRequests,
   reservations,
   receivedReservations,
+  myCourseApplications,
+  receivedCourseApplications,
   nowTimestamp,
   dismissedNotificationIds,
 }) {
   const notifications = [];
   const notificationPriority = {
     reservation_ready: 0,
-    request_accepted: 1,
-    reservation_accepted: 2,
+    course_session_ready: 1,
+    request_accepted: 2,
+    reservation_accepted: 3,
   };
 
   serverNotifications.forEach((notification) => {
@@ -963,6 +1229,58 @@ function buildHubNotifications({
       reservation,
       isRead: false,
       createdAt: reservation.reservedAt || reservation.createdAt || null,
+    });
+  });
+
+  myCourseApplications.forEach((application) => {
+    if (application.status !== 'APPROVED' || !application.assignedScheduleItemId) {
+      return;
+    }
+
+    const entryState = getCourseSessionEntryState(application, nowTimestamp);
+
+    if (entryState.status !== 'ready') {
+      return;
+    }
+
+    notifications.push({
+      id: `course-session-ready-my-${application.id}`,
+      source: 'computed',
+      type: 'course_session_ready',
+      title: '수업 세션에 입장할 수 있습니다',
+      message: `${application.courseTitle} · ${application.assignedScheduleTitle || '배정 회차'} 세션이 시작되었습니다.`,
+      relatedId: application.id,
+      actionType: 'enter_course_session',
+      actionLabel: '세션 입장',
+      courseApplication: application,
+      isRead: false,
+      createdAt: application.assignedScheduleStartsAt || application.reviewedAt || application.createdAt || null,
+    });
+  });
+
+  receivedCourseApplications.forEach((application) => {
+    if (application.status !== 'APPROVED' || !application.assignedScheduleItemId) {
+      return;
+    }
+
+    const entryState = getCourseSessionEntryState(application, nowTimestamp);
+
+    if (entryState.status !== 'ready') {
+      return;
+    }
+
+    notifications.push({
+      id: `course-session-ready-received-${application.id}`,
+      source: 'computed',
+      type: 'course_session_ready',
+      title: '진행 예정 수업 세션에 입장할 수 있습니다',
+      message: `${application.applicantNickname} 님과 ${application.courseTitle} 세션을 지금 시작할 수 있습니다.`,
+      relatedId: application.id,
+      actionType: 'enter_course_session',
+      actionLabel: '세션 입장',
+      courseApplication: application,
+      isRead: false,
+      createdAt: application.assignedScheduleStartsAt || application.reviewedAt || application.createdAt || null,
     });
   });
 
@@ -1139,8 +1457,10 @@ export default function HubPage() {
   const [mentorCourseError, setMentorCourseError] = useState('');
   const [mentorCourseStatus, setMentorCourseStatus] = useState('idle');
   const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedCourseScheduleId, setSelectedCourseScheduleId] = useState('');
   const [courseApplicationMessage, setCourseApplicationMessage] = useState('');
   const [courseApplicationReviewNote, setCourseApplicationReviewNote] = useState('');
+  const [courseApplicationAssignedScheduleId, setCourseApplicationAssignedScheduleId] = useState('');
   const [courseApplicationNotice, setCourseApplicationNotice] = useState('');
   const [courseApplicationError, setCourseApplicationError] = useState('');
   const [courseApplicationStatus, setCourseApplicationStatus] = useState('idle');
@@ -1149,6 +1469,7 @@ export default function HubPage() {
   const [mentoringError, setMentoringError] = useState('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [reservationDateTime, setReservationDateTime] = useState(getDefaultReservationDateTime);
+  const [reservationWeekIndex, setReservationWeekIndex] = useState(0);
   const [reservationCreateMessage, setReservationCreateMessage] = useState('');
   const [reservationCreateNotice, setReservationCreateNotice] = useState('');
   const [reservationCreateError, setReservationCreateError] = useState('');
@@ -1156,7 +1477,7 @@ export default function HubPage() {
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [reservationClock, setReservationClock] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState('received_requests');
+  const [activeCategory, setActiveCategory] = useState('find_mentors');
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [mentorFilters, setMentorFilters] = useState(DEFAULT_MENTOR_FILTERS);
 
@@ -1172,10 +1493,21 @@ export default function HubPage() {
         sentRequests,
         reservations,
         receivedReservations,
+        myCourseApplications,
+        receivedCourseApplications,
         nowTimestamp: reservationClock,
         dismissedNotificationIds,
       }),
-    [dismissedNotificationIds, receivedReservations, reservationClock, reservations, sentRequests, serverNotifications]
+    [
+      dismissedNotificationIds,
+      myCourseApplications,
+      receivedCourseApplications,
+      receivedReservations,
+      reservationClock,
+      reservations,
+      sentRequests,
+      serverNotifications,
+    ]
   );
 
   const pendingRequestCount = useMemo(
@@ -1206,9 +1538,30 @@ export default function HubPage() {
           reservation.status === 'ACCEPTED' &&
           getReservationEntryState(reservation, reservationClock).canEnter
       ).length;
+    const readyCourseSessions =
+      myCourseApplications.filter(
+        (application) =>
+          application.status === 'APPROVED' &&
+          application.assignedScheduleItemId &&
+          getCourseSessionEntryState(application, reservationClock).canEnter
+      ).length +
+      receivedCourseApplications.filter(
+        (application) =>
+          application.status === 'APPROVED' &&
+          application.assignedScheduleItemId &&
+          getCourseSessionEntryState(application, reservationClock).canEnter
+      ).length;
 
-    return acceptedRequests + readyReservations;
-  }, [receivedRequests, receivedReservations, reservationClock, reservations, sentRequests]);
+    return acceptedRequests + readyReservations + readyCourseSessions;
+  }, [
+    myCourseApplications,
+    receivedCourseApplications,
+    receivedRequests,
+    receivedReservations,
+    reservationClock,
+    reservations,
+    sentRequests,
+  ]);
   const unreadNotificationCount = lobbyNotifications.length;
   const feedbackItemCount = feedbackHistory.length + (feedbackPrompt ? 1 : 0);
   const hasUnreadServerNotifications = serverNotifications.some((notification) => !notification.isRead);
@@ -1525,7 +1878,10 @@ export default function HubPage() {
       title: notification.title,
       preview: notification.message,
       badge: formatNotificationTypeLabel(notification.type),
-      tone: notification.type === 'reservation_ready' ? 'accepted' : 'info',
+      tone:
+        notification.type === 'reservation_ready' || notification.type === 'course_session_ready'
+          ? 'accepted'
+          : 'info',
       meta: notification.createdAt ? formatDateTime(notification.createdAt) : '새 알림',
       unread: !notification.isRead,
       raw: notification,
@@ -1779,6 +2135,17 @@ export default function HubPage() {
     }
   }
 
+  function selectReservationSuggestion(suggestion, nextWeekIndex = reservationWeekIndex) {
+    if (!suggestion) {
+      return;
+    }
+
+    setReservationWeekIndex(nextWeekIndex);
+    setReservationDateTime(suggestion.inputValue);
+    setReservationCreateNotice('');
+    setReservationCreateError('');
+  }
+
   function syncMentorManagementState(rawProfile) {
     const normalizedProfile = normalizeMentorManagementProfile(rawProfile);
 
@@ -1822,6 +2189,12 @@ export default function HubPage() {
   function openReservationSession(reservation) {
     navigate(`/mentoring/session/${reservation.id}?type=reservation`, {
       state: { reservation },
+    });
+  }
+
+  function openCourseApplicationSession(courseApplication) {
+    navigate(`/mentoring/session/${courseApplication.id}?type=course_application`, {
+      state: { courseApplication },
     });
   }
 
@@ -2184,6 +2557,31 @@ export default function HubPage() {
     }));
   }
 
+  function handleAddScheduleItem() {
+    setMentorCourseForm((currentForm) => ({
+      ...currentForm,
+      scheduleItems: [...currentForm.scheduleItems, createScheduleDraft()],
+    }));
+  }
+
+  function handleScheduleItemChange(scheduleId, field, value) {
+    setMentorCourseForm((currentForm) => ({
+      ...currentForm,
+      scheduleItems: currentForm.scheduleItems.map((item) =>
+        String(item.id) === String(scheduleId) ? { ...item, [field]: value } : item
+      ),
+    }));
+  }
+
+  function handleRemoveScheduleItem(scheduleId) {
+    setMentorCourseForm((currentForm) => ({
+      ...currentForm,
+      scheduleItems: currentForm.scheduleItems.filter(
+        (item) => String(item.id) !== String(scheduleId)
+      ),
+    }));
+  }
+
   function handleCurriculumItemChange(curriculumId, field, value) {
     setMentorCourseForm((currentForm) => ({
       ...currentForm,
@@ -2214,6 +2612,16 @@ export default function HubPage() {
       meetingType: course.meetingType || 'ONLINE',
       price: String(course.price ?? 0),
       capacity: String(course.capacity ?? 1),
+      scheduleItems:
+        course.scheduleItems?.length > 0
+          ? course.scheduleItems.map((item) => ({
+              id: item.id,
+              title: item.title || '',
+              description: item.description || '',
+              startsAt: normalizeDateTimeLocalValue(item.startsAt),
+              endsAt: normalizeDateTimeLocalValue(item.endsAt),
+            }))
+          : [],
       curriculumItems:
         course.curriculumItems?.length > 0
           ? course.curriculumItems.map((item) => ({
@@ -2244,6 +2652,12 @@ export default function HubPage() {
       meetingType: mentorCourseForm.meetingType,
       price: Number(mentorCourseForm.price),
       capacity: Number(mentorCourseForm.capacity),
+      scheduleItems: mentorCourseForm.scheduleItems.map((item) => ({
+        title: item.title.trim(),
+        description: item.description.trim(),
+        startsAt: item.startsAt ? new Date(item.startsAt).toISOString() : null,
+        endsAt: item.endsAt ? new Date(item.endsAt).toISOString() : null,
+      })),
       curriculumItems: mentorCourseForm.curriculumItems.map((item) => ({
         title: item.title.trim(),
         description: item.description.trim(),
@@ -2293,6 +2707,7 @@ export default function HubPage() {
 
     try {
       await createMentorCourseApplication(selectedCourseId, {
+        preferredScheduleItemId: selectedCourseScheduleId ? Number(selectedCourseScheduleId) : null,
         message: courseApplicationMessage.trim(),
       });
       await Promise.all([refreshCourseApplications(), refreshMentorProfiles()]);
@@ -2319,6 +2734,9 @@ export default function HubPage() {
     try {
       if (decision === 'approve') {
         await approveMentorCourseApplication(applicationId, {
+          assignedScheduleItemId: courseApplicationAssignedScheduleId
+            ? Number(courseApplicationAssignedScheduleId)
+            : null,
           reviewNote: courseApplicationReviewNote.trim(),
         });
       } else {
@@ -2494,6 +2912,11 @@ export default function HubPage() {
 
     if (notification.actionType === 'enter_reservation_session' && notification.reservation) {
       openReservationSession(notification.reservation);
+      return;
+    }
+
+    if (notification.actionType === 'enter_course_session' && notification.courseApplication) {
+      openCourseApplicationSession(notification.courseApplication);
       return;
     }
 
@@ -2933,12 +3356,10 @@ export default function HubPage() {
   }, [feedbackPrompt]);
 
   useEffect(() => {
-    const hasCurrentCategoryItems = categoryItems[activeCategory]?.length > 0;
-
-    if (!hasCurrentCategoryItems && categoryItems[recommendedCategory]?.length > 0) {
+    if (!activeCategory) {
       setActiveCategory(recommendedCategory);
     }
-  }, [activeCategory, categoryItems, recommendedCategory]);
+  }, [activeCategory, recommendedCategory]);
 
   useEffect(() => {
       if (!categoryDefinitions.some((category) => category.id === activeCategory)) {
@@ -2982,6 +3403,64 @@ export default function HubPage() {
     }
 
     setSelectedCourseId('');
+  }, [selectedItem]);
+
+  useEffect(() => {
+    if (selectedItem?.kind !== 'mentor_profile') {
+      setSelectedCourseScheduleId('');
+      return;
+    }
+
+    const selectedCourse =
+      selectedItem.raw?.courses?.find((course) => String(course.id) === String(selectedCourseId)) ||
+      selectedItem.raw?.courses?.[0] ||
+      null;
+
+    const currentScheduleExists = selectedCourse?.scheduleItems?.some(
+      (item) => String(item.id) === String(selectedCourseScheduleId)
+    );
+
+    if (currentScheduleExists) {
+      return;
+    }
+
+    const firstScheduleId = selectedCourse?.scheduleItems?.[0]?.id;
+    setSelectedCourseScheduleId(firstScheduleId ? String(firstScheduleId) : '');
+  }, [selectedCourseId, selectedCourseScheduleId, selectedItem]);
+
+  useEffect(() => {
+    if (selectedItem?.kind !== 'received_course_application') {
+      setCourseApplicationAssignedScheduleId('');
+      return;
+    }
+
+    const assignedScheduleId =
+      selectedItem.raw?.assignedScheduleItemId ||
+      selectedItem.raw?.preferredScheduleItemId ||
+      selectedItem.raw?.courseScheduleItems?.[0]?.id ||
+      '';
+
+    setCourseApplicationAssignedScheduleId(assignedScheduleId ? String(assignedScheduleId) : '');
+  }, [selectedItem]);
+
+  useEffect(() => {
+    if (selectedItem?.kind !== 'mentor_profile') {
+      return;
+    }
+
+    const nextReservationSuggestion = buildMentorReservationSuggestions(
+      selectedItem.raw?.availabilitySlots,
+      Date.now()
+    )[0];
+
+    setReservationWeekIndex(0);
+
+    if (nextReservationSuggestion) {
+      setReservationDateTime(nextReservationSuggestion.inputValue);
+      return;
+    }
+
+    setReservationDateTime(getDefaultReservationDateTime());
   }, [selectedItem]);
 
   function renderSidebarEmpty() {
@@ -3438,7 +3917,10 @@ export default function HubPage() {
       eyebrow: '알림',
       title: notification.title,
       badge: formatNotificationTypeLabel(notification.type),
-      tone: notification.type === 'reservation_ready' ? 'accepted' : 'info',
+      tone:
+        notification.type === 'reservation_ready' || notification.type === 'course_session_ready'
+          ? 'accepted'
+          : 'info',
       meta: notification.createdAt ? formatDateTime(notification.createdAt) : '새 알림',
       asideAction:
         hasUnreadServerNotifications && activeCategory === 'notifications' ? (
@@ -4224,6 +4706,86 @@ export default function HubPage() {
               </div>
               <div className="mentor-course-curriculum">
                 <div className="mentor-course-curriculum__header">
+                  <strong>수업 일정</strong>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleAddScheduleItem}
+                    disabled={mentorCourseStatus === 'saving'}
+                  >
+                    회차 추가
+                  </button>
+                </div>
+                {mentorCourseForm.scheduleItems.length === 0 ? (
+                  <p>회차를 추가하면 수업 상세와 멘토 목록에서 일정 흐름을 함께 보여줄 수 있습니다.</p>
+                ) : (
+                  mentorCourseForm.scheduleItems.map((item, itemIndex) => (
+                    <div key={item.id} className="mentor-course-curriculum__item">
+                      <label className="app-field">
+                        <span>{itemIndex + 1}회차 제목</span>
+                        <input
+                          className="app-input"
+                          value={item.title}
+                          onChange={(event) =>
+                            handleScheduleItemChange(item.id, 'title', event.target.value)
+                          }
+                          placeholder="예: 1회차 현재 구조 진단"
+                          disabled={mentorCourseStatus === 'saving'}
+                        />
+                      </label>
+                      <div className="mentor-course-grid">
+                        <label className="app-field">
+                          <span>시작 일시</span>
+                          <input
+                            type="datetime-local"
+                            className="app-input"
+                            value={item.startsAt}
+                            onChange={(event) =>
+                              handleScheduleItemChange(item.id, 'startsAt', event.target.value)
+                            }
+                            disabled={mentorCourseStatus === 'saving'}
+                          />
+                        </label>
+                        <label className="app-field">
+                          <span>종료 일시</span>
+                          <input
+                            type="datetime-local"
+                            className="app-input"
+                            value={item.endsAt}
+                            onChange={(event) =>
+                              handleScheduleItemChange(item.id, 'endsAt', event.target.value)
+                            }
+                            disabled={mentorCourseStatus === 'saving'}
+                          />
+                        </label>
+                      </div>
+                      <label className="app-field">
+                        <span>{itemIndex + 1}회차 설명</span>
+                        <textarea
+                          className="app-input mentoring-textarea"
+                          value={item.description}
+                          onChange={(event) =>
+                            handleScheduleItemChange(item.id, 'description', event.target.value)
+                          }
+                          rows={3}
+                          placeholder="이 회차에서 다루는 핵심 내용을 적어 주세요."
+                          disabled={mentorCourseStatus === 'saving'}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => handleRemoveScheduleItem(item.id)}
+                        disabled={mentorCourseStatus === 'saving'}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="mentor-course-curriculum">
+                <div className="mentor-course-curriculum__header">
                   <strong>커리큘럼</strong>
                   <button
                     type="button"
@@ -4330,6 +4892,16 @@ export default function HubPage() {
                         ))}
                       </div>
                     ) : null}
+                    {course.scheduleItems?.length ? (
+                      <div className="mentor-course-schedule-preview">
+                        {course.scheduleItems.map((item) => (
+                          <p key={item.id}>
+                            {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)} ·
+                            배정 {item.approvedApplicationCount || 0}명
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="activity-detail__actions">
                       <button
                         type="button"
@@ -4359,8 +4931,30 @@ export default function HubPage() {
   }
 
   function renderReceivedCourseApplicationDetail(application) {
+    const sessionEntryState = getCourseSessionEntryState(application, reservationClock);
+    const accessCopy = getCourseSessionAccessCopy(
+      application,
+      sessionEntryState,
+      'received'
+    );
     const isPending = application.status === 'PENDING';
     const isProcessing = activeCourseApplicationId === application.id;
+    const canEnterCourseSession =
+      application.status === 'APPROVED' &&
+      application.assignedScheduleItemId &&
+      sessionEntryState.canEnter;
+    const assignedScheduleCandidate =
+      application.courseScheduleItems?.find(
+        (item) => String(item.id) === String(courseApplicationAssignedScheduleId)
+      ) ||
+      application.courseScheduleItems?.find(
+        (item) => String(item.id) === String(application.assignedScheduleItemId)
+      ) ||
+      application.courseScheduleItems?.find(
+        (item) => String(item.id) === String(application.preferredScheduleItemId)
+      ) ||
+      application.courseScheduleItems?.[0] ||
+      null;
 
     return renderDetailFrame({
       eyebrow: '받은 수업 신청',
@@ -4377,24 +4971,37 @@ export default function HubPage() {
       ),
       meta: `${application.applicantNickname} · ${formatDateTime(application.createdAt)}`,
       actions:
-        isPending ? (
+        isPending || canEnterCourseSession ? (
           <>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => handleReceivedCourseApplicationDecision(application.id, 'approve')}
-              disabled={isProcessing}
-            >
-              {isProcessing ? '처리 중...' : '승인'}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => handleReceivedCourseApplicationDecision(application.id, 'reject')}
-              disabled={isProcessing}
-            >
-              반려
-            </button>
+            {canEnterCourseSession ? (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => openCourseApplicationSession(application)}
+              >
+                세션 입장
+              </button>
+            ) : null}
+            {isPending ? (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => handleReceivedCourseApplicationDecision(application.id, 'approve')}
+                disabled={isProcessing}
+              >
+                {isProcessing ? '처리 중...' : '승인'}
+              </button>
+            ) : null}
+            {isPending ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => handleReceivedCourseApplicationDecision(application.id, 'reject')}
+                disabled={isProcessing}
+              >
+                반려
+              </button>
+            ) : null}
           </>
         ) : null,
       children: (
@@ -4407,12 +5014,70 @@ export default function HubPage() {
             <p>진행 방식: {formatMeetingTypeLabel(application.courseMeetingType)}</p>
             <p>가격: {formatCurrency(application.coursePrice)}</p>
           </section>
+          {application.preferredScheduleItemId ? (
+            <section className="activity-detail__section">
+              <h3>희망 회차</h3>
+              <p>{application.preferredScheduleTitle || '선택한 회차'}</p>
+              <p>
+                {formatDateTime(application.preferredScheduleStartsAt)}
+                {application.preferredScheduleEndsAt
+                  ? ` - ${formatDateTime(application.preferredScheduleEndsAt)}`
+                  : ''}
+              </p>
+            </section>
+          ) : null}
+          {application.assignedScheduleItemId ? (
+            <section className="activity-detail__section">
+              <h3>확정 회차</h3>
+              <p>{application.assignedScheduleTitle || '확정된 회차'}</p>
+              <p>
+                {formatDateTime(application.assignedScheduleStartsAt)}
+                {application.assignedScheduleEndsAt
+                  ? ` - ${formatDateTime(application.assignedScheduleEndsAt)}`
+                  : ''}
+              </p>
+            </section>
+          ) : null}
           <section className="activity-detail__section">
             <h3>신청 메시지</h3>
             <p>{application.message || '남긴 메시지가 없습니다.'}</p>
           </section>
+          <section className="activity-detail__section">
+            <h3>수업 세션 상태</h3>
+            <p>{accessCopy.headline}</p>
+            <p>{accessCopy.detail}</p>
+            {application.status === 'APPROVED' ? (
+              <>
+                <p>{formatCourseSessionEntryStatusLabel(sessionEntryState)}</p>
+                <p>{formatCourseSessionEntryWindow(sessionEntryState)}</p>
+              </>
+            ) : null}
+          </section>
           {application.status === 'PENDING' ? (
             <section className="activity-detail__section">
+              {application.courseScheduleItems?.length ? (
+                <label className="app-field">
+                  <span>승인 시 배정할 회차</span>
+                  <select
+                    className="app-input"
+                    value={courseApplicationAssignedScheduleId}
+                    onChange={(event) => setCourseApplicationAssignedScheduleId(event.target.value)}
+                    disabled={isProcessing}
+                  >
+                    {application.courseScheduleItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)} · 승인 {item.approvedApplicationCount}명
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {assignedScheduleCandidate ? (
+                <p>
+                  현재 배정 예정 회차: {assignedScheduleCandidate.sequence}회차{' '}
+                  {assignedScheduleCandidate.title}
+                </p>
+              ) : null}
               <h3>검토 메모</h3>
               <textarea
                 className="app-input mentoring-textarea"
@@ -4436,8 +5101,14 @@ export default function HubPage() {
   }
 
   function renderSentCourseApplicationDetail(application) {
+    const sessionEntryState = getCourseSessionEntryState(application, reservationClock);
+    const accessCopy = getCourseSessionAccessCopy(application, sessionEntryState, 'sent');
     const isPending = application.status === 'PENDING';
     const isProcessing = activeCourseApplicationId === application.id;
+    const canEnterCourseSession =
+      application.status === 'APPROVED' &&
+      application.assignedScheduleItemId &&
+      sessionEntryState.canEnter;
 
     return renderDetailFrame({
       eyebrow: '내 진행',
@@ -4454,15 +5125,28 @@ export default function HubPage() {
       ),
       meta: `${application.mentorNickname} · ${formatDateTime(application.createdAt)}`,
       actions:
-        isPending ? (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => handleCancelCourseApplication(application.id)}
-            disabled={isProcessing}
-          >
-            {isProcessing ? '취소 중...' : '신청 취소'}
-          </button>
+        isPending || canEnterCourseSession ? (
+          <>
+            {canEnterCourseSession ? (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => openCourseApplicationSession(application)}
+              >
+                세션 입장
+              </button>
+            ) : null}
+            {isPending ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => handleCancelCourseApplication(application.id)}
+                disabled={isProcessing}
+              >
+                {isProcessing ? '취소 중...' : '신청 취소'}
+              </button>
+            ) : null}
+          </>
         ) : null,
       children: (
         <>
@@ -4474,9 +5158,44 @@ export default function HubPage() {
             <p>진행 방식: {formatMeetingTypeLabel(application.courseMeetingType)}</p>
             <p>가격: {formatCurrency(application.coursePrice)}</p>
           </section>
+          {application.preferredScheduleItemId ? (
+            <section className="activity-detail__section">
+              <h3>내가 선택한 회차</h3>
+              <p>{application.preferredScheduleTitle || '선택한 회차'}</p>
+              <p>
+                {formatDateTime(application.preferredScheduleStartsAt)}
+                {application.preferredScheduleEndsAt
+                  ? ` - ${formatDateTime(application.preferredScheduleEndsAt)}`
+                  : ''}
+              </p>
+            </section>
+          ) : null}
+          {application.assignedScheduleItemId ? (
+            <section className="activity-detail__section">
+              <h3>확정된 회차</h3>
+              <p>{application.assignedScheduleTitle || '확정된 회차'}</p>
+              <p>
+                {formatDateTime(application.assignedScheduleStartsAt)}
+                {application.assignedScheduleEndsAt
+                  ? ` - ${formatDateTime(application.assignedScheduleEndsAt)}`
+                  : ''}
+              </p>
+            </section>
+          ) : null}
           <section className="activity-detail__section">
             <h3>내 신청 메시지</h3>
             <p>{application.message || '남긴 메시지가 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>수업 세션 상태</h3>
+            <p>{accessCopy.headline}</p>
+            <p>{accessCopy.detail}</p>
+            {application.status === 'APPROVED' ? (
+              <>
+                <p>{formatCourseSessionEntryStatusLabel(sessionEntryState)}</p>
+                <p>{formatCourseSessionEntryWindow(sessionEntryState)}</p>
+              </>
+            ) : null}
           </section>
           <section className="activity-detail__section">
             <h3>현재 상태</h3>
@@ -4574,6 +5293,41 @@ export default function HubPage() {
       mentor.courses?.[0] ||
       null;
     const isSelectedCourseFull = selectedCourse ? selectedCourse.remainingCapacity <= 0 : false;
+    const selectedCourseSchedule =
+      selectedCourse?.scheduleItems?.find(
+        (item) => String(item.id) === String(selectedCourseScheduleId)
+      ) || selectedCourse?.scheduleItems?.[0] || null;
+    const reservationSuggestions = buildMentorReservationSuggestions(
+      mentor.availabilitySlots,
+      reservationClock
+    );
+    const reservationSuggestionGroups = groupReservationSuggestionsByDate(reservationSuggestions);
+    const reservationSuggestionWeeks = chunkItems(reservationSuggestionGroups, 7);
+    const selectedReservationSuggestion =
+      reservationSuggestions.find(
+        (suggestion) => suggestion.inputValue === reservationDateTime
+      ) || null;
+    const selectedReservationDateKey = selectedReservationSuggestion?.dateKey || null;
+    const selectedReservationWeekIndex = selectedReservationDateKey
+      ? reservationSuggestionWeeks.findIndex((week) =>
+          week.some((group) => group.dateKey === selectedReservationDateKey)
+        )
+      : -1;
+    const resolvedReservationWeekIndex =
+      selectedReservationWeekIndex >= 0
+        ? selectedReservationWeekIndex
+        : Math.min(reservationWeekIndex, Math.max(reservationSuggestionWeeks.length - 1, 0));
+    const activeReservationWeek = reservationSuggestionWeeks[resolvedReservationWeekIndex] || [];
+    const activeReservationDateGroup =
+      activeReservationWeek.find((group) => group.dateKey === selectedReservationDateKey) ||
+      activeReservationWeek[0] ||
+      null;
+    const activeReservationWeekLabel =
+      activeReservationWeek.length > 0
+        ? `${activeReservationWeek[0].dateLabel} - ${
+            activeReservationWeek[activeReservationWeek.length - 1].dateLabel
+          }`
+        : '';
 
     return renderDetailFrame({
       eyebrow: '멘토 찾기',
@@ -4648,6 +5402,16 @@ export default function HubPage() {
                         ))}
                       </div>
                     ) : null}
+                    {course.scheduleItems?.length ? (
+                      <div className="mentor-course-schedule-preview">
+                        {course.scheduleItems.slice(0, 2).map((item) => (
+                          <p key={item.id}>
+                            {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)} ·
+                            배정 {item.approvedApplicationCount || 0}명
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="activity-detail__actions">
                       <button
                         type="button"
@@ -4689,6 +5453,32 @@ export default function HubPage() {
                     현재 선택한 수업은 {selectedCourse.approvedApplicationCount}명이 승인되었고,
                     남은 좌석은 {selectedCourse.remainingCapacity}석입니다.
                   </p>
+                ) : null}
+                {selectedCourse?.scheduleItems?.length ? (
+                  <>
+                    <label className="app-field">
+                      <span>희망 회차</span>
+                      <select
+                        className="app-input"
+                        value={selectedCourseScheduleId}
+                        onChange={(event) => setSelectedCourseScheduleId(event.target.value)}
+                        disabled={courseApplicationStatus === 'saving'}
+                      >
+                        {selectedCourse.scheduleItems.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedCourseSchedule ? (
+                      <p className="mentor-course-application-note">
+                        선택한 회차: {selectedCourseSchedule.sequence}회차 {selectedCourseSchedule.title}
+                        {' · '}
+                        {formatDateTime(selectedCourseSchedule.startsAt)}
+                      </p>
+                    ) : null}
+                  </>
                 ) : null}
                 <label className="app-field">
                   <span>신청 메시지</span>
@@ -4738,10 +5528,120 @@ export default function HubPage() {
           <section className="activity-detail__section">
             <h3>예약 제안 보내기</h3>
             {mentor.availabilitySlots?.length ? (
-              <p>아래 예약은 멘토가 공개한 가능 시간 안에서만 생성할 수 있습니다.</p>
+              <p>멘토가 공개한 가능 시간을 기준으로 빠르게 예약 시간을 선택할 수 있습니다.</p>
             ) : (
               <p>가능 시간이 아직 등록되지 않아 자유롭게 예약 제안을 보낼 수 있습니다.</p>
             )}
+            {reservationSuggestionGroups.length > 0 ? (
+              <div className="reservation-suggestion-panel">
+                <div className="reservation-suggestion-panel__header">
+                  <strong>다가오는 가능 시간</strong>
+                  <span>주간 캘린더에서 날짜를 먼저 고르고, 해당 날짜의 시간을 선택할 수 있습니다.</span>
+                </div>
+                <div className="reservation-calendar">
+                  <div className="reservation-calendar__header">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        const nextWeekIndex = Math.max(resolvedReservationWeekIndex - 1, 0);
+                        const nextWeek = reservationSuggestionWeeks[nextWeekIndex] || [];
+                        const nextSuggestion = nextWeek[0]?.items?.[0] || null;
+
+                        if (nextSuggestion) {
+                          selectReservationSuggestion(nextSuggestion, nextWeekIndex);
+                        }
+                      }}
+                      disabled={reservationCreateStatus === 'saving' || resolvedReservationWeekIndex === 0}
+                    >
+                      이전 주
+                    </button>
+                    <strong>{activeReservationWeekLabel}</strong>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        const nextWeekIndex = Math.min(
+                          resolvedReservationWeekIndex + 1,
+                          Math.max(reservationSuggestionWeeks.length - 1, 0)
+                        );
+                        const nextWeek = reservationSuggestionWeeks[nextWeekIndex] || [];
+                        const nextSuggestion = nextWeek[0]?.items?.[0] || null;
+
+                        if (nextSuggestion) {
+                          selectReservationSuggestion(nextSuggestion, nextWeekIndex);
+                        }
+                      }}
+                      disabled={
+                        reservationCreateStatus === 'saving' ||
+                        resolvedReservationWeekIndex >= reservationSuggestionWeeks.length - 1
+                      }
+                    >
+                      다음 주
+                    </button>
+                  </div>
+
+                  <div className="reservation-calendar__days">
+                    {activeReservationWeek.map((group) => {
+                      const isActive = group.dateKey === activeReservationDateGroup?.dateKey;
+
+                      return (
+                        <button
+                          key={group.dateKey}
+                          type="button"
+                          className={
+                            isActive
+                              ? 'reservation-calendar__day reservation-calendar__day--active'
+                              : 'reservation-calendar__day'
+                          }
+                          onClick={() =>
+                            selectReservationSuggestion(
+                              group.items[0],
+                              resolvedReservationWeekIndex
+                            )
+                          }
+                          disabled={reservationCreateStatus === 'saving'}
+                        >
+                          <strong>{group.dateLabel}</strong>
+                          <span>{group.items.length}개 시간대</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeReservationDateGroup ? (
+                    <div className="reservation-suggestion-group">
+                      <strong>{activeReservationDateGroup.dateLabel}</strong>
+                      <div className="reservation-suggestion-list">
+                        {activeReservationDateGroup.items.map((suggestion) => (
+                          <button
+                            key={suggestion.id}
+                            type="button"
+                            className={
+                              suggestion.inputValue === reservationDateTime
+                                ? 'reservation-suggestion-button reservation-suggestion-button--active'
+                                : 'reservation-suggestion-button'
+                            }
+                            onClick={() =>
+                              selectReservationSuggestion(
+                                suggestion,
+                                resolvedReservationWeekIndex
+                              )
+                            }
+                            disabled={reservationCreateStatus === 'saving'}
+                          >
+                            {suggestion.timeLabel}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <small>
+                  날짜와 시간을 고르면 아래 입력칸에 자동 반영되며, 필요하면 직접 수정할 수 있습니다.
+                </small>
+              </div>
+            ) : null}
             <form className="mentoring-form" onSubmit={(event) => handleCreateReservation(event, mentor.id)}>
               <label className="app-field">
                 <span>예약 시간</span>
@@ -4753,6 +5653,12 @@ export default function HubPage() {
                   disabled={reservationCreateStatus === 'saving'}
                 />
               </label>
+              {selectedReservationSuggestion ? (
+                <p className="reservation-suggestion-selection">
+                  선택한 일정: {selectedReservationSuggestion.dateLabel}{' '}
+                  {selectedReservationSuggestion.timeLabel}
+                </p>
+              ) : null}
               <label className="app-field">
                 <span>메시지</span>
                 <textarea
