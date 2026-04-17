@@ -129,7 +129,8 @@ class AuthLoginIntegrationTest {
                 .andExpect(jsonPath("$.data.id").value(savedUser.getId()))
                 .andExpect(jsonPath("$.data.email").value("neo@example.com"))
                 .andExpect(jsonPath("$.data.nickname").value("neo"))
-                .andExpect(jsonPath("$.data.role").value(UserRole.USER.name()));
+                .andExpect(jsonPath("$.data.role").value(UserRole.USER.name()))
+                .andExpect(jsonPath("$.data.mentorEnabled").value(false));
     }
 
     @Test
@@ -209,5 +210,23 @@ class AuthLoginIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Authentication is required."))
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void issueWebSocketTicketReturnsShortLivedTicketWhenAuthenticated() throws Exception {
+        User savedUser = userRepository.save(User.create(
+                "neo@example.com",
+                passwordEncoder.encode("password123"),
+                "neo"
+        ));
+
+        String accessToken = jwtTokenProvider.generateAccessToken(savedUser);
+
+        mockMvc.perform(post("/api/auth/ws-ticket")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("WebSocket ticket issued."))
+                .andExpect(jsonPath("$.data.ticket").isString());
     }
 }

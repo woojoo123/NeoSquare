@@ -11,13 +11,18 @@ public record MentoringReservationResponse(
         String mentorLabel,
         String mentorNickname,
         Instant reservedAt,
+        Instant sessionEntryOpenAt,
+        Instant sessionEntryCloseAt,
         String message,
         MentoringReservationStatus status,
         Instant createdAt,
         Instant completedAt
 ) {
 
-    public static MentoringReservationResponse from(MentoringReservation reservation) {
+    public static MentoringReservationResponse from(
+            MentoringReservation reservation,
+            MentoringReservationSessionWindow sessionWindow
+    ) {
         return new MentoringReservationResponse(
                 reservation.getId(),
                 reservation.getRequester().getId(),
@@ -27,6 +32,8 @@ public record MentoringReservationResponse(
                 reservation.getMentor().getNickname(),
                 reservation.getMentor().getNickname(),
                 reservation.getReservedAt(),
+                sessionWindow.entryOpenAt(),
+                sessionWindow.entryCloseAt(),
                 reservation.getMessage(),
                 reservation.getStatus(),
                 reservation.getCreatedAt(),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
+import { clearCachedWebSocketTicket, getAuthenticatedWebSocketUrl } from './webSocketUrl';
 
 const MOVE_THROTTLE_MS = 120;
 const MOVE_DISTANCE_THRESHOLD = 12;
@@ -463,7 +463,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
       }
     }
 
-    function connectSocket() {
+    async function connectSocket() {
       try {
         setConnectionStatus(reconnectAttemptCount > 0 ? 'reconnecting' : 'connecting');
         setLastMessage(null);
@@ -480,11 +480,18 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
           lastMovePositionRef.current = null;
           remoteEventSequenceRef.current = 0;
         }
-        socket = new WebSocket(getAuthenticatedWebSocketUrl());
+        const socketUrl = await getAuthenticatedWebSocketUrl();
+
+        if (isDisposed) {
+          return;
+        }
+
+        socket = new WebSocket(socketUrl);
         socketRef.current = socket;
       } catch (error) {
         setConnectionStatus('error');
         setLastError('실시간 연결을 만들지 못했습니다.');
+        clearCachedWebSocketTicket();
         console.error('Failed to create WebSocket connection:', error);
         return;
       }
@@ -504,6 +511,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
           return;
         }
 
+        clearCachedWebSocketTicket();
         setConnectionStatus('reconnecting');
         setLastError('실시간 연결 중 오류가 발생했습니다. 자동으로 다시 연결합니다.');
       };
@@ -525,7 +533,7 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
       };
     }
 
-    connectSocket();
+    void connectSocket();
 
     return () => {
       isDisposed = true;

@@ -6,11 +6,10 @@ import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
+import com.neosquare.auth.AuthUserPrincipal;
 import com.neosquare.auth.JwtTokenProvider;
-import com.neosquare.user.User;
-import com.neosquare.user.UserRepository;
+import com.neosquare.user.UserRole;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,36 +17,37 @@ import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.socket.WebSocketHandler;
 
 class AuthenticatedWebSocketHandshakeInterceptorTest {
 
     private JwtTokenProvider jwtTokenProvider;
-    private UserRepository userRepository;
     private AuthenticatedWebSocketHandshakeInterceptor authenticatedWebSocketHandshakeInterceptor;
 
     @BeforeEach
     void setUp() {
         jwtTokenProvider = mock(JwtTokenProvider.class);
-        userRepository = mock(UserRepository.class);
         authenticatedWebSocketHandshakeInterceptor = new AuthenticatedWebSocketHandshakeInterceptor(
-                jwtTokenProvider,
-                userRepository
+                jwtTokenProvider
         );
     }
 
     @Test
-    void beforeHandshakeWithValidQueryTokenStoresAuthenticatedUserAttributes() {
-        User user = createUser(7L, "alice@neo.square", "Alice");
+    void beforeHandshakeWithValidTicketStoresAuthenticatedUserAttributes() {
+        AuthUserPrincipal user = new AuthUserPrincipal(7L, "alice@neo.square", "Alice", UserRole.USER);
         MockHttpServletRequest servletRequest = new MockHttpServletRequest("GET", "/ws");
-        servletRequest.setQueryString("token=valid-token");
+        servletRequest.setQueryString("ticket=valid-ticket");
         MockHttpServletResponse servletResponse = new MockHttpServletResponse();
         Map<String, Object> attributes = new HashMap<>();
 
-        when(jwtTokenProvider.isValid("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(7L);
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(jwtTokenProvider.isWebSocketTicket("valid-ticket")).thenReturn(true);
+        when(jwtTokenProvider.getWebSocketTicketClaims("valid-ticket"))
+                .thenReturn(new com.neosquare.auth.WebSocketTicketClaims(
+                        user.id(),
+                        user.email(),
+                        user.nickname(),
+                        user.role()
+                ));
 
         boolean handshakeAccepted = authenticatedWebSocketHandshakeInterceptor.beforeHandshake(
                 new ServletServerHttpRequest(servletRequest),
@@ -76,11 +76,5 @@ class AuthenticatedWebSocketHandshakeInterceptorTest {
 
         assertThat(handshakeAccepted).isFalse();
         assertThat(servletResponse.getStatus()).isEqualTo(401);
-    }
-
-    private User createUser(Long id, String email, String nickname) {
-        User user = User.create(email, "encoded-password", nickname);
-        ReflectionTestUtils.setField(user, "id", id);
-        return user;
     }
 }

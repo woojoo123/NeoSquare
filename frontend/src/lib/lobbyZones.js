@@ -5,7 +5,7 @@ export const LOBBY_ZONE_DEFINITIONS = [
     label: '메인 광장',
     shortLabel: '광장',
     description: '사람을 만나고 다음 행동을 고르는 출발 지점입니다.',
-    helperText: '로비 인원을 확인하고 스터디 라운지나 멘토링 존으로 이동해 보세요.',
+    helperText: '로비 인원을 확인하고 스터디 라운지로 이동하거나 내 활동에서 멘토링 요청을 시작해 보세요.',
     fillColor: 0x132238,
     borderColor: 0x38bdf8,
     accentColor: 0xe0f2fe,
@@ -48,10 +48,10 @@ export const LOBBY_ZONE_DEFINITIONS = [
   {
     id: 'MENTORING',
     spaceType: 'MENTORING',
-    label: '멘토링 존',
+    label: '멘토링 허브',
     shortLabel: '멘토링',
-    description: '가까운 사람에게 바로 멘토링 요청이나 예약을 준비하는 구역입니다.',
-    helperText: '같은 구역 사람을 골라 요청이나 예약 폼으로 바로 연결할 수 있습니다.',
+    description: '요청과 예약을 정리하고 전용 멘토링 세션으로 이어지는 허브 구역입니다.',
+    helperText: '내 활동에서 요청과 예약을 관리하고, 수락되면 전용 세션으로 바로 입장할 수 있습니다.',
     fillColor: 0x1f2b47,
     borderColor: 0xf59e0b,
     accentColor: 0xfef3c7,
@@ -65,7 +65,7 @@ export const LOBBY_ZONE_DEFINITIONS = [
       y: 688,
       width: 172,
       height: 68,
-      label: '멘토링 존 입구',
+      label: '멘토링 허브 입구',
     },
   },
 ];
@@ -113,7 +113,7 @@ export function formatLobbySpaceLabel(spaceType) {
   }
 
   if (spaceType === 'MENTORING') {
-    return '멘토링 존';
+    return '멘토링 허브';
   }
 
   return spaceType || '공간';
@@ -125,7 +125,7 @@ export function formatLobbySpaceActionLabel(spaceType) {
   }
 
   if (spaceType === 'MENTORING') {
-    return '멘토링 구역으로 이동';
+    return '멘토링 허브로 이동';
   }
 
   return '광장으로 이동';

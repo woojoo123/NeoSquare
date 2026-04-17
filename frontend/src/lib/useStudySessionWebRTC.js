@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
+import { clearCachedWebSocketTicket, getAuthenticatedWebSocketUrl } from './webSocketUrl';
 import {
   getIceServerDetailMessage,
   getIceServerModeLabel,
@@ -592,7 +592,7 @@ export function useStudySessionWebRTC({
     }
   }
 
-  function openSignalingSocket() {
+  async function openSignalingSocket() {
     if (!enabledRef.current || !studySessionId || !userId) {
       return null;
     }
@@ -609,7 +609,8 @@ export function useStudySessionWebRTC({
     closeSignalingSocket();
 
     try {
-      const nextSocket = new WebSocket(getAuthenticatedWebSocketUrl());
+      const socketUrl = await getAuthenticatedWebSocketUrl();
+      const nextSocket = new WebSocket(socketUrl);
       socketRef.current = nextSocket;
       isSocketReadyRef.current = false;
 
@@ -618,6 +619,7 @@ export function useStudySessionWebRTC({
       };
 
       nextSocket.onerror = () => {
+        clearCachedWebSocketTicket();
         setErrorMessage('스터디 영상 연결 통신 오류가 발생했습니다.');
         setStatus('error', '스터디 영상 연결 통신 오류가 발생했습니다.', { canRetry: true });
       };
@@ -671,7 +673,7 @@ export function useStudySessionWebRTC({
       return false;
     }
 
-    const socket = openSignalingSocket();
+    const socket = await openSignalingSocket();
 
     if (!socket) {
       setStatus('error', '스터디 시그널링 소켓을 다시 열지 못했습니다.', { canRetry: true });
@@ -713,7 +715,7 @@ export function useStudySessionWebRTC({
       return undefined;
     }
 
-    openSignalingSocket();
+    void openSignalingSocket();
 
     return () => {
       closeSignalingSocket({ resetRequestedStart: true });

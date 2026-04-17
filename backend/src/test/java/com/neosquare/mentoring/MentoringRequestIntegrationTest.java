@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.neosquare.auth.JwtTokenProvider;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
+import com.neosquare.user.UserRole;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,7 +45,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void createMentoringRequestReturnsCreatedRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
 
         mockMvc.perform(post("/api/mentoring/requests")
                         .header(HttpHeaders.AUTHORIZATION, bearerToken(requester))
@@ -73,8 +74,8 @@ class MentoringRequestIntegrationTest {
     @Test
     void getSentRequestsReturnsCurrentUsersRequests() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User firstMentor = saveUser("mentor1@neo.square", "Mentor One");
-        User secondMentor = saveUser("mentor2@neo.square", "Mentor Two");
+        User firstMentor = saveMentor("mentor1@neo.square", "Mentor One");
+        User secondMentor = saveMentor("mentor2@neo.square", "Mentor Two");
 
         saveRequest(requester, firstMentor, "First request");
         MentoringRequest latestRequest = saveRequest(requester, secondMentor, "Second request");
@@ -93,7 +94,7 @@ class MentoringRequestIntegrationTest {
 
     @Test
     void getReceivedRequestsReturnsCurrentUsersRequests() throws Exception {
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         User firstRequester = saveUser("requester1@neo.square", "Requester One");
         User secondRequester = saveUser("requester2@neo.square", "Requester Two");
 
@@ -115,7 +116,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void getRequestReturnsRequestForParticipant() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Need some guidance");
 
         mockMvc.perform(get("/api/mentoring/requests/{requestId}", mentoringRequest.getId())
@@ -133,7 +134,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void mentorCanAcceptPendingRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Please accept");
 
         mockMvc.perform(patch("/api/mentoring/requests/{requestId}/accept", mentoringRequest.getId())
@@ -147,7 +148,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void mentorCanRejectPendingRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Please reject");
 
         mockMvc.perform(patch("/api/mentoring/requests/{requestId}/reject", mentoringRequest.getId())
@@ -161,7 +162,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void participantCanCompleteAcceptedRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Please complete");
         mentoringRequest.accept();
 
@@ -177,7 +178,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void requesterCannotAcceptOwnRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Need a mentor");
 
         mockMvc.perform(patch("/api/mentoring/requests/{requestId}/accept", mentoringRequest.getId())
@@ -192,7 +193,7 @@ class MentoringRequestIntegrationTest {
     @Test
     void outsiderCannotCompleteRequest() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         User outsider = saveUser("outsider@neo.square", "Outsider");
         MentoringRequest mentoringRequest = saveRequest(requester, mentor, "Need completion");
         mentoringRequest.accept();
@@ -285,6 +286,15 @@ class MentoringRequestIntegrationTest {
                 email,
                 passwordEncoder.encode("password123"),
                 nickname
+        ));
+    }
+
+    private User saveMentor(String email, String nickname) {
+        return userRepository.save(User.create(
+                email,
+                passwordEncoder.encode("password123"),
+                nickname,
+                UserRole.MENTOR
         ));
     }
 

@@ -9,6 +9,7 @@ import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringRequestStatus;
 import com.neosquare.mentoring.MentoringReservation;
 import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.mentoring.MentoringReservationSessionAccessPolicy;
 import com.neosquare.mentoring.MentoringReservationStatus;
 import com.neosquare.study.StudySession;
 import com.neosquare.study.StudySessionRepository;
@@ -28,17 +29,20 @@ public class MentoringSessionSignalingService {
     private final MentoringReservationRepository mentoringReservationRepository;
     private final StudySessionRepository studySessionRepository;
     private final RealtimeSessionRegistry realtimeSessionRegistry;
+    private final MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy;
 
     public MentoringSessionSignalingService(
             MentoringRequestRepository mentoringRequestRepository,
             MentoringReservationRepository mentoringReservationRepository,
             StudySessionRepository studySessionRepository,
-            RealtimeSessionRegistry realtimeSessionRegistry
+            RealtimeSessionRegistry realtimeSessionRegistry,
+            MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy
     ) {
         this.mentoringRequestRepository = mentoringRequestRepository;
         this.mentoringReservationRepository = mentoringReservationRepository;
         this.studySessionRepository = studySessionRepository;
         this.realtimeSessionRegistry = realtimeSessionRegistry;
+        this.mentoringReservationSessionAccessPolicy = mentoringReservationSessionAccessPolicy;
     }
 
     public boolean supports(WebSocketEventType eventType) {
@@ -146,6 +150,8 @@ public class MentoringSessionSignalingService {
         if (!mentoringReservation.isParticipant(incomingMessage.senderId())) {
             throw new IllegalStateException("Signal sender is not a participant of this mentoring reservation.");
         }
+
+        mentoringReservationSessionAccessPolicy.validateSessionEntry(mentoringReservation);
 
         Long targetUserId = mentoringReservation.resolveCounterpartUserId(incomingMessage.senderId());
         Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessions(targetUserId);

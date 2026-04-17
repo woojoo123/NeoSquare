@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
+import { clearCachedWebSocketTicket, getAuthenticatedWebSocketUrl } from './webSocketUrl';
 import {
   getIceServerDetailMessage,
   getIceServerModeLabel,
@@ -518,7 +518,7 @@ export function useSessionWebRTC({
     }
   }
 
-  function openSignalingSocket() {
+  async function openSignalingSocket() {
     if (!enabledRef.current || !sessionId || !userId) {
       return null;
     }
@@ -535,7 +535,8 @@ export function useSessionWebRTC({
     closeSignalingSocket();
 
     try {
-      const nextSocket = new WebSocket(getAuthenticatedWebSocketUrl());
+      const socketUrl = await getAuthenticatedWebSocketUrl();
+      const nextSocket = new WebSocket(socketUrl);
       socketRef.current = nextSocket;
       isSocketReadyRef.current = false;
 
@@ -544,6 +545,7 @@ export function useSessionWebRTC({
       };
 
       nextSocket.onerror = () => {
+        clearCachedWebSocketTicket();
         setErrorMessage('영상 연결 통신 오류가 발생했습니다.');
         setStatus('error', '영상 연결 통신 오류가 발생했습니다.', { canRetry: true });
       };
@@ -603,7 +605,7 @@ export function useSessionWebRTC({
 
     ensurePeerConnection(activeStream);
 
-    const socket = openSignalingSocket();
+    const socket = await openSignalingSocket();
 
     if (!socket) {
       setStatus('error', '시그널링 소켓을 다시 열지 못했습니다.', { canRetry: true });
@@ -646,7 +648,7 @@ export function useSessionWebRTC({
       return undefined;
     }
 
-    openSignalingSocket();
+    void openSignalingSocket();
 
     return () => {
       closeSignalingSocket({ resetRequestedStart: true });
@@ -670,7 +672,7 @@ export function useSessionWebRTC({
         setStatus('signaling', '상대 참가자의 연결 제안을 기다리는 중입니다...');
       }
     } else {
-      openSignalingSocket();
+      void openSignalingSocket();
       setStatus('preparing', '시그널링 소켓을 여는 중입니다...');
     }
   }, [isInitiator, localStream]);

@@ -83,13 +83,8 @@ export default function LandingPage() {
     () => orderedSpaces.find((space) => space.type === 'STUDY') || null,
     [orderedSpaces]
   );
-  const mentoringSpace = useMemo(
-    () => orderedSpaces.find((space) => space.type === 'MENTORING') || null,
-    [orderedSpaces]
-  );
   const primarySpaceName = primarySpace?.name || '메인광장';
   const studySpaceName = studySpace?.name || '스터디 라운지';
-  const mentoringSpaceName = mentoringSpace?.name || '멘토링 존';
   const userLabel = currentUser?.nickname || '사용자';
 
   const featureCards = useMemo<FeatureCard[]>(
@@ -110,12 +105,12 @@ export default function LandingPage() {
       },
       {
         title: '대화에서 스터디와 멘토링까지',
-        description: `${studySpaceName}에서 함께 배우고, ${mentoringSpaceName}에서 더 깊은 연결로 자연스럽게 이어질 수 있습니다.`,
+        description: `${studySpaceName}에서는 공개 대화와 스터디가 이어지고, 멘토링은 내 활동에서 요청과 세션으로 자연스럽게 확장됩니다.`,
         accentClassName: 'landing-feature-card--growth',
         iconClassName: 'landing-feature-icon--growth',
       },
     ],
-    [studySpaceName, mentoringSpaceName]
+    [studySpaceName]
   );
 
   const supportCards = useMemo<SupportCard[]>(
@@ -127,7 +122,7 @@ export default function LandingPage() {
           `${primarySpaceName} 둘러보기`,
           '사람들과 실시간 채팅 참여',
           `${studySpaceName}에서 함께 공부하기`,
-          `${mentoringSpaceName}로 연결 이어가기`,
+          '내 활동에서 멘토링 요청과 예약 관리',
         ],
       },
       {
@@ -141,12 +136,12 @@ export default function LandingPage() {
         ],
       },
     ],
-    [primarySpaceName, studySpaceName, mentoringSpaceName]
+    [primarySpaceName, studySpaceName]
   );
 
   function handlePrimaryAction() {
     if (accessToken) {
-      navigate('/enter');
+      navigate('/lobby');
       return;
     }
 
@@ -172,8 +167,8 @@ export default function LandingPage() {
             {accessToken ? (
               <span className="landing-topbar__status">{userLabel}님 이용 중</span>
             ) : null}
-            <Link className="landing-topbar__link" to={accessToken ? '/hub' : '/login'}>
-              {accessToken ? '허브' : '로그인'}
+            <Link className="landing-topbar__link" to={accessToken ? '/lobby' : '/login'}>
+              {accessToken ? '로비' : '로그인'}
             </Link>
             {!accessToken ? (
               <Link className="landing-topbar__button" to="/signup">
@@ -188,15 +183,15 @@ export default function LandingPage() {
             <h1>NeoSquare</h1>
             <p>
               NeoSquare는 메타버스 공간 안에서 사람들이 자유롭게 만나고, 대화하고,
-              스터디하고, 필요하면 멘토링까지 할 수 있는 가상 커뮤니티 공간입니다.
+              스터디하고, 필요하면 멘토링 세션까지 이어갈 수 있는 가상 커뮤니티 공간입니다.
             </p>
             <p>
               단순히 글만 주고받는 서비스가 아니라, 같은 공간 안에서 다른 사람을 만나고
               실시간으로 소통하며 자연스럽게 관계를 만들 수 있습니다.
             </p>
             <p>
-              관심사가 맞는 사람과 대화를 시작할 수도 있고, 스터디나 멘토링처럼 목적 있는
-              만남으로 이어갈 수도 있습니다.
+              관심사가 맞는 사람과 대화를 시작할 수도 있고, 스터디처럼 공개 공간에서 바로
+              이어가거나 멘토링처럼 허브 기반 세션으로 확장할 수도 있습니다.
             </p>
             <p>지금 NeoSquare에 입장해서 새로운 연결을 시작해보세요.</p>
           </article>
@@ -229,14 +224,14 @@ export default function LandingPage() {
             </section>
 
             <button type="button" className="landing-primary-button" onClick={handlePrimaryAction}>
-              메타버스 입장하기
+              {accessToken ? '로비로 이동하기' : '메타버스 입장하기'}
             </button>
 
             <p className="landing-cta-note">
               {spaceLoadError
                 ? spaceLoadError
                 : accessToken
-                  ? '로그인된 상태라면 캐릭터 선택 페이지로 이동합니다.'
+                  ? '로그인된 상태라면 로비에서 캐릭터를 고르고 메타버스에 입장할 수 있습니다.'
                   : '로그인 후 캐릭터를 고르고 메인광장으로 입장할 수 있습니다.'}
             </p>
           </div>

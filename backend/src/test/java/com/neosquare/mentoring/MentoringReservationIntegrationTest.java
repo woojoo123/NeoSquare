@@ -11,6 +11,7 @@ import java.time.Instant;
 import com.neosquare.auth.JwtTokenProvider;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
+import com.neosquare.user.UserRole;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +47,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void createReservationReturnsCreatedReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         Instant reservedAt = Instant.now().plusSeconds(3600);
 
         mockMvc.perform(post("/api/mentoring/reservations")
@@ -68,6 +69,8 @@ class MentoringReservationIntegrationTest {
                 .andExpect(jsonPath("$.data.mentorId").value(mentor.getId()))
                 .andExpect(jsonPath("$.data.mentorLabel").value("Mentor"))
                 .andExpect(jsonPath("$.data.reservedAt").value(reservedAt.toString()))
+                .andExpect(jsonPath("$.data.sessionEntryOpenAt").value(reservedAt.minusSeconds(600).toString()))
+                .andExpect(jsonPath("$.data.sessionEntryCloseAt").value(reservedAt.plusSeconds(7200).toString()))
                 .andExpect(jsonPath("$.data.message").value("Could we talk later?"))
                 .andExpect(jsonPath("$.data.status").value(MentoringReservationStatus.PENDING.name()))
                 .andExpect(jsonPath("$.data.createdAt").exists());
@@ -76,8 +79,8 @@ class MentoringReservationIntegrationTest {
     @Test
     void getMyReservationsReturnsCurrentUsersReservations() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User firstMentor = saveUser("mentor1@neo.square", "Mentor One");
-        User secondMentor = saveUser("mentor2@neo.square", "Mentor Two");
+        User firstMentor = saveMentor("mentor1@neo.square", "Mentor One");
+        User secondMentor = saveMentor("mentor2@neo.square", "Mentor Two");
 
         saveReservation(requester, secondMentor, Instant.now().plusSeconds(7200), "Later reservation");
         MentoringReservation earliestReservation = saveReservation(
@@ -101,7 +104,7 @@ class MentoringReservationIntegrationTest {
 
     @Test
     void getReceivedReservationsReturnsCurrentUsersReservations() throws Exception {
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         User firstRequester = saveUser("requester1@neo.square", "Requester One");
         User secondRequester = saveUser("requester2@neo.square", "Requester Two");
 
@@ -128,7 +131,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void mentorCanAcceptPendingReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringReservation reservation = saveReservation(
                 requester,
                 mentor,
@@ -147,7 +150,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void mentorCanRejectPendingReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringReservation reservation = saveReservation(
                 requester,
                 mentor,
@@ -166,7 +169,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void requesterCanCancelPendingReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringReservation reservation = saveReservation(
                 requester,
                 mentor,
@@ -185,7 +188,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void participantCanCompleteAcceptedReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringReservation reservation = saveReservation(
                 requester,
                 mentor,
@@ -206,7 +209,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void requesterCannotAcceptReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         MentoringReservation reservation = saveReservation(
                 requester,
                 mentor,
@@ -226,7 +229,7 @@ class MentoringReservationIntegrationTest {
     @Test
     void outsiderCannotCompleteReservation() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
-        User mentor = saveUser("mentor@neo.square", "Mentor");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
         User outsider = saveUser("outsider@neo.square", "Outsider");
         MentoringReservation reservation = saveReservation(
                 requester,
@@ -340,6 +343,120 @@ class MentoringReservationIntegrationTest {
     }
 
     @Test
+    void createReservationReturnsConflictWhenRequesterAlreadyHasOverlappingReservation() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User firstMentor = saveMentor("mentor1@neo.square", "Mentor One");
+        User secondMentor = saveMentor("mentor2@neo.square", "Mentor Two");
+        Instant reservedAt = Instant.now().plusSeconds(7200);
+
+        saveReservation(requester, firstMentor, reservedAt, "Existing overlap");
+
+        mockMvc.perform(post("/api/mentoring/reservations")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mentorId": %d,
+                                  "reservedAt": "%s",
+                                  "message": "New overlap"
+                                }
+                                """.formatted(secondMentor.getId(), reservedAt.plusSeconds(1800))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("You already have another reservation in this time slot."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void createReservationReturnsConflictWhenMentorAlreadyHasOverlappingReservation() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User otherRequester = saveUser("other-requester@neo.square", "Other Requester");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
+        Instant reservedAt = Instant.now().plusSeconds(7200);
+
+        saveReservation(otherRequester, mentor, reservedAt, "Existing overlap");
+
+        mockMvc.perform(post("/api/mentoring/reservations")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mentorId": %d,
+                                  "reservedAt": "%s",
+                                  "message": "New overlap"
+                                }
+                                """.formatted(mentor.getId(), reservedAt.plusSeconds(1800))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("The mentor already has another reservation in this time slot."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void acceptReservationReturnsConflictWhenRequesterAlreadyHasAnotherAcceptedReservation() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User firstMentor = saveMentor("mentor1@neo.square", "Mentor One");
+        User secondMentor = saveMentor("mentor2@neo.square", "Mentor Two");
+        Instant reservedAt = Instant.now().plusSeconds(7200);
+
+        MentoringReservation existingAccepted = saveReservation(
+                requester,
+                firstMentor,
+                reservedAt,
+                "Existing accepted overlap"
+        );
+        existingAccepted.accept();
+
+        MentoringReservation reservationToAccept = saveReservation(
+                requester,
+                secondMentor,
+                reservedAt.plusSeconds(1800),
+                "Pending overlap"
+        );
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/accept", reservationToAccept.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(secondMentor)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(
+                        "The requester already has another accepted reservation in this time slot."
+                ))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void acceptReservationReturnsConflictWhenMentorAlreadyHasAnotherAcceptedReservation() throws Exception {
+        User firstRequester = saveUser("requester1@neo.square", "Requester One");
+        User secondRequester = saveUser("requester2@neo.square", "Requester Two");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
+        Instant reservedAt = Instant.now().plusSeconds(7200);
+
+        MentoringReservation existingAccepted = saveReservation(
+                firstRequester,
+                mentor,
+                reservedAt,
+                "Existing accepted overlap"
+        );
+        existingAccepted.accept();
+
+        MentoringReservation reservationToAccept = saveReservation(
+                secondRequester,
+                mentor,
+                reservedAt.plusSeconds(1800),
+                "Pending overlap"
+        );
+
+        mockMvc.perform(patch("/api/mentoring/reservations/{reservationId}/accept", reservationToAccept.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(mentor)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(
+                        "The mentor already has another accepted reservation in this time slot."
+                ))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
     void getMissingReservationReturnsNotFound() throws Exception {
         User requester = saveUser("requester@neo.square", "Requester");
 
@@ -352,11 +469,59 @@ class MentoringReservationIntegrationTest {
                 .andExpect(jsonPath("$.timestamp").exists());
     }
 
+    @Test
+    void getReservationSessionEntryReturnsAcceptedReservationWithinEntryWindow() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
+        Instant reservedAt = Instant.now().plusSeconds(300);
+        MentoringReservation reservation = saveReservation(requester, mentor, reservedAt, "Session entry");
+        reservation.accept();
+
+        mockMvc.perform(get("/api/mentoring/reservations/{reservationId}/session-entry", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Reservation session entry retrieved."))
+                .andExpect(jsonPath("$.data.id").value(reservation.getId()))
+                .andExpect(jsonPath("$.data.status").value(MentoringReservationStatus.ACCEPTED.name()))
+                .andExpect(jsonPath("$.data.sessionEntryOpenAt").value(reservedAt.minusSeconds(600).toString()))
+                .andExpect(jsonPath("$.data.sessionEntryCloseAt").value(reservedAt.plusSeconds(7200).toString()));
+    }
+
+    @Test
+    void getReservationSessionEntryRejectsWhenWindowIsNotOpenYet() throws Exception {
+        User requester = saveUser("requester@neo.square", "Requester");
+        User mentor = saveMentor("mentor@neo.square", "Mentor");
+        MentoringReservation reservation = saveReservation(
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600),
+                "Too early"
+        );
+        reservation.accept();
+
+        mockMvc.perform(get("/api/mentoring/reservations/{reservationId}/session-entry", reservation.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken(requester)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Reservation session entry is not open yet."))
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
     private User saveUser(String email, String nickname) {
         return userRepository.save(User.create(
                 email,
                 passwordEncoder.encode("password123"),
                 nickname
+        ));
+    }
+
+    private User saveMentor(String email, String nickname) {
+        return userRepository.save(User.create(
+                email,
+                passwordEncoder.encode("password123"),
+                nickname,
+                UserRole.MENTOR
         ));
     }
 

@@ -7,6 +7,7 @@ import com.neosquare.auth.AuthUserPrincipal;
 import com.neosquare.notification.NotificationService;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
+import com.neosquare.user.UserRole;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +44,10 @@ public class MentoringRequestService {
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + requesterId));
         User mentor = userRepository.findById(request.mentorId())
                 .orElseThrow(() -> new UserNotFoundException("Mentor not found: " + request.mentorId()));
+
+        if (mentor.getRole() != UserRole.MENTOR && mentor.getRole() != UserRole.ADMIN) {
+            throw new InvalidMentoringTargetRoleException();
+        }
 
         MentoringRequest mentoringRequest = MentoringRequest.create(
                 requester,

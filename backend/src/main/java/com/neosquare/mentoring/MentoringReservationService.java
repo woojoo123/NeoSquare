@@ -5,9 +5,11 @@ import java.util.List;
 import java.util.Objects;
 
 import com.neosquare.auth.AuthUserPrincipal;
+import com.neosquare.mentor.MentorManagementService;
 import com.neosquare.notification.NotificationService;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
+import com.neosquare.user.UserRole;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,15 +20,24 @@ public class MentoringReservationService {
     private final MentoringReservationRepository mentoringReservationRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy;
+    private final MentoringReservationSchedulePolicy mentoringReservationSchedulePolicy;
+    private final MentorManagementService mentorManagementService;
 
     public MentoringReservationService(
             MentoringReservationRepository mentoringReservationRepository,
             UserRepository userRepository,
-            NotificationService notificationService
+            NotificationService notificationService,
+            MentoringReservationSessionAccessPolicy mentoringReservationSessionAccessPolicy,
+            MentoringReservationSchedulePolicy mentoringReservationSchedulePolicy,
+            MentorManagementService mentorManagementService
     ) {
         this.mentoringReservationRepository = mentoringReservationRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.mentoringReservationSessionAccessPolicy = mentoringReservationSessionAccessPolicy;
+        this.mentoringReservationSchedulePolicy = mentoringReservationSchedulePolicy;
+        this.mentorManagementService = mentorManagementService;
     }
 
     @Transactional
@@ -49,6 +60,24 @@ public class MentoringReservationService {
         User mentor = userRepository.findById(request.mentorId())
                 .orElseThrow(() -> new UserNotFoundException("Mentor not found: " + request.mentorId()));
 
+        if (mentor.getRole() != UserRole.MENTOR && mentor.getRole() != UserRole.ADMIN) {
+            throw new InvalidMentoringTargetRoleException();
+        }
+
+        mentorManagementService.validateReservationTime(mentor.getId(), request.reservedAt());
+
+        mentoringReservationSchedulePolicy.validateCreation(
+                request.reservedAt(),
+                mentoringReservationRepository.findAllByRequester_IdAndStatusIn(
+                        requesterId,
+                        mentoringReservationSchedulePolicy.getCreateBlockingStatuses()
+                ),
+                mentoringReservationRepository.findAllByMentor_IdAndStatusIn(
+                        mentor.getId(),
+                        mentoringReservationSchedulePolicy.getCreateBlockingStatuses()
+                )
+        );
+
         String message = request.message() == null ? "" : request.message().trim();
 
         MentoringReservation reservation = MentoringReservation.create(
@@ -59,7 +88,7 @@ public class MentoringReservationService {
         );
         MentoringReservation savedReservation = mentoringReservationRepository.save(reservation);
 
-        return MentoringReservationResponse.from(savedReservation);
+        return toResponse(savedReservation);
     }
 
     @Transactional(readOnly = true)
@@ -68,7 +97,7 @@ public class MentoringReservationService {
 
         return mentoringReservationRepository.findAllByRequester_IdOrderByReservedAtAscCreatedAtDescIdDesc(requesterId)
                 .stream()
-                .map(MentoringReservationResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -78,7 +107,7 @@ public class MentoringReservationService {
 
         return mentoringReservationRepository.findAllByMentor_IdOrderByReservedAtAscCreatedAtDescIdDesc(mentorId)
                 .stream()
-                .map(MentoringReservationResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -91,7 +120,24 @@ public class MentoringReservationService {
             throw new MentoringReservationAccessDeniedException("You do not have access to this reservation.");
         }
 
-        return MentoringReservationResponse.from(reservation);
+        return toResponse(reservation);
+    }
+
+    @Transactional(readOnly = true)
+    public MentoringReservationResponse getReservationSessionEntry(
+            AuthUserPrincipal authUser,
+            Long reservationId
+    ) {
+        Long currentUserId = extractCurrentUserId(authUser);
+        MentoringReservation reservation = getReservationOrThrow(reservationId);
+
+        if (!reservation.isParticipant(currentUserId)) {
+            throw new MentoringReservationAccessDeniedException("You do not have access to this reservation.");
+        }
+
+        mentoringReservationSessionAccessPolicy.validateSessionEntry(reservation);
+
+        return toResponse(reservation);
     }
 
     @Transactional
@@ -103,10 +149,22 @@ public class MentoringReservationService {
             throw new MentoringReservationAccessDeniedException("Only the mentor can accept this reservation.");
         }
 
+        mentoringReservationSchedulePolicy.validateAcceptance(
+                reservation,
+                mentoringReservationRepository.findAllByRequester_IdAndStatusIn(
+                        reservation.getRequester().getId(),
+                        mentoringReservationSchedulePolicy.getAcceptBlockingStatuses()
+                ),
+                mentoringReservationRepository.findAllByMentor_IdAndStatusIn(
+                        reservation.getMentor().getId(),
+                        mentoringReservationSchedulePolicy.getAcceptBlockingStatuses()
+                )
+        );
+
         reservation.accept();
         notificationService.createReservationAcceptedNotification(reservation);
 
-        return MentoringReservationResponse.from(reservation);
+        return toResponse(reservation);
     }
 
     @Transactional
@@ -120,7 +178,7 @@ public class MentoringReservationService {
 
         reservation.reject();
 
-        return MentoringReservationResponse.from(reservation);
+        return toResponse(reservation);
     }
 
     @Transactional
@@ -134,7 +192,7 @@ public class MentoringReservationService {
 
         reservation.cancel();
 
-        return MentoringReservationResponse.from(reservation);
+        return toResponse(reservation);
     }
 
     @Transactional
@@ -150,7 +208,7 @@ public class MentoringReservationService {
 
         reservation.complete();
 
-        return MentoringReservationResponse.from(reservation);
+        return toResponse(reservation);
     }
 
     private Long extractCurrentUserId(AuthUserPrincipal authUser) {
@@ -164,5 +222,12 @@ public class MentoringReservationService {
     private MentoringReservation getReservationOrThrow(Long reservationId) {
         return mentoringReservationRepository.findDetailById(reservationId)
                 .orElseThrow(() -> new MentoringReservationNotFoundException(reservationId));
+    }
+
+    private MentoringReservationResponse toResponse(MentoringReservation reservation) {
+        return MentoringReservationResponse.from(
+                reservation,
+                mentoringReservationSessionAccessPolicy.resolveSessionWindow(reservation)
+        );
     }
 }

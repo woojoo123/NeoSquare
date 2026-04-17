@@ -70,6 +70,17 @@ public class MentoringReservationController {
         );
     }
 
+    @GetMapping("/{reservationId}/session-entry")
+    public ApiResponse<MentoringReservationResponse> getReservationSessionEntry(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long reservationId
+    ) {
+        return ApiResponse.success(
+                "Reservation session entry retrieved.",
+                mentoringReservationService.getReservationSessionEntry(authUser, reservationId)
+        );
+    }
+
     @PatchMapping("/{reservationId}/accept")
     public ApiResponse<MentoringReservationResponse> acceptReservation(
             @AuthenticationPrincipal AuthUserPrincipal authUser,

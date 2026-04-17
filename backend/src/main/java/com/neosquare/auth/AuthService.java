@@ -1,5 +1,6 @@
 package com.neosquare.auth;
 
+import com.neosquare.mentoring.UserNotFoundException;
 import com.neosquare.user.User;
 import com.neosquare.user.UserRepository;
 
@@ -88,7 +89,23 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(AuthUserPrincipal authUser) {
-        return CurrentUserResponse.from(authUser);
+        if (authUser == null || authUser.id() == null) {
+            throw new InvalidCredentialsException();
+        }
+
+        User user = userRepository.findById(authUser.id())
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + authUser.id()));
+
+        return CurrentUserResponse.from(user);
+    }
+
+    @Transactional(readOnly = true)
+    public WebSocketTicketResponse issueWebSocketTicket(AuthUserPrincipal authUser) {
+        if (authUser == null || authUser.id() == null) {
+            throw new InvalidCredentialsException();
+        }
+
+        return new WebSocketTicketResponse(jwtTokenProvider.generateWebSocketTicket(authUser));
     }
 
     private String normalizeEmail(String email) {

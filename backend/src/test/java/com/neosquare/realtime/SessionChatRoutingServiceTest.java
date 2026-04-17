@@ -15,6 +15,7 @@ import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringReservation;
 import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.mentoring.MentoringReservationSessionAccessPolicy;
 import com.neosquare.space.Space;
 import com.neosquare.space.SpaceType;
 import com.neosquare.study.StudySession;
@@ -44,7 +45,8 @@ class SessionChatRoutingServiceTest {
                 mentoringRequestRepository,
                 mentoringReservationRepository,
                 studySessionRepository,
-                realtimeSessionRegistry
+                realtimeSessionRegistry,
+                new MentoringReservationSessionAccessPolicy()
         );
     }
 
@@ -140,6 +142,31 @@ class SessionChatRoutingServiceTest {
                 .hasMessage("Unsupported chat scope.");
     }
 
+    @Test
+    void routeChatMessageRejectsExpiredReservationSession() {
+        User requester = createUser(20L, "requester@neo.square", "Requester");
+        User mentor = createUser(21L, "mentor@neo.square", "Mentor");
+        MentoringReservation reservation = createAcceptedReservation(
+                61L,
+                requester,
+                mentor,
+                Instant.now().minusSeconds(3 * 3600)
+        );
+
+        when(mentoringReservationRepository.findDetailById(61L)).thenReturn(Optional.of(reservation));
+
+        assertThatThrownBy(() -> sessionChatRoutingService.routeChatMessage(
+                new WebSocketMessage(
+                        WebSocketEventType.CHAT_SEND,
+                        createReservationChatPayload(61L, "지금도 채팅될까요?"),
+                        20L,
+                        Instant.now()
+                )
+        ))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Reservation session entry window has expired.");
+    }
+
     private WebSocketSession mockSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
@@ -160,10 +187,19 @@ class SessionChatRoutingServiceTest {
     }
 
     private MentoringReservation createAcceptedReservation(Long id, User requester, User mentor) {
+        return createAcceptedReservation(id, requester, mentor, Instant.now().plusSeconds(300));
+    }
+
+    private MentoringReservation createAcceptedReservation(
+            Long id,
+            User requester,
+            User mentor,
+            Instant reservedAt
+    ) {
         MentoringReservation reservation = MentoringReservation.create(
                 requester,
                 mentor,
-                Instant.parse("2026-04-10T12:00:00Z"),
+                reservedAt,
                 "오후 예약 멘토링"
         );
         reservation.accept();

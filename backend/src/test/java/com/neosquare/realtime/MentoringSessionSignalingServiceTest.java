@@ -15,6 +15,7 @@ import com.neosquare.mentoring.MentoringRequest;
 import com.neosquare.mentoring.MentoringRequestRepository;
 import com.neosquare.mentoring.MentoringReservation;
 import com.neosquare.mentoring.MentoringReservationRepository;
+import com.neosquare.mentoring.MentoringReservationSessionAccessPolicy;
 import com.neosquare.space.Space;
 import com.neosquare.space.SpaceType;
 import com.neosquare.study.StudySession;
@@ -44,7 +45,8 @@ class MentoringSessionSignalingServiceTest {
                 mentoringRequestRepository,
                 mentoringReservationRepository,
                 studySessionRepository,
-                realtimeSessionRegistry
+                realtimeSessionRegistry,
+                new MentoringReservationSessionAccessPolicy()
         );
     }
 
@@ -147,6 +149,31 @@ class MentoringSessionSignalingServiceTest {
                 .hasMessage("Mentoring request is not accepted.");
     }
 
+    @Test
+    void routeSignalRejectsReservationWhenSessionEntryIsNotOpenYet() {
+        User requester = createUser(1L, "requester@neo.square", "Requester");
+        User mentor = createUser(2L, "mentor@neo.square", "Mentor");
+        MentoringReservation reservation = createAcceptedReservation(
+                71L,
+                requester,
+                mentor,
+                Instant.now().plusSeconds(3600)
+        );
+
+        when(mentoringReservationRepository.findDetailById(71L)).thenReturn(Optional.of(reservation));
+
+        assertThatThrownBy(() -> mentoringSessionSignalingService.routeSignal(
+                new WebSocketMessage(
+                        WebSocketEventType.WEBRTC_OFFER,
+                        createReservationSignalPayload(71L),
+                        1L,
+                        Instant.now()
+                )
+        ))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Reservation session entry is not open yet.");
+    }
+
     private User createUser(Long id, String email, String nickname) {
         User user = User.create(email, "encoded-password", nickname);
         ReflectionTestUtils.setField(user, "id", id);
@@ -161,10 +188,19 @@ class MentoringSessionSignalingServiceTest {
     }
 
     private MentoringReservation createAcceptedReservation(Long id, User requester, User mentor) {
+        return createAcceptedReservation(id, requester, mentor, Instant.now().plusSeconds(300));
+    }
+
+    private MentoringReservation createAcceptedReservation(
+            Long id,
+            User requester,
+            User mentor,
+            Instant reservedAt
+    ) {
         MentoringReservation reservation = MentoringReservation.create(
                 requester,
                 mentor,
-                Instant.parse("2026-04-10T10:00:00Z"),
+                reservedAt,
                 "Need mentoring tomorrow"
         );
         reservation.accept();

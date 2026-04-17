@@ -27,17 +27,12 @@ const CHAT_BUBBLE_DURATION_MS = 3600;
 const EMOJI_BUBBLE_DURATION_MS = 2200;
 
 const SPACE_PORTAL_LAYOUTS = {
-  MAIN: [
-    { targetType: 'STUDY', x: 312, y: 650 },
-    { targetType: 'MENTORING', x: 968, y: 650 },
-  ],
+  MAIN: [],
   STUDY: [
     { targetType: 'MAIN', x: 256, y: 650 },
-    { targetType: 'MENTORING', x: 1024, y: 650 },
   ],
   MENTORING: [
-    { targetType: 'MAIN', x: 1024, y: 650 },
-    { targetType: 'STUDY', x: 256, y: 650 },
+    { targetType: 'MAIN', x: WORLD_WIDTH / 2, y: 650 },
   ],
 };
 
@@ -62,8 +57,8 @@ function getSpaceTheme(spaceType) {
 
   if (spaceType === 'MENTORING') {
     return {
-      title: '멘토링 존',
-      subtitle: '아바타를 클릭해 바로 요청이나 예약 흐름으로 연결할 수 있습니다.',
+      title: '멘토링 세션',
+      subtitle: '허브에서 연결된 요청과 예약이 열리는 전용 세션 공간입니다.',
       surfaceColor: 0x31220d,
       accentColor: 0xf59e0b,
       borderColor: 0xfde68a,
@@ -104,7 +99,6 @@ function getPortalDefinitions(spaceType, connectedSpaces) {
         width: 188,
         height: 104,
         label: targetZone.label,
-        helperText: targetZone.helperText,
         accentColor: targetTheme.accentColor,
         borderColor: targetTheme.borderColor,
       };
@@ -143,7 +137,6 @@ export default class SpaceScene extends Phaser.Scene {
     this.remotePlayers = new Map();
     this.theme = getSpaceTheme(spaceType);
     this.portals = [];
-    this.portalPrompt = null;
     this.activePortalTargetType = null;
     this.activeParticipantUserId = null;
     this.isEnteringPortal = false;
@@ -190,17 +183,6 @@ export default class SpaceScene extends Phaser.Scene {
     this.interactionKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE) || null;
     this.cameras.main.centerOn(spawnPosition.x, spawnPosition.y);
     this.cameras.main.startFollow(this.player, true, 0.16, 0.16);
-
-    this.portalPrompt = this.add
-      .text(WORLD_WIDTH / 2, 86, '', {
-        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '13px',
-        color: '#fef3c7',
-        align: 'center',
-        wordWrap: { width: 360 },
-      })
-      .setOrigin(0.5, 0)
-      .setScrollFactor(0);
 
     this.refreshInteractionState();
     this.onPlayerMove?.({ x: this.player.x, y: this.player.y });
@@ -560,17 +542,9 @@ export default class SpaceScene extends Phaser.Scene {
     this.portals.forEach((portal) => {
       const isActive = activePortal?.targetType === portal.targetType;
       portal.glow.setAlpha(isActive ? 0.68 : 0.34);
-      portal.signBackground.setFillStyle(portal.accentColor, isActive ? 0.42 : 0.26);
-      portal.signBackground.setStrokeStyle(
-        isActive ? 3 : 2,
-        isActive ? 0xfef3c7 : portal.borderColor,
-        0.94
-      );
       portal.frame.setStrokeStyle(isActive ? 5 : 4, isActive ? 0xfef3c7 : portal.accentColor, 0.95);
       portal.door.setFillStyle(0x020617, isActive ? 0.98 : 0.88);
-      portal.helper.setColor(isActive ? '#f8fafc' : '#cbd5e1');
       portal.labelText.setScale(isActive ? 1.04 : 1);
-      portal.sign.setScale(isActive ? 1.04 : 1);
     });
 
     this.remotePlayers.forEach((remotePlayer, userId) => {
@@ -579,29 +553,6 @@ export default class SpaceScene extends Phaser.Scene {
         String(userId) === String(this.activeParticipantUserId)
       );
     });
-
-    if (!this.portalPrompt) {
-      return;
-    }
-
-    if (!activePortal && !activeParticipant) {
-      this.portalPrompt.setText('');
-      return;
-    }
-
-    if (activePortal && activeParticipant) {
-      this.portalPrompt.setText(
-        `${activeParticipant.label}님과 대화 · Space\n${activePortal.label} 입장 · 위쪽 방향키`
-      );
-      return;
-    }
-
-    if (activePortal) {
-      this.portalPrompt.setText(`${activePortal.label} 입장 · 위쪽 방향키`);
-      return;
-    }
-
-    this.portalPrompt.setText(`${activeParticipant.label}님과 대화 · Space`);
   }
 
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
@@ -838,16 +789,6 @@ export default class SpaceScene extends Phaser.Scene {
         portalDefinition.accentColor,
         0.34
       );
-      const signBackground = this.add
-        .rectangle(
-          portalDefinition.x,
-          portalDefinition.y - 22,
-          104,
-          34,
-          portalDefinition.accentColor,
-          0.26
-        )
-        .setStrokeStyle(2, portalDefinition.borderColor, 0.9);
       const frame = this.add
         .rectangle(
           portalDefinition.x,
@@ -868,14 +809,6 @@ export default class SpaceScene extends Phaser.Scene {
           0.92
         )
         .setStrokeStyle(3, portalDefinition.borderColor, 0.88);
-      const sign = this.add
-        .text(portalDefinition.x, portalDefinition.y - 22, 'ENTER', {
-          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '17px',
-          color: '#f8fafc',
-        })
-        .setOrigin(0.5)
-        .setDepth(2);
       const label = this.add
         .text(portalDefinition.x, portalDefinition.y + 8, portalDefinition.label, {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
@@ -885,30 +818,17 @@ export default class SpaceScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(2);
-      const helper = this.add
-        .text(portalDefinition.x, portalDefinition.y + 58, '위쪽 방향키', {
-          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '13px',
-          color: '#e2e8f0',
-          align: 'center',
-        })
-        .setOrigin(0.5, 0.5)
-        .setDepth(2);
 
       glow.setDepth(1);
-      signBackground.setDepth(1);
       frame.setDepth(1);
       door.setDepth(1);
 
       return {
         ...portalDefinition,
         glow,
-        signBackground,
         frame,
         door,
-        sign,
         labelText: label,
-        helper,
       };
     });
   }

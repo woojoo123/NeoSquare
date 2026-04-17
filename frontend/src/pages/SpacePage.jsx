@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { getMe, logout } from '../api/auth';
-import { createMentoringRequest } from '../api/mentoring';
-import { createReservation } from '../api/reservations';
+import { getMe } from '../api/auth';
 import { getSpace, getSpaces } from '../api/spaces';
 import {
   createStudySession,
@@ -12,7 +10,7 @@ import {
 } from '../api/study';
 import AvatarPreview from '../components/AvatarPreview';
 import SpaceGame from '../components/SpaceGame';
-import { AVATAR_PRESETS } from '../lib/avatarPresets';
+import { AVATAR_PRESETS, getAvatarPreset } from '../lib/avatarPresets';
 import {
   getSelectedAvatarPresetId,
   hasCompletedAvatarOnboarding,
@@ -20,28 +18,17 @@ import {
   setSelectedAvatarPresetId,
 } from '../lib/avatarSelectionStorage';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
-import { getPrimarySpace, resolvePrimarySpacePath } from '../lib/primarySpaceNavigation';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useSessionMedia } from '../lib/useSessionMedia';
 import { useAuthStore } from '../store/authStore';
 
 const STUDY_RECRUIT_PREFIX = '[스터디 모집]';
-const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY', 'MENTORING'];
+const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY'];
 const CHAT_SCOPE_PUBLIC = 'PUBLIC';
 const CHAT_SCOPE_WHISPER = 'WHISPER';
 const CHAT_VARIANT_TEXT = 'TEXT';
 const CHAT_VARIANT_EMOJI = 'EMOJI';
 const QUICK_EMOJI_OPTIONS = ['😀', '👍', '🙌', '❤️', '😂'];
-
-function getDefaultReservationDateTime() {
-  const now = new Date();
-  now.setMinutes(0, 0, 0);
-  now.setHours(now.getHours() + 1);
-
-  const localOffset = now.getTimezoneOffset();
-  const localDate = new Date(now.getTime() - localOffset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
-}
 
 function buildStudyRecruitmentMessage(topic, note) {
   const trimmedTopic = topic.trim();
@@ -101,15 +88,6 @@ export default function SpacePage() {
   const [showAvatarOnboarding, setShowAvatarOnboarding] = useState(false);
   const [hasCompletedAvatarSetup, setHasCompletedAvatarSetup] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
-  const [requestMessage, setRequestMessage] = useState('');
-  const [requestStatus, setRequestStatus] = useState('idle');
-  const [requestNotice, setRequestNotice] = useState('');
-  const [requestError, setRequestError] = useState('');
-  const [reservationDateTime, setReservationDateTime] = useState(getDefaultReservationDateTime);
-  const [reservationMessage, setReservationMessage] = useState('');
-  const [reservationStatus, setReservationStatus] = useState('idle');
-  const [reservationNotice, setReservationNotice] = useState('');
-  const [reservationError, setReservationError] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatScope, setChatScope] = useState(CHAT_SCOPE_PUBLIC);
   const [studyTopic, setStudyTopic] = useState('');
@@ -121,7 +99,6 @@ export default function SpacePage() {
   const [studySessionsStatus, setStudySessionsStatus] = useState('idle');
   const [studySessionsError, setStudySessionsError] = useState('');
   const [activeDrawer, setActiveDrawer] = useState(null);
-  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [isSupportPanelOpen, setIsSupportPanelOpen] = useState(false);
   const [isEmojiPaletteOpen, setIsEmojiPaletteOpen] = useState(false);
   const currentUser = useAuthStore((state) => state.currentUser);
@@ -135,13 +112,11 @@ export default function SpacePage() {
   const chatInputRef = useRef(null);
   const chatMessagesEndRef = useRef(null);
   const studyTopicInputRef = useRef(null);
-  const utilityMenuRef = useRef(null);
   const {
     localVideoRef,
     hasLocalPreview,
     cameraOn,
     microphoneOn,
-    statusMessage: mediaStatusMessage,
     errorMessage: mediaErrorMessage,
     startLocalPreview,
     toggleCamera,
@@ -173,7 +148,6 @@ export default function SpacePage() {
     const resolvedIndex = AVATAR_PRESETS.findIndex((preset) => preset.id === selectedAvatarId);
     return resolvedIndex >= 0 ? resolvedIndex + 1 : 1;
   }, [selectedAvatarId]);
-  const primarySpace = useMemo(() => getPrimarySpace(spaceDirectory), [spaceDirectory]);
   const connectedSpaces = useMemo(
     () =>
       SPACE_NAVIGATION_ORDER.map((spaceType) =>
@@ -188,10 +162,6 @@ export default function SpacePage() {
 
     if (space?.type === 'STUDY') {
       tabs.push({ id: 'study', label: '스터디' });
-    }
-
-    if (space?.type === 'MENTORING') {
-      tabs.push({ id: 'mentoring', label: '멘토링' });
     }
 
     return tabs;
@@ -228,6 +198,19 @@ export default function SpacePage() {
   }, [currentUser?.id, space?.type]);
 
   useEffect(() => {
+    if (space?.type !== 'MENTORING') {
+      return;
+    }
+
+    navigate('/hub', {
+      replace: true,
+      state: {
+        message: '멘토링은 내 활동에서 요청과 예약을 관리한 뒤 전용 세션으로 입장합니다.',
+      },
+    });
+  }, [navigate, space?.type]);
+
+  useEffect(() => {
     if (!space?.type) {
       return;
     }
@@ -244,26 +227,6 @@ export default function SpacePage() {
       setActiveDrawer(drawerTabs[0]?.id || null);
     }
   }, [activeDrawer, drawerTabs]);
-
-  useEffect(() => {
-    if (!isUtilityMenuOpen) {
-      return undefined;
-    }
-
-    const handlePointerDown = (event) => {
-      if (utilityMenuRef.current?.contains(event.target)) {
-        return;
-      }
-
-      setIsUtilityMenuOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [isUtilityMenuOpen]);
 
   useEffect(() => {
     if (!selectedParticipantId) {
@@ -449,20 +412,8 @@ export default function SpacePage() {
     }
 
     setSelectedParticipantId(participant.userId);
-    setRequestNotice('');
-    setRequestError('');
-    setReservationNotice('');
-    setReservationError('');
     setStudyNotice('');
     setStudyError('');
-
-    if (space?.type === 'MENTORING' && !requestMessage.trim()) {
-      setRequestMessage(`${participant.label}님, 잠깐 이야기 나눌 수 있을까요?`);
-    }
-
-    if (space?.type === 'MENTORING' && !reservationMessage.trim()) {
-      setReservationMessage(`${participant.label}님과 시간을 맞춰 멘토링을 진행하고 싶어요.`);
-    }
     handleActivateWhisper(participant);
   };
 
@@ -505,10 +456,6 @@ export default function SpacePage() {
     }
   };
 
-  const handleMentionParticipant = () => {
-    handleActivateWhisper();
-  };
-
   const handleSendEmojiMessage = (emoji) => {
     const didSend = sendChatMessage(emoji, {
       scope: chatScope,
@@ -522,72 +469,6 @@ export default function SpacePage() {
     }
 
     setIsEmojiPaletteOpen(false);
-  };
-
-  const handleCreateRequest = async (event) => {
-    event.preventDefault();
-
-    if (!selectedParticipant) {
-      setRequestError('먼저 대화할 참가자를 선택해 주세요.');
-      setRequestNotice('');
-      return;
-    }
-
-    setRequestStatus('saving');
-    setRequestNotice('');
-    setRequestError('');
-
-    try {
-      await createMentoringRequest({
-        mentorId: Number(selectedParticipant.userId),
-        message: requestMessage.trim(),
-      });
-      setRequestStatus('saved');
-      setRequestNotice('멘토링 요청을 보냈습니다.');
-      setRequestMessage('');
-    } catch (error) {
-      setRequestStatus('error');
-      setRequestError(
-        error?.response?.data?.message || error.message || '멘토링 요청 전송에 실패했습니다.'
-      );
-    }
-  };
-
-  const handleCreateReservation = async (event) => {
-    event.preventDefault();
-
-    if (!selectedParticipant) {
-      setReservationError('먼저 예약할 참가자를 선택해 주세요.');
-      setReservationNotice('');
-      return;
-    }
-
-    if (!reservationDateTime) {
-      setReservationError('예약 날짜와 시간을 입력해 주세요.');
-      setReservationNotice('');
-      return;
-    }
-
-    setReservationStatus('saving');
-    setReservationNotice('');
-    setReservationError('');
-
-    try {
-      await createReservation({
-        mentorId: Number(selectedParticipant.userId),
-        reservedAt: new Date(reservationDateTime).toISOString(),
-        message: reservationMessage.trim(),
-      });
-      setReservationStatus('saved');
-      setReservationNotice('멘토링 예약을 생성했습니다.');
-      setReservationMessage('');
-      setReservationDateTime(getDefaultReservationDateTime());
-    } catch (error) {
-      setReservationStatus('error');
-      setReservationError(
-        error?.response?.data?.message || error.message || '멘토링 예약 생성에 실패했습니다.'
-      );
-    }
   };
 
   const handleCreateStudySession = async (event) => {
@@ -673,11 +554,6 @@ export default function SpacePage() {
     });
   };
 
-  const handleOpenAvatarOnboarding = () => {
-    setAvatarNotice('');
-    setShowAvatarOnboarding(true);
-  };
-
   const handleCloseAvatarOnboarding = () => {
     if (!hasCompletedAvatarSetup) {
       return;
@@ -730,36 +606,6 @@ export default function SpacePage() {
     handleMoveToSpace(targetSpace);
   };
 
-  const handleOpenMentoringComposer = () => {
-    setIsSupportPanelOpen(true);
-    setActiveDrawer('mentoring');
-  };
-
-  const handleReturnToPrimarySpace = async () => {
-    if (primarySpace?.id) {
-      handleMoveToSpace(primarySpace);
-      return;
-    }
-
-    navigate(await resolvePrimarySpacePath());
-  };
-
-  const handleLogout = async () => {
-    setIsUtilityMenuOpen(false);
-    try {
-      await logout();
-    } catch {
-      // 서버 로그아웃 실패와 무관하게 로컬 세션은 정리한다.
-    } finally {
-      clearAuth();
-      navigate('/login', { replace: true });
-    }
-  };
-
-  const handleToggleUtilityMenu = () => {
-    setIsUtilityMenuOpen((currentValue) => !currentValue);
-  };
-
   const handleToggleSupportDrawer = (drawerId) => {
     setIsEmojiPaletteOpen(false);
 
@@ -772,9 +618,8 @@ export default function SpacePage() {
     setIsSupportPanelOpen(true);
   };
 
-  const handleReturnToPrimarySpaceMenuAction = async () => {
-    setIsUtilityMenuOpen(false);
-    await handleReturnToPrimarySpace();
+  const handleReturnToLobby = () => {
+    navigate('/lobby');
   };
 
   const handleCloseSupportPanel = () => {
@@ -842,9 +687,7 @@ export default function SpacePage() {
       ? ''
       : activeDrawer === 'study'
           ? '스터디 세션을 열거나 참여합니다.'
-          : activeDrawer === 'mentoring'
-            ? '요청이나 예약으로 멘토링을 이어갑니다.'
-            : '현재 공간에서 필요한 도구를 확인합니다.';
+          : '현재 공간에서 필요한 도구를 확인합니다.';
 
   const renderDrawerContent = () => {
     if (activeDrawer === 'chat') {
@@ -1011,99 +854,6 @@ export default function SpacePage() {
       );
     }
 
-    if (activeDrawer === 'mentoring') {
-      return (
-        <div className="space-hud-stack">
-          <section className="space-hud-card">
-            <h3>선택한 참가자</h3>
-            {!selectedParticipant ? (
-              <p className="app-note">
-                아바타 가까이에서 Space를 누르거나 클릭해 상대를 선택하면 요청과 예약을 바로 보낼 수 있습니다.
-              </p>
-            ) : (
-              <>
-                <strong>{selectedParticipant.label}</strong>
-                <p className="app-note">
-                  먼저 채팅으로 말을 걸거나 바로 멘토링 요청과 예약을 보낼 수 있습니다.
-                </p>
-                <div className="space-selected-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={handleMentionParticipant}
-                  >
-                    채팅으로 말 걸기
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
-
-          <section className="space-hud-card">
-            <h3>빠른 멘토링 요청</h3>
-            <form className="mentoring-form" onSubmit={handleCreateRequest}>
-              <label className="app-field">
-                <span>요청 메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={requestMessage}
-                  onChange={(event) => setRequestMessage(event.target.value)}
-                  rows={3}
-                  placeholder="선택한 참가자에게 전달할 메시지를 입력해 주세요."
-                  disabled={!selectedParticipant || requestStatus === 'saving'}
-                />
-              </label>
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={!selectedParticipant || requestStatus === 'saving'}
-              >
-                {requestStatus === 'saving' ? '요청 전송 중...' : '멘토링 요청 보내기'}
-              </button>
-            </form>
-            {requestNotice ? <p className="app-success">{requestNotice}</p> : null}
-            {requestError ? <p className="app-error">{requestError}</p> : null}
-          </section>
-
-          <section className="space-hud-card">
-            <h3>빠른 예약 제안</h3>
-            <form className="mentoring-form" onSubmit={handleCreateReservation}>
-              <label className="app-field">
-                <span>예약 시간</span>
-                <input
-                  type="datetime-local"
-                  className="app-input"
-                  value={reservationDateTime}
-                  onChange={(event) => setReservationDateTime(event.target.value)}
-                  disabled={!selectedParticipant || reservationStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>예약 메시지</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={reservationMessage}
-                  onChange={(event) => setReservationMessage(event.target.value)}
-                  rows={3}
-                  placeholder="예약과 함께 전달할 메시지를 입력해 주세요."
-                  disabled={!selectedParticipant || reservationStatus === 'saving'}
-                />
-              </label>
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={!selectedParticipant || reservationStatus === 'saving'}
-              >
-                {reservationStatus === 'saving' ? '예약 생성 중...' : '예약 제안 보내기'}
-              </button>
-            </form>
-            {reservationNotice ? <p className="app-success">{reservationNotice}</p> : null}
-            {reservationError ? <p className="app-error">{reservationError}</p> : null}
-          </section>
-        </div>
-      );
-    }
-
     return null;
   };
 
@@ -1128,45 +878,15 @@ export default function SpacePage() {
               />
             </div>
 
-            <header className="space-top-overlay">
-              <div className="space-top-overlay__brand">
-                <span className="space-top-overlay__eyebrow">NEOSQUARE WORLD</span>
-              </div>
-
-              <div className="space-top-overlay__title" aria-label="현재 공간">
-                {spaceDefinition.label}
-              </div>
-
+            <header className="space-top-overlay space-top-overlay--minimal">
               <div className="space-top-overlay__meta">
-                <div className="space-utility-menu-wrap" ref={utilityMenuRef}>
-                  <button
-                    type="button"
-                    className="space-top-overlay__menu-button"
-                    onClick={handleToggleUtilityMenu}
-                  >
-                    메뉴
-                  </button>
-                  {isUtilityMenuOpen ? (
-                    <div className="space-utility-menu" role="menu" aria-label="메타버스 메뉴">
-                      {!isLoading && !errorMessage && space?.type !== 'MAIN' ? (
-                        <button
-                          type="button"
-                          className="space-utility-menu__item"
-                          onClick={handleReturnToPrimarySpaceMenuAction}
-                        >
-                          메인광장으로 돌아가기
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="space-utility-menu__item space-utility-menu__item--danger"
-                        onClick={handleLogout}
-                      >
-                        로그아웃
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <button
+                  type="button"
+                  className="space-top-overlay__menu-button"
+                  onClick={handleReturnToLobby}
+                >
+                  로비
+                </button>
               </div>
             </header>
 
@@ -1260,38 +980,17 @@ export default function SpacePage() {
                 >
                   채팅
                 </button>
-              </div>
-
-              <div className="space-bottom-bar__center">
-                <span>이동: 방향키</span>
-                <span>대화: Space / 클릭</span>
-                <span>입장: 위쪽 방향키</span>
-              </div>
-
-              <div className="space-bottom-bar__right">
-                {hasLocalPreview ? (
+                {hasLocalPreview && cameraOn ? (
                   <div className="space-bottom-bar__preview">
-                    {cameraOn ? (
-                      <video
-                        ref={localVideoRef}
-                        className="space-bottom-bar__video"
-                        autoPlay
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      <div className="space-bottom-bar__preview-placeholder">
-                        {currentUser?.nickname || '나'}
-                      </div>
-                    )}
+                    <video
+                      ref={localVideoRef}
+                      className="space-bottom-bar__video"
+                      autoPlay
+                      muted
+                      playsInline
+                    />
                   </div>
-                ) : (
-                  <div className="space-bottom-bar__status">
-                    <span>{microphoneOn ? '마이크 켜짐' : '마이크 꺼짐'}</span>
-                    <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
-                    {mediaStatusMessage ? <span>{mediaStatusMessage}</span> : null}
-                  </div>
-                )}
+                ) : null}
               </div>
             </section>
 

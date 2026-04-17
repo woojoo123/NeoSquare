@@ -24,6 +24,11 @@ export async function getReservation(reservationId) {
   return unwrapApiResponse(response);
 }
 
+export async function getReservationSessionEntry(reservationId) {
+  const response = await axiosInstance.get(`/mentoring/reservations/${reservationId}/session-entry`);
+  return unwrapApiResponse(response);
+}
+
 export async function acceptReservation(reservationId) {
   const response = await axiosInstance.patch(`/mentoring/reservations/${reservationId}/accept`);
   return unwrapApiResponse(response);

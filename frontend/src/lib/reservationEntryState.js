@@ -21,26 +21,54 @@ function formatRelativeMinutes(totalMinutes) {
 }
 
 export function getReservationEntryState(reservedAt, nowTimestamp = Date.now()) {
-  if (!reservedAt) {
+  const reservation =
+    reservedAt && typeof reservedAt === 'object' && !Array.isArray(reservedAt)
+      ? reservedAt
+      : null;
+  const reservedAtValue = reservation?.reservedAt ?? reservedAt;
+
+  if (!reservedAtValue) {
     return {
       status: 'unknown',
       canEnter: false,
       label: 'Reservation time unavailable',
+      detail: 'Reservation time is missing, so the session window could not be calculated.',
+      reservedAt: null,
+      entryOpenAt: null,
+      entryCloseAt: null,
     };
   }
 
-  const reservedAtTimestamp = new Date(reservedAt).getTime();
+  const reservedAtTimestamp = new Date(reservedAtValue).getTime();
 
-  if (Number.isNaN(reservedAtTimestamp)) {
+  const entryOpenTimestamp = reservation?.sessionEntryOpenAt
+    ? new Date(reservation.sessionEntryOpenAt).getTime()
+    : reservedAtTimestamp - ENTRY_OPEN_WINDOW_MINUTES * 60 * 1000;
+  const entryExpireTimestamp = reservation?.sessionEntryCloseAt
+    ? new Date(reservation.sessionEntryCloseAt).getTime()
+    : reservedAtTimestamp + ENTRY_EXPIRE_WINDOW_MINUTES * 60 * 1000;
+
+  if (
+    Number.isNaN(reservedAtTimestamp) ||
+    Number.isNaN(entryOpenTimestamp) ||
+    Number.isNaN(entryExpireTimestamp)
+  ) {
     return {
       status: 'unknown',
       canEnter: false,
       label: 'Reservation time unavailable',
+      detail: 'Reservation time is invalid, so the session window could not be calculated.',
+      reservedAt: null,
+      entryOpenAt: null,
+      entryCloseAt: null,
     };
   }
 
-  const entryOpenTimestamp = reservedAtTimestamp - ENTRY_OPEN_WINDOW_MINUTES * 60 * 1000;
-  const entryExpireTimestamp = reservedAtTimestamp + ENTRY_EXPIRE_WINDOW_MINUTES * 60 * 1000;
+  const reservationWindow = {
+    reservedAt: new Date(reservedAtTimestamp).toISOString(),
+    entryOpenAt: new Date(entryOpenTimestamp).toISOString(),
+    entryCloseAt: new Date(entryExpireTimestamp).toISOString(),
+  };
 
   if (nowTimestamp < entryOpenTimestamp) {
     const minutesUntilEntry = Math.ceil((entryOpenTimestamp - nowTimestamp) / (60 * 1000));
@@ -49,6 +77,8 @@ export function getReservationEntryState(reservedAt, nowTimestamp = Date.now()) 
       status: 'upcoming',
       canEnter: false,
       label: `Entry opens in ${formatRelativeMinutes(minutesUntilEntry)}`,
+      detail: 'Participants can enter starting 10 minutes before the reserved time.',
+      ...reservationWindow,
     };
   }
 
@@ -60,6 +90,8 @@ export function getReservationEntryState(reservedAt, nowTimestamp = Date.now()) 
         status: 'ready',
         canEnter: true,
         label: `Ready to enter · starts in ${formatRelativeMinutes(minutesUntilStart)}`,
+        detail: 'The session window is open. You can join now and prepare before the session starts.',
+        ...reservationWindow,
       };
     }
 
@@ -67,6 +99,8 @@ export function getReservationEntryState(reservedAt, nowTimestamp = Date.now()) 
       status: 'ready',
       canEnter: true,
       label: 'Ready to enter now',
+      detail: 'The reserved session is in progress. Participants can keep joining until the entry window closes.',
+      ...reservationWindow,
     };
   }
 
@@ -74,5 +108,7 @@ export function getReservationEntryState(reservedAt, nowTimestamp = Date.now()) 
     status: 'expired',
     canEnter: false,
     label: 'Reservation time passed',
+    detail: 'The reservation entry window has closed, so the session can no longer be joined.',
+    ...reservationWindow,
   };
 }

@@ -3,12 +3,10 @@ package com.neosquare.realtime;
 import java.util.Map;
 
 import com.neosquare.auth.JwtTokenProvider;
-import com.neosquare.user.User;
-import com.neosquare.user.UserRepository;
+import com.neosquare.auth.WebSocketTicketClaims;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -23,14 +21,11 @@ public class AuthenticatedWebSocketHandshakeInterceptor implements HandshakeInte
     private static final Logger log = LoggerFactory.getLogger(AuthenticatedWebSocketHandshakeInterceptor.class);
 
     private final JwtTokenProvider jwtTokenProvider;
-    private final UserRepository userRepository;
 
     public AuthenticatedWebSocketHandshakeInterceptor(
-            JwtTokenProvider jwtTokenProvider,
-            UserRepository userRepository
+            JwtTokenProvider jwtTokenProvider
     ) {
         this.jwtTokenProvider = jwtTokenProvider;
-        this.userRepository = userRepository;
     }
 
     @Override
@@ -40,33 +35,25 @@ public class AuthenticatedWebSocketHandshakeInterceptor implements HandshakeInte
             WebSocketHandler wsHandler,
             Map<String, Object> attributes
     ) {
-        String token = extractToken(request);
+        String ticket = extractTicket(request);
 
-        if (token == null || token.isBlank()) {
-            log.warn("Rejecting WebSocket handshake without access token. uri={}", request.getURI());
+        if (ticket == null || ticket.isBlank()) {
+            log.warn("Rejecting WebSocket handshake without ticket. path={}", request.getURI().getPath());
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
 
-        if (!jwtTokenProvider.isValid(token)) {
-            log.warn("Rejecting WebSocket handshake with invalid access token. uri={}", request.getURI());
+        if (!jwtTokenProvider.isWebSocketTicket(ticket)) {
+            log.warn("Rejecting WebSocket handshake with invalid ticket. path={}", request.getURI().getPath());
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
 
-        Long userId = jwtTokenProvider.getUserId(token);
-        User user = userRepository.findById(userId)
-                .orElse(null);
+        WebSocketTicketClaims ticketClaims = jwtTokenProvider.getWebSocketTicketClaims(ticket);
 
-        if (user == null) {
-            log.warn("Rejecting WebSocket handshake for unknown user. userId={}", userId);
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return false;
-        }
-
-        attributes.put(WebSocketSessionAttributes.USER_ID, user.getId());
-        attributes.put(WebSocketSessionAttributes.USER_EMAIL, user.getEmail());
-        attributes.put(WebSocketSessionAttributes.USER_NICKNAME, user.getNickname());
+        attributes.put(WebSocketSessionAttributes.USER_ID, ticketClaims.userId());
+        attributes.put(WebSocketSessionAttributes.USER_EMAIL, ticketClaims.email());
+        attributes.put(WebSocketSessionAttributes.USER_NICKNAME, ticketClaims.nickname());
         return true;
     }
 
@@ -79,16 +66,10 @@ public class AuthenticatedWebSocketHandshakeInterceptor implements HandshakeInte
     ) {
     }
 
-    private String extractToken(ServerHttpRequest request) {
-        String authorizationHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-            return authorizationHeader.substring(7).trim();
-        }
-
+    private String extractTicket(ServerHttpRequest request) {
         return UriComponentsBuilder.fromUri(request.getURI())
                 .build()
                 .getQueryParams()
-                .getFirst("token");
+                .getFirst("ticket");
     }
 }

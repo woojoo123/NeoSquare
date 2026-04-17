@@ -82,4 +82,14 @@ public class AuthController {
 
         return ApiResponse.success("Current user retrieved.", response);
     }
+
+    @PostMapping("/ws-ticket")
+    public ApiResponse<WebSocketTicketResponse> issueWebSocketTicket(
+            @AuthenticationPrincipal AuthUserPrincipal authUser
+    ) {
+        return ApiResponse.success(
+                "WebSocket ticket issued.",
+                authService.issueWebSocketTicket(authUser)
+        );
+    }
 }

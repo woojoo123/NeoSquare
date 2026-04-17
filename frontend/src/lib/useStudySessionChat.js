@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getAuthenticatedWebSocketUrl } from './webSocketUrl';
+import { clearCachedWebSocketTicket, getAuthenticatedWebSocketUrl } from './webSocketUrl';
 
 const STUDY_SESSION_CHAT_LIMIT = 120;
 
@@ -165,48 +165,60 @@ export function useStudySessionChat({ enabled, studySessionId, userId, nickname 
       }
     }
 
-    try {
-      setMessages([]);
-      setConnectionStatus('connecting');
-      setErrorMessage('');
-      isReadyRef.current = false;
-      socket = new WebSocket(getAuthenticatedWebSocketUrl());
-      socketRef.current = socket;
-    } catch (error) {
-      setConnectionStatus('error');
-      setErrorMessage('스터디 세션 채팅 연결을 만들지 못했습니다.');
-      console.error('Failed to create study session chat connection:', error);
-      return undefined;
+    async function connectSocket() {
+      try {
+        setMessages([]);
+        setConnectionStatus('connecting');
+        setErrorMessage('');
+        isReadyRef.current = false;
+        const socketUrl = await getAuthenticatedWebSocketUrl();
+
+        if (isDisposed) {
+          return;
+        }
+
+        socket = new WebSocket(socketUrl);
+        socketRef.current = socket;
+      } catch (error) {
+        setConnectionStatus('error');
+        setErrorMessage('스터디 세션 채팅 연결을 만들지 못했습니다.');
+        clearCachedWebSocketTicket();
+        console.error('Failed to create study session chat connection:', error);
+        return;
+      }
+
+      socket.onopen = () => {
+        if (isDisposed) {
+          return;
+        }
+
+        setConnectionStatus('connecting');
+      };
+
+      socket.onmessage = handleIncomingMessage;
+
+      socket.onerror = () => {
+        if (isDisposed) {
+          return;
+        }
+
+        clearCachedWebSocketTicket();
+        setConnectionStatus('error');
+        setErrorMessage('스터디 세션 채팅 연결 중 오류가 발생했습니다.');
+      };
+
+      socket.onclose = () => {
+        if (isDisposed) {
+          return;
+        }
+
+        setConnectionStatus('disconnected');
+        socketRef.current = null;
+        isReadyRef.current = false;
+      };
     }
 
-    socket.onopen = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('connecting');
-    };
-
-    socket.onmessage = handleIncomingMessage;
-
-    socket.onerror = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('error');
-      setErrorMessage('스터디 세션 채팅 연결 중 오류가 발생했습니다.');
-    };
-
-    socket.onclose = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      setConnectionStatus('disconnected');
-      socketRef.current = null;
-      isReadyRef.current = false;
-    };
+    void connectSocket();
 
     return () => {
       isDisposed = true;

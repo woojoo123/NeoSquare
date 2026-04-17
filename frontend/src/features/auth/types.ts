@@ -50,6 +50,7 @@ export type CurrentUserResponse = {
   email: string;
   nickname: string;
   role: string;
+  mentorEnabled: boolean;
 };
 
 export type LoginRequestPayload = Pick<LoginFormValues, 'email' | 'password'>;

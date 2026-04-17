@@ -182,8 +182,8 @@ export default function EntryAvatarPage() {
               메타버스 입장하기
             </button>
 
-            <button type="button" className="entry-avatar-stage__back" onClick={() => navigate('/')}>
-              홈으로 돌아가기
+            <button type="button" className="entry-avatar-stage__back" onClick={() => navigate('/lobby')}>
+              로비로 돌아가기
             </button>
           </section>
         </div>
