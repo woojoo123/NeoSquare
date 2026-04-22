@@ -19,6 +19,11 @@ export async function getStudySessionsBySpace(spaceId) {
   return unwrapApiResponse(response);
 }
 
+export async function getOpenStudySessionsBySpace(spaceId) {
+  const response = await axiosInstance.get(`/study/sessions/space/${spaceId}/open`);
+  return unwrapApiResponse(response);
+}
+
 export async function getStudySession(studySessionId) {
   const response = await axiosInstance.get(`/study/sessions/${studySessionId}`);
   return unwrapApiResponse(response);
@@ -26,6 +31,11 @@ export async function getStudySession(studySessionId) {
 
 export async function joinStudySession(studySessionId) {
   const response = await axiosInstance.post(`/study/sessions/${studySessionId}/join`);
+  return unwrapApiResponse(response);
+}
+
+export async function startStudySession(studySessionId) {
+  const response = await axiosInstance.patch(`/study/sessions/${studySessionId}/start`);
   return unwrapApiResponse(response);
 }
 

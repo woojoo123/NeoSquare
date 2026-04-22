@@ -20,6 +20,12 @@ public interface StudySessionRepository extends JpaRepository<StudySession, Long
     );
 
     @EntityGraph(attributePaths = {"host", "space", "participants", "participants.user"})
+    List<StudySession> findAllBySpace_IdAndStatusInOrderByCreatedAtDescIdDesc(
+            Long spaceId,
+            List<StudySessionStatus> statuses
+    );
+
+    @EntityGraph(attributePaths = {"host", "space", "participants", "participants.user"})
     @Query("""
             select distinct studySession
             from StudySession studySession

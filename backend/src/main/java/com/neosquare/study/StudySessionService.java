@@ -76,6 +76,19 @@ public class StudySessionService {
     }
 
     @Transactional(readOnly = true)
+    public List<StudySessionResponse> getOpenStudySessionsBySpace(AuthUserPrincipal authUser, Long spaceId) {
+        Long currentUserId = extractCurrentUserId(authUser);
+        getStudySpaceOrThrow(spaceId);
+
+        return studySessionRepository.findAllBySpace_IdAndStatusInOrderByCreatedAtDescIdDesc(
+                        spaceId,
+                        List.of(StudySessionStatus.RECRUITING, StudySessionStatus.READY)
+                ).stream()
+                .map(studySession -> StudySessionResponse.from(studySession, currentUserId))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public StudySessionResponse getStudySession(AuthUserPrincipal authUser, Long studySessionId) {
         Long currentUserId = extractCurrentUserId(authUser);
         StudySession studySession = getStudySessionOrThrow(studySessionId);
@@ -96,6 +109,20 @@ public class StudySessionService {
         User participant = getUserOrThrow(currentUserId);
 
         studySession.join(participant);
+
+        return StudySessionResponse.from(studySession, currentUserId);
+    }
+
+    @Transactional
+    public StudySessionResponse startStudySession(AuthUserPrincipal authUser, Long studySessionId) {
+        Long currentUserId = extractCurrentUserId(authUser);
+        StudySession studySession = getStudySessionOrThrow(studySessionId);
+
+        if (!studySession.isHost(currentUserId)) {
+            throw new StudySessionAccessDeniedException("Only the host can start this study session.");
+        }
+
+        studySession.start();
 
         return StudySessionResponse.from(studySession, currentUserId);
     }

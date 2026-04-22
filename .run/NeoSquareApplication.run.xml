@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="NeoSquareApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="mariadb" />
+    <envs>
+      <env name="DB_URL" value="jdbc:mariadb://localhost:3306/neosquare" />
+      <env name="DB_USERNAME" value="neosquare" />
+      <env name="DB_PASSWORD" value="neosquare1234!" />
+    </envs>
+    <module name="NeoSquare.backend.main" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.neosquare.NeoSquareApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -5,8 +5,8 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:mariadb://localhost:3306/neosquare}
     driver-class-name: org.mariadb.jdbc.Driver
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    username: ${DB_USERNAME:neosquare}
+    password: ${DB_PASSWORD:neosquare1234!}
   jpa:
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}

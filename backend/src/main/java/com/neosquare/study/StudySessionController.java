@@ -55,8 +55,19 @@ public class StudySessionController {
             @PathVariable Long spaceId
     ) {
         return ApiResponse.success(
-                "Study sessions retrieved.",
+                "Active study sessions retrieved.",
                 studySessionService.getStudySessionsBySpace(authUser, spaceId)
+        );
+    }
+
+    @GetMapping("/space/{spaceId}/open")
+    public ApiResponse<List<StudySessionResponse>> getOpenStudySessionsBySpace(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long spaceId
+    ) {
+        return ApiResponse.success(
+                "Open study sessions retrieved.",
+                studySessionService.getOpenStudySessionsBySpace(authUser, spaceId)
         );
     }
 
@@ -79,6 +90,17 @@ public class StudySessionController {
         return ApiResponse.success(
                 "Study session joined.",
                 studySessionService.joinStudySession(authUser, studySessionId)
+        );
+    }
+
+    @PatchMapping("/{studySessionId}/start")
+    public ApiResponse<StudySessionResponse> startStudySession(
+            @AuthenticationPrincipal AuthUserPrincipal authUser,
+            @PathVariable Long studySessionId
+    ) {
+        return ApiResponse.success(
+                "Study session started.",
+                studySessionService.startStudySession(authUser, studySessionId)
         );
     }
 

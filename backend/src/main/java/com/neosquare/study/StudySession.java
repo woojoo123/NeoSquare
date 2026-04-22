@@ -29,6 +29,8 @@ import jakarta.persistence.Table;
 @Table(name = "study_sessions")
 public class StudySession {
 
+    private static final int MINIMUM_PARTICIPANT_COUNT = 2;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -77,7 +79,7 @@ public class StudySession {
         this.space = Objects.requireNonNull(space);
         this.title = Objects.requireNonNull(title);
         this.description = Objects.requireNonNull(description);
-        this.status = StudySessionStatus.ACTIVE;
+        this.status = StudySessionStatus.RECRUITING;
         addParticipant(host, StudySessionParticipantRole.HOST);
     }
 
@@ -91,13 +93,30 @@ public class StudySession {
     }
 
     public void join(User user) {
-        ensureActive("joined");
+        ensureJoinable("joined");
 
         if (isParticipant(user.getId())) {
             throw new InvalidStudySessionStateException("You have already joined this study session.");
         }
 
         addParticipant(user, StudySessionParticipantRole.MEMBER);
+        refreshPreparationStatus();
+    }
+
+    public void start() {
+        if (status == StudySessionStatus.ACTIVE) {
+            throw new InvalidStudySessionStateException("This study session has already started.");
+        }
+
+        if (status == StudySessionStatus.COMPLETED) {
+            throw new InvalidStudySessionStateException("This study session has already been completed.");
+        }
+
+        if (status != StudySessionStatus.READY) {
+            throw new InvalidStudySessionStateException("Only ready study sessions can be started.");
+        }
+
+        this.status = StudySessionStatus.ACTIVE;
     }
 
     public void complete() {
@@ -128,6 +147,14 @@ public class StudySession {
         return participants.size();
     }
 
+    public boolean hasMinimumParticipants() {
+        return getParticipantCount() >= MINIMUM_PARTICIPANT_COUNT;
+    }
+
+    public int getMinimumParticipantCount() {
+        return MINIMUM_PARTICIPANT_COUNT;
+    }
+
     private void addParticipant(User user, StudySessionParticipantRole role) {
         participants.add(StudySessionParticipant.create(this, user, role));
     }
@@ -144,10 +171,20 @@ public class StudySession {
         updatedAt = Instant.now();
     }
 
-    private void ensureActive(String action) {
-        if (status != StudySessionStatus.ACTIVE) {
+    private void refreshPreparationStatus() {
+        if (status == StudySessionStatus.ACTIVE || status == StudySessionStatus.COMPLETED) {
+            return;
+        }
+
+        status = hasMinimumParticipants()
+                ? StudySessionStatus.READY
+                : StudySessionStatus.RECRUITING;
+    }
+
+    private void ensureJoinable(String action) {
+        if (status == StudySessionStatus.ACTIVE || status == StudySessionStatus.COMPLETED) {
             throw new InvalidStudySessionStateException(
-                    "Only active study sessions can be " + action + "."
+                    "Only recruiting or ready study sessions can be " + action + "."
             );
         }
     }

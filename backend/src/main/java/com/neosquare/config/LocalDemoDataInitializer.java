@@ -43,6 +43,8 @@ import com.neosquare.user.UserRole;
 public class LocalDemoDataInitializer implements CommandLineRunner {
 
     private static final String DEMO_PASSWORD = "demo1234!";
+    private static final String LOCAL_ADMIN_EMAIL = "admin@neosquare.local";
+    private static final String LOCAL_ADMIN_NICKNAME = "관리자";
 
     private final UserRepository userRepository;
     private final MentoringRequestRepository mentoringRequestRepository;
@@ -88,6 +90,7 @@ public class LocalDemoDataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
+        findOrCreateUser(LOCAL_ADMIN_EMAIL, LOCAL_ADMIN_NICKNAME, UserRole.ADMIN);
         User mina = findOrCreateUser("mina@neosquare.local", "미나", UserRole.MENTOR);
         User jisu = findOrCreateUser("jisu@neosquare.local", "지수", UserRole.USER);
         User hyunwoo = findOrCreateUser("hyunwoo@neosquare.local", "현우", UserRole.USER);
