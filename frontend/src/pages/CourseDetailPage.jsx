@@ -8,6 +8,7 @@ import {
 } from '../api/mentorCourseApplications';
 import AppLayout from '../components/AppLayout';
 import { getCourseSessionEntryState } from '../lib/courseSessionEntryState';
+import { useAuthStore } from '../store/authStore';
 
 function formatCurrency(value) {
   const numericValue = Number(value) || 0;
@@ -183,6 +184,7 @@ function getCourseApplicationStatusCopy(application, sessionEntryState) {
 export default function CourseDetailPage() {
   const navigate = useNavigate();
   const { courseId } = useParams();
+  const accessToken = useAuthStore((state) => state.accessToken);
   const [course, setCourse] = useState(null);
   const [myCourseApplication, setMyCourseApplication] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,7 +205,7 @@ export default function CourseDetailPage() {
       try {
         const [courseResponse, myApplicationsResponse] = await Promise.all([
           getMentorCourseDetail(courseId),
-          getMyMentorCourseApplications(),
+          accessToken ? getMyMentorCourseApplications() : Promise.resolve([]),
         ]);
 
         if (!isMounted) {
@@ -241,7 +243,7 @@ export default function CourseDetailPage() {
     return () => {
       isMounted = false;
     };
-  }, [courseId]);
+  }, [accessToken, courseId]);
 
   const isCourseFull = useMemo(
     () => Boolean(course) && course.remainingCapacity <= 0,
@@ -274,6 +276,15 @@ export default function CourseDetailPage() {
 
   async function handleApplicationSubmit(event) {
     event.preventDefault();
+
+    if (!accessToken) {
+      navigate('/login', {
+        state: {
+          message: '로그인 후 멘토링 신청을 이어갈 수 있습니다.',
+        },
+      });
+      return;
+    }
 
     if (!course?.id || isCourseFull) {
       return;
@@ -318,14 +329,18 @@ export default function CourseDetailPage() {
     >
       <section className="course-detail-page">
         <div className="course-detail-page__actions">
-          <button type="button" className="secondary-button" onClick={() => navigate('/hub')}>
-            허브로 돌아가기
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => navigate(accessToken ? '/hub' : '/courses')}
+          >
+            {accessToken ? '허브로 돌아가기' : '목록으로 돌아가기'}
           </button>
           {course?.mentorId ? (
             <button
               type="button"
               className="secondary-button"
-              onClick={() => navigate('/hub')}
+              onClick={() => navigate('/mentors', { state: { mentorId: course.mentorId } })}
             >
               멘토 목록으로 이동
             </button>
@@ -438,6 +453,9 @@ export default function CourseDetailPage() {
                     내 수업 세션 입장
                   </button>
                 ) : null}
+                {!accessToken ? (
+                  <p>비로그인 상태에서는 내용을 둘러볼 수 있고, 신청은 로그인 후 이어서 진행할 수 있습니다.</p>
+                ) : null}
                 <form className="mentoring-form" onSubmit={handleApplicationSubmit}>
                   {course.scheduleItems.length ? (
                     <>
@@ -502,7 +520,9 @@ export default function CourseDetailPage() {
                           ? '검토 중'
                           : myCourseApplication?.status === 'APPROVED'
                             ? '신청 완료'
-                        : '수업 신청'}
+                        : accessToken
+                          ? '멘토링 신청'
+                          : '로그인 후 신청'}
                   </button>
                 </form>
               </section>

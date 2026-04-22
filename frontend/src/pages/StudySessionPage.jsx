@@ -11,6 +11,14 @@ import { useStudySessionWebRTC } from '../lib/useStudySessionWebRTC';
 import { useAuthStore } from '../store/authStore';
 
 function formatStudySessionStatus(status) {
+  if (status === 'RECRUITING') {
+    return '모집 중';
+  }
+
+  if (status === 'READY') {
+    return '시작 가능';
+  }
+
   if (status === 'ACTIVE') {
     return '진행 중';
   }
@@ -367,6 +375,18 @@ export default function StudySessionPage() {
     navigate(studySession?.spaceId ? `/spaces/${studySession.spaceId}` : await resolvePrimarySpacePath());
   };
 
+  const handleBackToStudyHub = () => {
+    stopConnection();
+    stopLocalPreview();
+    navigate('/study', {
+      state: studySession?.id
+        ? {
+            highlightStudySessionId: studySession.id,
+          }
+        : undefined,
+    });
+  };
+
   const localMediaStatusLabel =
     localMediaStatus === 'ready'
       ? '로컬 미디어 준비 완료'
@@ -387,11 +407,11 @@ export default function StudySessionPage() {
 
   return (
     <AppLayout
-      eyebrow="스터디 세션"
+      eyebrow="메타버스 스터디"
       title={studySession?.title || '스터디 세션'}
       description={
         studySession
-          ? `${studySession.spaceName}에서 진행 중인 스터디 세션입니다.`
+          ? `${studySession.spaceName} 메타버스 안에서 진행 중인 스터디 세션입니다.`
           : '스터디 세션 정보를 불러오는 중입니다.'
       }
       panelClassName="app-panel--wide"
@@ -429,9 +449,16 @@ export default function StudySessionPage() {
               <button
                 type="button"
                 className="secondary-button"
+                onClick={handleBackToStudyHub}
+              >
+                스터디로 돌아가기
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
                 onClick={handleBackToSpace}
               >
-                공간으로 돌아가기
+                스터디 라운지로 돌아가기
               </button>
               {currentUser?.id === studySession.hostId ? (
                 <button
@@ -632,7 +659,7 @@ export default function StudySessionPage() {
             <article className="session-card">
               <h2>세션 상태</h2>
               <p>
-                이 스터디 세션은 <strong>{studySession.spaceName}</strong> 공간에서 생성되었습니다.
+                공간: <strong>{studySession.spaceName}</strong>
               </p>
               <p>
                 현재 채팅 연결 상태는 <strong>{formatChatStatus(connectionStatus)}</strong> 입니다.

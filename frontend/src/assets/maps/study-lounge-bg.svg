@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 840">
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#11291f" />
+      <stop offset="60%" stop-color="#173629" />
+      <stop offset="100%" stop-color="#08150f" />
+    </linearGradient>
+    <linearGradient id="floor" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#5f756a" />
+      <stop offset="100%" stop-color="#44584e" />
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="840" fill="url(#sky)" />
+  <rect x="42" y="92" width="1196" height="560" rx="36" fill="#10231a" stroke="#2f5b44" stroke-opacity="0.42"/>
+  <rect x="92" y="124" width="1096" height="474" rx="30" fill="url(#floor)" />
+  <rect x="92" y="124" width="1096" height="66" rx="30" fill="#1d3e2f" opacity="0.64"/>
+  <path d="M160 212h960v294H160z" fill="#6c8278" opacity="0.34"/>
+  <g opacity="0.14" stroke="#e7fff2">
+    <path d="M114 216h1052M114 282h1052M114 348h1052M114 414h1052M114 480h1052M114 546h1052"/>
+    <path d="M176 204v364M248 204v364M320 204v364M392 204v364M464 204v364M536 204v364M608 204v364M680 204v364M752 204v364M824 204v364M896 204v364M968 204v364M1040 204v364M1112 204v364"/>
+  </g>
+  <g>
+    <rect x="92" y="110" width="228" height="194" rx="22" fill="#345746"/>
+    <rect x="80" y="90" width="252" height="34" rx="17" fill="#1d3d2d"/>
+    <rect x="960" y="110" width="228" height="194" rx="22" fill="#345746"/>
+    <rect x="948" y="90" width="252" height="34" rx="17" fill="#1d3d2d"/>
+    <rect x="400" y="196" width="480" height="84" rx="24" fill="#24392f"/>
+    <rect x="410" y="328" width="460" height="64" rx="20" fill="#203228"/>
+    <rect x="170" y="586" width="192" height="96" rx="24" fill="#23392d"/>
+    <rect x="918" y="586" width="192" height="96" rx="24" fill="#23392d"/>
+  </g>
+  <g>
+    <rect x="434" y="214" width="118" height="48" rx="18" fill="#e2f7e8" opacity="0.86"/>
+    <rect x="582" y="214" width="118" height="48" rx="18" fill="#e2f7e8" opacity="0.86"/>
+    <rect x="730" y="214" width="118" height="48" rx="18" fill="#e2f7e8" opacity="0.86"/>
+    <rect x="442" y="342" width="396" height="32" rx="16" fill="#d1fae5" opacity="0.18"/>
+  </g>
+  <g>
+    <rect x="534" y="406" width="212" height="114" rx="30" fill="#16251d"/>
+    <rect x="560" y="428" width="160" height="18" rx="9" fill="#f0fdf4"/>
+    <rect x="580" y="462" width="120" height="14" rx="7" fill="#dcfce7"/>
+    <rect x="598" y="490" width="84" height="14" rx="7" fill="#bbf7d0"/>
+  </g>
+  <g>
+    <circle cx="226" cy="628" r="28" fill="#22c55e"/>
+    <circle cx="268" cy="618" r="22" fill="#4ade80"/>
+    <circle cx="1012" cy="628" r="28" fill="#22c55e"/>
+    <circle cx="1054" cy="618" r="22" fill="#4ade80"/>
+    <rect x="242" y="642" width="10" height="24" rx="4" fill="#6b4f2d"/>
+    <rect x="1028" y="642" width="10" height="24" rx="4" fill="#6b4f2d"/>
+  </g>
+  <g>
+    <rect x="0" y="648" width="1280" height="152" fill="#17211d"/>
+    <rect x="0" y="666" width="1280" height="20" fill="#0b1411"/>
+    <g fill="#f8fafc" opacity="0.2">
+      <rect x="34" y="744" width="44" height="5" rx="2"/>
+      <rect x="126" y="744" width="44" height="5" rx="2"/>
+      <rect x="218" y="744" width="44" height="5" rx="2"/>
+      <rect x="310" y="744" width="44" height="5" rx="2"/>
+      <rect x="402" y="744" width="44" height="5" rx="2"/>
+      <rect x="494" y="744" width="44" height="5" rx="2"/>
+      <rect x="586" y="744" width="44" height="5" rx="2"/>
+      <rect x="678" y="744" width="44" height="5" rx="2"/>
+      <rect x="770" y="744" width="44" height="5" rx="2"/>
+      <rect x="862" y="744" width="44" height="5" rx="2"/>
+      <rect x="954" y="744" width="44" height="5" rx="2"/>
+      <rect x="1046" y="744" width="44" height="5" rx="2"/>
+      <rect x="1138" y="744" width="44" height="5" rx="2"/>
+    </g>
+  </g>
+  <text x="640" y="110" text-anchor="middle" fill="#dcfce7" font-family="Arial, sans-serif" font-size="44" letter-spacing="4" opacity="0.8">STUDY LOUNGE</text>
+</svg>

@@ -1,19 +1,20 @@
 import { Suspense, lazy } from 'react';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
+import ActivityRedirectPage from '../pages/ActivityRedirectPage.jsx';
 import HubPage from '../pages/HubPage.jsx';
 import AuthNavigationHandler from './AuthNavigationHandler';
 import GuestOnlyRoute from './GuestOnlyRoute';
 import RequireAuth from './RequireAuth';
 
 const LandingPage = lazy(() => import('../pages/LandingPage.tsx'));
-const LobbyPage = lazy(() => import('../pages/LobbyPage.tsx'));
 const EntryAvatarPage = lazy(() => import('../pages/EntryAvatarPage.tsx'));
 const LoginPage = lazy(() => import('../pages/LoginPage.tsx'));
 const CourseDetailPage = lazy(() => import('../pages/CourseDetailPage'));
 const MentoringSessionPage = lazy(() => import('../pages/MentoringSessionPage'));
 const SpacePage = lazy(() => import('../pages/SpacePage'));
+const StudyHubPage = lazy(() => import('../pages/StudyHubPage'));
 const StudySessionPage = lazy(() => import('../pages/StudySessionPage'));
 const SignupPage = lazy(() => import('../pages/SignupPage.tsx'));
 
@@ -34,6 +35,18 @@ const router = createBrowserRouter([
         element: withSuspense(<LandingPage />, '랜딩 화면을 준비하고 있습니다...'),
       },
       {
+        path: '/mentors',
+        element: <HubPage screenMode="discover_mentors" />,
+      },
+      {
+        path: '/courses',
+        element: <HubPage screenMode="discover_courses" />,
+      },
+      {
+        path: '/courses/:courseId',
+        element: withSuspense(<CourseDetailPage />, '수업 상세를 준비하고 있습니다...'),
+      },
+      {
         element: <GuestOnlyRoute />,
         children: [
           {
@@ -51,15 +64,35 @@ const router = createBrowserRouter([
         children: [
           {
             path: '/lobby',
-            element: withSuspense(<LobbyPage />, '로비 화면을 준비하고 있습니다...'),
+            element: <Navigate to="/" replace />,
           },
           {
             path: '/hub',
-            element: <HubPage />,
+            element: <HubPage screenMode="activity" />,
           },
           {
-            path: '/courses/:courseId',
-            element: withSuspense(<CourseDetailPage />, '수업 상세를 준비하고 있습니다...'),
+            path: '/messages',
+            element: <ActivityRedirectPage mode="messages" />,
+          },
+          {
+            path: '/study',
+            element: withSuspense(<StudyHubPage />, '스터디 화면을 준비하고 있습니다...'),
+          },
+          {
+            path: '/my-learning',
+            element: <ActivityRedirectPage mode="schedule" />,
+          },
+          {
+            path: '/my-learning/:itemId',
+            element: <ActivityRedirectPage mode="schedule" />,
+          },
+          {
+            path: '/mentor/manage',
+            element: <HubPage screenMode="mentor_management" />,
+          },
+          {
+            path: '/admin/console',
+            element: <HubPage screenMode="admin_console" />,
           },
           {
             path: '/enter',

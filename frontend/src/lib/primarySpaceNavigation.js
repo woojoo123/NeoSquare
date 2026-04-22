@@ -1,7 +1,7 @@
 import { getSpaces } from '../api/spaces';
 
 const SPACE_PRIORITY = ['MAIN', 'STUDY', 'MENTORING'];
-const PRIMARY_SPACE_FALLBACK_PATH = '/hub';
+const PRIMARY_SPACE_FALLBACK_PATH = '/';
 
 function getSpacePriority(spaceType) {
   const priority = SPACE_PRIORITY.indexOf(spaceType);

@@ -12,7 +12,7 @@ export default function GuestOnlyRoute() {
   }
 
   if (accessToken && authStatus === 'authenticated') {
-    return <Navigate to="/lobby" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;

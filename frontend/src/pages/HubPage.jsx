@@ -6,7 +6,7 @@ import {
   updateAdminCourseStatus,
   updateAdminMentorVisibility,
 } from '../api/admin';
-import { getMe, logout } from '../api/auth';
+import { getMe } from '../api/auth';
 import {
   createSessionFeedback,
   getMySessionFeedbacks,
@@ -59,11 +59,16 @@ import { getSpaces } from '../api/spaces';
 import { getMentors } from '../api/users';
 import AppLayout from '../components/AppLayout';
 import {
+  buildActivityPath,
+  buildMessageItemId,
+  buildScheduleItemId,
+  normalizeActivityTab,
+} from '../lib/activityNavigation';
+import {
   dismissLobbyNotification,
   getDismissedLobbyNotificationIds,
 } from '../lib/lobbyNotificationStorage';
 import { getCourseSessionEntryState } from '../lib/courseSessionEntryState';
-import { getPrimarySpacePathFromSpaces } from '../lib/primarySpaceNavigation';
 import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useAuthStore } from '../store/authStore';
 
@@ -112,6 +117,39 @@ const DEFAULT_MENTOR_FILTERS = {
   maxPrice: 'ALL',
   sort: 'recommended',
 };
+
+function getInitialCategory(screenMode) {
+  if (screenMode === 'discover_mentors') {
+    return 'find_mentors';
+  }
+
+  if (screenMode === 'discover_courses') {
+    return 'discover_courses';
+  }
+
+  if (screenMode === 'mentor_management') {
+    return 'mentor_management';
+  }
+
+  if (screenMode === 'admin_console') {
+    return 'admin_console';
+  }
+
+  return 'notifications';
+}
+
+function getRequestedActivitySelection(search) {
+  const searchParams = new URLSearchParams(search);
+
+  if (!searchParams.has('tab') && !searchParams.has('item')) {
+    return null;
+  }
+
+  return {
+    categoryId: normalizeActivityTab(searchParams.get('tab')),
+    itemId: searchParams.get('item') || null,
+  };
+}
 
 function createAvailabilityDraft() {
   return {
@@ -479,7 +517,7 @@ function normalizeFeedbackPrompt(rawValue) {
 
   return {
     requestId,
-    counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || '세션 상대',
+    counterpartName: rawValue.counterpartName || rawValue.counterpartLabel || '상대 사용자',
     role: rawValue.role || 'Participant',
     sessionSource: rawValue.sessionSource || 'request',
     reservedAt: rawValue.reservedAt || null,
@@ -518,7 +556,7 @@ function normalizeServerFeedback(rawValue) {
       feedback.targetUserLabel ||
       feedback.counterpartName ||
       feedback.targetNickname ||
-      '세션 상대',
+      '상대 사용자',
     role: feedback.authorRole || feedback.role || 'Participant',
     rating: Number(feedback.rating) || 0,
     summary: feedback.summary || '',
@@ -594,8 +632,15 @@ function formatFeedbackTimestamp(value) {
 }
 
 function formatHistorySessionLabel(feedbackItem) {
-  const sessionType = feedbackItem.sessionSource === 'reservation' ? '예약' : '요청';
-  return `${sessionType} #${feedbackItem.requestId}`;
+  if (feedbackItem.sessionSource === 'reservation') {
+    return `예약 #${feedbackItem.requestId}`;
+  }
+
+  if (feedbackItem.sessionSource === 'course_application') {
+    return `수업 신청 #${feedbackItem.requestId}`;
+  }
+
+  return `요청 #${feedbackItem.requestId}`;
 }
 
 function formatReservationTimestamp(value) {
@@ -615,7 +660,15 @@ function formatParticipantRole(role) {
 }
 
 function formatSessionSourceLabel(sessionSource) {
-  return sessionSource === 'reservation' ? '예약 멘토링' : '요청 멘토링';
+  if (sessionSource === 'reservation') {
+    return '예약 멘토링';
+  }
+
+  if (sessionSource === 'course_application') {
+    return '수업 세션';
+  }
+
+  return '요청 멘토링';
 }
 
 function formatRequestStatus(status) {
@@ -1137,7 +1190,7 @@ function buildHubNotifications({
         source: 'server',
         type: 'request_accepted',
         actionType: request?.status === 'ACCEPTED' ? 'enter_request_session' : 'view_requests',
-        actionLabel: request?.status === 'ACCEPTED' ? '세션 입장' : '내 진행 보기',
+        actionLabel: request?.status === 'ACCEPTED' ? '세션 입장' : '일정 보기',
         request,
         title:
           request?.status === 'ACCEPTED'
@@ -1169,7 +1222,7 @@ function buildHubNotifications({
         source: 'server',
         type: 'reservation_accepted',
         actionType: 'view_my_reservations',
-        actionLabel: '내 진행 보기',
+        actionLabel: '일정 보기',
         reservation,
         title: '멘토링 예약이 수락되었습니다',
         message:
@@ -1316,6 +1369,20 @@ function getDefaultReservationDateTime() {
 }
 
 function getCategoryEmptyCopy(categoryId) {
+  if (categoryId === 'find_mentors') {
+    return {
+      title: '조건에 맞는 멘토가 없습니다',
+      description: '검색어와 필터를 조금 넓히면 더 많은 멘토를 확인할 수 있습니다.',
+    };
+  }
+
+  if (categoryId === 'discover_courses') {
+    return {
+      title: '조건에 맞는 멘토링이 없습니다',
+      description: '검색 조건을 조정하거나 다른 멘토의 개설 목록을 확인해 보세요.',
+    };
+  }
+
   if (categoryId === 'admin_console') {
     return {
       title: '관리자 운영 데이터가 없습니다',
@@ -1346,8 +1413,8 @@ function getCategoryEmptyCopy(categoryId) {
 
   if (categoryId === 'my_progress') {
     return {
-      title: '진행 중인 요청이나 예약이 없습니다',
-      description: '메타버스에서 관계를 만들면 내 진행 목록이 이곳에 쌓입니다.',
+      title: '일정에 표시할 항목이 없습니다',
+      description: '새 요청이나 예약이 생기면 일정 탭에서 상태를 이어서 확인할 수 있습니다.',
     };
   }
 
@@ -1361,30 +1428,47 @@ function getCategoryEmptyCopy(categoryId) {
   if (categoryId === 'notifications') {
     return {
       title: '새 알림이 없습니다',
-      description: '세션 입장 가능 상태나 수락된 요청은 이곳에서 가장 먼저 확인할 수 있습니다.',
+      description: '입장 가능 상태나 수락된 요청은 이곳에서 가장 먼저 확인할 수 있습니다.',
+    };
+  }
+
+  if (categoryId === 'schedule') {
+    return {
+      title: '확인할 일정이 없습니다',
+      description: '보낸 요청, 예약, 멘토링 신청은 여기에서 상태와 입장 가능 여부를 확인합니다.',
+    };
+  }
+
+  if (categoryId === 'messages') {
+    return {
+      title: '확인할 메시지가 없습니다',
+      description: '연결된 멘토와의 대화는 여기에서 모아 봅니다.',
     };
   }
 
   return {
-    title: '아직 세션 기록이 없습니다',
-    description: '멘토링 세션을 마치고 피드백을 남기면 이곳에 기록이 정리됩니다.',
+    title: '아직 진행 기록이 없습니다',
+    description: '멘토링이나 수업을 마치고 피드백을 남기면 이곳에 기록이 정리됩니다.',
   };
 }
 
-export default function HubPage() {
+export default function HubPage({ screenMode = 'activity' }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const authStatus = useAuthStore((state) => state.authStatus);
   const currentUser = useAuthStore((state) => state.currentUser);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
-  const isMentorAccount =
-    currentUser?.role === 'MENTOR' || currentUser?.role === 'ADMIN';
-  const currentRoleLabel =
-    currentUser?.role === 'ADMIN'
-      ? '관리자'
-      : currentUser?.role === 'MENTOR'
-        ? '멘토'
-        : '일반 사용자';
+  const isMentorAccount = currentUser?.role === 'MENTOR';
+  const isAdminAccount = currentUser?.role === 'ADMIN';
+  const shouldShowFindMentors = screenMode === 'discover_mentors';
+  const isActivityScreen = screenMode === 'activity';
+  const isMentorDiscoverScreen = screenMode === 'discover_mentors';
+  const isCourseDiscoverScreen = screenMode === 'discover_courses';
+  const isMentorManagementScreen = screenMode === 'mentor_management';
+  const isAdminConsoleScreen = screenMode === 'admin_console';
+  const isPublicDiscoverScreen = isMentorDiscoverScreen || isCourseDiscoverScreen;
 
   const [spaces, setSpaces] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
@@ -1446,6 +1530,7 @@ export default function HubPage() {
   const [mentorProfileNotice, setMentorProfileNotice] = useState('');
   const [mentorProfileError, setMentorProfileError] = useState('');
   const [mentorProfileStatus, setMentorProfileStatus] = useState('idle');
+  const [mentorWorkspaceTab, setMentorWorkspaceTab] = useState('courses');
   const [mentorAvailabilityDrafts, setMentorAvailabilityDrafts] = useState([]);
   const [mentorAvailabilityNotice, setMentorAvailabilityNotice] = useState('');
   const [mentorAvailabilityError, setMentorAvailabilityError] = useState('');
@@ -1453,6 +1538,7 @@ export default function HubPage() {
   const [mentorCourseForm, setMentorCourseForm] = useState(DEFAULT_MENTOR_COURSE_FORM);
   const [mentorCourseFormMode, setMentorCourseFormMode] = useState('create');
   const [editingMentorCourseId, setEditingMentorCourseId] = useState(null);
+  const [selectedManagedCourseId, setSelectedManagedCourseId] = useState(null);
   const [mentorCourseNotice, setMentorCourseNotice] = useState('');
   const [mentorCourseError, setMentorCourseError] = useState('');
   const [mentorCourseStatus, setMentorCourseStatus] = useState('idle');
@@ -1465,6 +1551,7 @@ export default function HubPage() {
   const [courseApplicationError, setCourseApplicationError] = useState('');
   const [courseApplicationStatus, setCourseApplicationStatus] = useState('idle');
   const [activeCourseApplicationId, setActiveCourseApplicationId] = useState(null);
+  const [selectedMentorApplicationId, setSelectedMentorApplicationId] = useState(null);
   const [mentoringFeedback, setMentoringFeedback] = useState('');
   const [mentoringError, setMentoringError] = useState('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
@@ -1477,14 +1564,45 @@ export default function HubPage() {
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [reservationClock, setReservationClock] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState('find_mentors');
+  const [activeCategory, setActiveCategory] = useState(() => getInitialCategory(screenMode));
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [mentorFilters, setMentorFilters] = useState(DEFAULT_MENTOR_FILTERS);
+  const requestedActivitySelection = useMemo(
+    () => (isActivityScreen ? getRequestedActivitySelection(location.search) : null),
+    [isActivityScreen, location.search]
+  );
 
-  const primarySpacePath = useMemo(() => {
-    const resolvedPath = getPrimarySpacePathFromSpaces(spaces);
-    return resolvedPath === '/hub' ? '/lobby' : resolvedPath;
-  }, [spaces]);
+  const pageTabs = useMemo(() => {
+    if (!accessToken) {
+      return [];
+    }
+
+    const tabs = [
+      {
+        id: 'activity',
+        label: '내 활동',
+        path: '/hub',
+      },
+    ];
+
+    if (isMentorAccount) {
+      tabs.push({
+        id: 'mentor_management',
+        label: '멘토 활동',
+        path: '/mentor/manage',
+      });
+    }
+
+    if (isAdminAccount) {
+      tabs.push({
+        id: 'admin_console',
+        label: '운영 콘솔',
+        path: '/admin/console',
+      });
+    }
+
+    return tabs;
+  }, [accessToken, currentUser?.role, isAdminAccount, isMentorAccount]);
 
   const lobbyNotifications = useMemo(
     () =>
@@ -1564,6 +1682,8 @@ export default function HubPage() {
   ]);
   const unreadNotificationCount = lobbyNotifications.length;
   const feedbackItemCount = feedbackHistory.length + (feedbackPrompt ? 1 : 0);
+  const scheduleItemCount = sentRequests.length + reservations.length + myCourseApplications.length;
+  const messageThreadCount = scheduleItemCount;
   const hasUnreadServerNotifications = serverNotifications.some((notification) => !notification.isRead);
   const isFeedbackLocked =
     feedbackStatus === 'saving' || (Boolean(feedbackPrompt) && feedbackStatus === 'saved');
@@ -1635,6 +1755,16 @@ export default function HubPage() {
       return leftMentor.nickname.localeCompare(rightMentor.nickname);
     });
   }, [availableMentors, mentorFilters]);
+  const filteredAvailableCourses = useMemo(
+    () =>
+      filteredAvailableMentors.flatMap((mentor) =>
+        (mentor.courses || []).map((course) => ({
+          ...course,
+          mentor,
+        }))
+      ),
+    [filteredAvailableMentors]
+  );
   const mentorApplicationItems = useMemo(() => {
     if (currentUser?.role === 'ADMIN') {
       return pendingMentorApplications.map((application) => ({
@@ -1682,7 +1812,7 @@ export default function HubPage() {
       {
         id: 'mentor-management-self',
         kind: 'mentor_management',
-        title: mentorManagementProfile?.nickname || currentUser?.nickname || '내 멘토 관리',
+        title: mentorManagementProfile?.nickname || currentUser?.nickname || '내 멘토 활동',
         preview:
           mentorManagementProfile?.specialties ||
           mentorManagementProfile?.bio ||
@@ -1756,14 +1886,24 @@ export default function HubPage() {
       kind: 'mentor_profile',
       title: mentor.nickname,
       preview:
-        mentor.specialties ||
         mentor.bio ||
+        mentor.specialties ||
         mentor.interests ||
         '프로필 정보는 아직 없지만 멘토링 요청을 보낼 수 있습니다.',
       badge: '멘토',
       tone: 'accepted',
-      meta: mentor.specialties || '멘토 프로필',
+      meta: `개설 ${mentor.courses?.length || 0}개 · 가능 시간 ${mentor.availabilitySlots?.length || 0}개`,
       raw: mentor,
+    }));
+    const discoverCourseItems = filteredAvailableCourses.map((course) => ({
+      id: `discover-course-${course.id}`,
+      kind: 'discover_course',
+      title: course.title,
+      preview: course.summary || course.description || '멘토링 소개가 아직 없습니다.',
+      badge: formatCurrency(course.price),
+      tone: 'info',
+      meta: `${course.mentor?.nickname || '멘토'} · ${formatMeetingTypeLabel(course.meetingType)} · 정원 ${course.capacity}명 · 잔여 ${course.remainingCapacity ?? course.capacity}석`,
+      raw: course,
     }));
 
     const receivedRequestItems = sortByRecent(receivedRequests, (request) =>
@@ -1850,6 +1990,62 @@ export default function HubPage() {
       (leftItem, rightItem) => rightItem.sortTime - leftItem.sortTime
     );
 
+    const messageRequestItems = sentRequests.map((request) => ({
+      id: buildMessageItemId('request', request.id),
+      kind: 'message_request',
+      title: request.mentorLabel,
+      preview: request.message || '보낸 메시지가 없습니다.',
+      badge: formatRequestStatus(request.status),
+      tone: getStatusTone(request.status),
+      meta: request.createdAt ? formatDateTime(request.createdAt) : '멘토링 요청',
+      raw: request,
+      sortTime: getTimestampValue(request.createdAt),
+    }));
+
+    const messageReservationItems = reservations.map((reservation) => ({
+      id: buildMessageItemId('reservation', reservation.id),
+      kind: 'message_reservation',
+      title: reservation.mentorLabel,
+      preview: reservation.message || '예약 메시지가 없습니다.',
+      badge: formatReservationStatus(reservation.status),
+      tone: getStatusTone(reservation.status),
+      meta: formatReservationTimestamp(reservation.reservedAt),
+      raw: reservation,
+      sortTime: Math.max(
+        getTimestampValue(reservation.reservedAt),
+        getTimestampValue(reservation.createdAt)
+      ),
+    }));
+
+    const messageCourseApplicationItems = myCourseApplications.map((application) => ({
+      id: buildMessageItemId('course_application', application.id),
+      kind: 'message_course_application',
+      title: application.mentorNickname,
+      preview: application.message || '신청 메시지가 없습니다.',
+      badge: formatCourseApplicationStatus(application.status),
+      tone: getStatusTone(
+        application.status === 'APPROVED'
+          ? 'ACCEPTED'
+          : application.status === 'REJECTED'
+            ? 'REJECTED'
+            : application.status === 'CANCELED'
+              ? 'CANCELED'
+              : 'PENDING'
+      ),
+      meta: application.courseTitle || '멘토링 신청',
+      raw: application,
+      sortTime: Math.max(
+        getTimestampValue(application.assignedScheduleStartsAt),
+        getTimestampValue(application.createdAt)
+      ),
+    }));
+
+    const messageItems = [
+      ...messageRequestItems,
+      ...messageReservationItems,
+      ...messageCourseApplicationItems,
+    ].sort((leftItem, rightItem) => rightItem.sortTime - leftItem.sortTime);
+
     const receivedCourseApplicationItems = sortByRecent(
       receivedCourseApplications,
       (application) => Math.max(getTimestampValue(application.reviewedAt), getTimestampValue(application.createdAt))
@@ -1907,8 +2103,8 @@ export default function HubPage() {
       ...feedbackHistory.map((feedbackItem) => ({
         id: `feedback-history-${feedbackItem.id ?? `${feedbackItem.sessionSource}-${feedbackItem.requestId}`}`,
         kind: 'feedback_history',
-        title: feedbackItem.counterpartName || '세션 상대',
-        preview: feedbackItem.summary || feedbackItem.feedback || '저장된 세션 요약이 없습니다.',
+        title: feedbackItem.counterpartName || '상대 사용자',
+        preview: feedbackItem.summary || feedbackItem.feedback || '저장된 진행 요약이 없습니다.',
         badge: `${feedbackItem.rating || 0}/5`,
         tone: 'info',
         meta: formatFeedbackTimestamp(feedbackItem.submittedAt),
@@ -1916,25 +2112,32 @@ export default function HubPage() {
       })),
     ];
 
-    const nextItems = {
-      find_mentors: mentorItems,
-      received_course_applications: receivedCourseApplicationItems,
-      received_requests: receivedRequestItems,
-      received_reservations: receivedReservationItems,
-      my_progress: progressItems,
-      notifications: notificationItems,
-      feedback: feedbackItems,
-    };
+    const nextItems = {};
 
-    if (mentorApplicationItems.length > 0) {
-      nextItems.mentor_application = mentorApplicationItems;
+    if (isActivityScreen) {
+      nextItems.notifications = notificationItems;
+      nextItems.schedule = progressItems;
+      nextItems.messages = messageItems;
+      nextItems.feedback = feedbackItems;
+
+      if (mentorApplicationItems.length > 0) {
+        nextItems.mentor_application = mentorApplicationItems;
+      }
     }
 
-    if (mentorManagementItems.length > 0) {
+    if (isMentorDiscoverScreen) {
+      nextItems.find_mentors = mentorItems;
+    }
+
+    if (isCourseDiscoverScreen) {
+      nextItems.discover_courses = discoverCourseItems;
+    }
+
+    if (isMentorManagementScreen && mentorManagementItems.length > 0) {
       nextItems.mentor_management = mentorManagementItems;
     }
 
-    if (adminConsoleItems.length > 0) {
+    if (isAdminConsoleScreen && adminConsoleItems.length > 0) {
       nextItems.admin_console = adminConsoleItems;
     }
 
@@ -1944,6 +2147,7 @@ export default function HubPage() {
     filteredAvailableMentors,
     feedbackHistory,
     feedbackPrompt,
+    filteredAvailableCourses,
     lobbyNotifications,
     mentorApplicationItems,
     mentorManagementItems,
@@ -1953,152 +2157,158 @@ export default function HubPage() {
     receivedReservations,
     reservations,
     sentRequests,
+    isActivityScreen,
+    isAdminConsoleScreen,
+    isCourseDiscoverScreen,
+    isMentorDiscoverScreen,
+    isMentorManagementScreen,
   ]);
 
   const categoryDefinitions = useMemo(() => {
+    if (isMentorDiscoverScreen) {
+      return [
+        {
+          id: 'find_mentors',
+          label: '멘토 목록',
+          count: filteredAvailableMentors.length,
+        },
+      ];
+    }
+
+    if (isCourseDiscoverScreen) {
+      return [
+        {
+          id: 'discover_courses',
+          label: '멘토링 목록',
+          count: filteredAvailableCourses.length,
+        },
+      ];
+    }
+
+    if (isMentorManagementScreen || isAdminConsoleScreen) {
+      return [];
+    }
+
     const sharedDefinitions = [
-      {
-        id: 'find_mentors',
-        label: '멘토 찾기',
-        count: filteredAvailableMentors.length,
-      },
-      {
-        id: 'my_progress',
-        label: '내 진행',
-        count: sentRequests.length + reservations.length + myCourseApplications.length,
-      },
       {
         id: 'notifications',
         label: '알림',
         count: unreadNotificationCount,
       },
       {
+        id: 'schedule',
+        label: '일정',
+        count: scheduleItemCount,
+      },
+      {
+        id: 'messages',
+        label: '메시지',
+        count: messageThreadCount,
+      },
+      {
         id: 'feedback',
-        label: '세션 기록',
+        label: '기록',
         count: feedbackItemCount,
       },
     ];
 
     if (mentorApplicationItems.length > 0) {
-      sharedDefinitions.unshift({
+      sharedDefinitions.push({
         id: 'mentor_application',
         label: currentUser?.role === 'ADMIN' ? '멘토 지원' : '멘토 신청',
         count: mentorApplicationItems.length,
       });
     }
 
-    if (mentorManagementItems.length > 0) {
-      sharedDefinitions.unshift({
-        id: 'mentor_management',
-        label: '멘토 관리',
-        count: mentorManagementItems.length,
-      });
-    }
-
-    if (adminConsoleItems.length > 0) {
-      sharedDefinitions.unshift({
-        id: 'admin_console',
-        label: '운영 콘솔',
-        count: adminConsoleItems.length,
-      });
-    }
-
-    if (!isMentorAccount) {
-      return sharedDefinitions;
-    }
-
-    return [
-      {
-        id: 'received_course_applications',
-        label: '받은 수업 신청',
-        count: pendingCourseApplicationCount,
-      },
-      {
-        id: 'received_requests',
-        label: '받은 요청',
-        count: pendingRequestCount,
-      },
-      {
-        id: 'received_reservations',
-        label: '받은 예약',
-        count: pendingReservationCount,
-      },
-      ...sharedDefinitions,
-    ];
+    return sharedDefinitions;
   }, [
+    filteredAvailableCourses.length,
     filteredAvailableMentors.length,
     currentUser?.role,
     adminConsoleItems.length,
     feedbackItemCount,
+    isCourseDiscoverScreen,
     isMentorAccount,
+    isAdminConsoleScreen,
+    isMentorDiscoverScreen,
+    isMentorManagementScreen,
+    messageThreadCount,
     mentorApplicationItems.length,
     mentorManagementItems.length,
     pendingCourseApplicationCount,
     pendingRequestCount,
     pendingReservationCount,
-    reservations.length,
-    myCourseApplications.length,
-    sentRequests.length,
+    scheduleItemCount,
     unreadNotificationCount,
   ]);
 
   const recommendedCategory = useMemo(() => {
+    if (isMentorDiscoverScreen) {
+      return 'find_mentors';
+    }
+
+    if (isCourseDiscoverScreen) {
+      return 'discover_courses';
+    }
+
+    if (isMentorManagementScreen) {
+      return 'mentor_management';
+    }
+
+    if (isAdminConsoleScreen) {
+      return 'admin_console';
+    }
+
     if (feedbackPrompt) {
       return 'feedback';
     }
 
-    if (currentUser?.role === 'USER') {
+    if (currentUser?.role === 'USER' && mentorApplicationItems.length > 0) {
       return 'mentor_application';
     }
 
-    if (currentUser?.role === 'ADMIN' && pendingMentorApplications.length > 0) {
+    if (
+      currentUser?.role === 'ADMIN' &&
+      pendingMentorApplications.length > 0 &&
+      mentorApplicationItems.length > 0
+    ) {
       return 'mentor_application';
-    }
-
-    if (currentUser?.role === 'ADMIN' && adminConsoleItems.length > 0) {
-      return 'admin_console';
-    }
-
-    if (isMentorAccount) {
-      return 'mentor_management';
-    }
-
-    if (!isMentorAccount && filteredAvailableMentors.length > 0) {
-      return 'find_mentors';
     }
 
     if (unreadNotificationCount > 0) {
       return 'notifications';
     }
 
-    if (isMentorAccount && pendingRequestCount > 0) {
-      return 'received_requests';
+    if (scheduleItemCount > 0) {
+      return 'schedule';
     }
 
-    if (isMentorAccount && pendingCourseApplicationCount > 0) {
-      return 'received_course_applications';
+    if (isMentorAccount) {
+      return 'notifications';
     }
 
-    if (isMentorAccount && pendingReservationCount > 0) {
-      return 'received_reservations';
+    if (feedbackItemCount > 0) {
+      return 'feedback';
     }
 
-    if (sentRequests.length + reservations.length + myCourseApplications.length > 0) {
-      return 'my_progress';
-    }
-
-    return isMentorAccount ? 'feedback' : 'find_mentors';
+    return 'notifications';
   }, [
     filteredAvailableMentors.length,
     currentUser?.role,
     adminConsoleItems.length,
     feedbackPrompt,
+    feedbackItemCount,
+    isCourseDiscoverScreen,
     isMentorAccount,
+    isAdminConsoleScreen,
+    isMentorDiscoverScreen,
+    isMentorManagementScreen,
     pendingMentorApplications.length,
     pendingCourseApplicationCount,
     pendingRequestCount,
     pendingReservationCount,
     reservations.length,
+    scheduleItemCount,
     myCourseApplications.length,
     sentRequests.length,
     unreadNotificationCount,
@@ -2107,33 +2317,145 @@ export default function HubPage() {
   const activeItems = categoryItems[activeCategory] || [];
   const selectedItem =
     activeItems.find((item) => item.id === selectedItemId) || activeItems[0] || null;
+  const showSidebar =
+    isActivityScreen || isAdminConsoleScreen || isMentorDiscoverScreen || isCourseDiscoverScreen;
 
-  const sectionSummaryItems = isMentorAccount
-    ? currentUser?.role === 'ADMIN'
+  const sectionSummaryItems = isMentorDiscoverScreen
+    ? [
+        { label: '공개 멘토', value: filteredAvailableMentors.length },
+        { label: '개설 멘토링', value: filteredAvailableCourses.length },
+        { label: '온라인 가능', value: filteredAvailableMentors.filter((mentor) => (mentor.courses || []).some((course) => course.meetingType === 'ONLINE')).length },
+        { label: '필터 적용', value: hasActiveMentorFilters ? 'ON' : 'OFF' },
+      ]
+    : isCourseDiscoverScreen
       ? [
-          { label: '운영 멘토', value: adminDashboard?.mentorCount ?? 0 },
-          { label: '공개 멘토', value: adminDashboard?.visibleMentorCount ?? 0 },
-          { label: '공개 수업', value: adminDashboard?.publishedCourseCount ?? 0 },
-          { label: '새 알림', value: unreadNotificationCount },
+          { label: '개설 멘토링', value: filteredAvailableCourses.length },
+          { label: '참여 가능 멘토', value: filteredAvailableMentors.length },
+          { label: '온라인 진행', value: filteredAvailableCourses.filter((course) => course.meetingType === 'ONLINE').length },
+          { label: '필터 적용', value: hasActiveMentorFilters ? 'ON' : 'OFF' },
         ]
-      : [
+    : isAdminConsoleScreen
+    ? [
+        { label: '운영 멘토', value: adminDashboard?.mentorCount ?? 0 },
+        { label: '공개 멘토', value: adminDashboard?.visibleMentorCount ?? 0 },
+        { label: '공개 수업', value: adminDashboard?.publishedCourseCount ?? 0 },
+        { label: '검토 대기', value: (adminDashboard?.pendingMentorApplicationCount ?? 0) + (adminDashboard?.pendingCourseApplicationCount ?? 0) },
+      ]
+    : isMentorManagementScreen
+      ? [
+          { label: '노출 상태', value: mentorManagementProfile?.mentorEnabled ? 'ON' : 'OFF' },
+          { label: '가능 시간', value: mentorManagementProfile?.availabilitySlots?.length ?? 0 },
+          { label: '개설 수업', value: mentorManagementProfile?.courses?.length ?? 0 },
           { label: '받은 수업 신청', value: pendingCourseApplicationCount },
-          { label: '받은 요청', value: pendingRequestCount },
-          { label: '받은 예약', value: pendingReservationCount },
-          { label: '새 알림', value: unreadNotificationCount },
         ]
-    : [
-        { label: '멘토 프로필', value: filteredAvailableMentors.length },
-        { label: '내 진행', value: sentRequests.length + reservations.length + myCourseApplications.length },
-        { label: '새 알림', value: unreadNotificationCount },
-      ];
-
+      : isMentorAccount
+        ? [
+            { label: '새 알림', value: unreadNotificationCount },
+            { label: '지금 입장 가능', value: activeSessionCount },
+            {
+              label: '후기 대기',
+              value: feedbackPrompt ? 1 : 0,
+              helper: feedbackPrompt ? '바로 작성 가능' : '작성할 항목 없음',
+            },
+            {
+              label: '일정',
+              value: scheduleItemCount,
+              helper: '요청과 예약 상태 보기',
+              emphasis: 'primary',
+              action: () => navigate(buildActivityPath('schedule')),
+            },
+          ]
+        : [
+            { label: '새 알림', value: unreadNotificationCount },
+            { label: '지금 입장 가능', value: activeSessionCount },
+            {
+              label: '후기 대기',
+              value: feedbackPrompt ? 1 : 0,
+              helper: feedbackPrompt ? '바로 작성 가능' : '작성할 항목 없음',
+            },
+            {
+              label: '일정',
+              value: scheduleItemCount,
+              helper: '예정 일정과 상태 보기',
+              emphasis: 'primary',
+              action: () => navigate(buildActivityPath('schedule')),
+            },
+          ];
+  const pageHeader = isAdminConsoleScreen
+    ? {
+        eyebrow: '운영 콘솔',
+        title: '운영 검토와 공개 상태를 관리하세요',
+        description: '멘토 노출, 수업 공개 상태, 검토 대상을 한곳에서 관리합니다.',
+      }
+    : isMentorDiscoverScreen
+      ? {
+          eyebrow: '멘토 찾기',
+          title: '도움이 맞는 멘토를 찾아보세요',
+          description: '분야, 가능 시간, 진행 방식으로 멘토를 탐색하고 바로 요청이나 예약으로 이어갈 수 있습니다.',
+        }
+      : isCourseDiscoverScreen
+        ? {
+            eyebrow: '멘토링 찾기',
+            title: '지금 신청할 수 있는 멘토링을 살펴보세요',
+            description: '개설된 멘토링을 비교하고, 적합한 일정과 진행 방식을 골라 신청할 수 있습니다.',
+          }
+    : isMentorManagementScreen
+      ? {
+          eyebrow: '멘토 활동',
+          title: '멘토 프로필과 수업 운영을 관리하세요',
+          description: '소개, 가능 시간, 수업 구성과 노출 상태를 정리합니다.',
+        }
+      : {
+          eyebrow: '내 활동',
+          title: '지금 처리할 일만 빠르게 확인하세요',
+          description: '알림, 일정, 메시지, 기록만 이 화면에서 확인합니다.',
+        };
   function focusCategory(categoryId, itemId = null) {
     setActiveCategory(categoryId);
     if (itemId) {
       setSelectedItemId(itemId);
     }
+
+    if (isActivityScreen) {
+      navigate(buildActivityPath(categoryId, itemId), { state: null });
+    }
   }
+
+  function selectActivityItem(itemId) {
+    setSelectedItemId(itemId);
+
+    if (isActivityScreen) {
+      navigate(buildActivityPath(activeCategory, itemId), { state: null });
+    }
+  }
+
+  useEffect(() => {
+    setActiveCategory(getInitialCategory(screenMode));
+    setSelectedItemId(null);
+    setMentorWorkspaceTab('courses');
+  }, [screenMode]);
+
+  useEffect(() => {
+    if (!isMentorManagementScreen) {
+      return;
+    }
+
+    const managedCourses = mentorManagementProfile?.courses || [];
+
+    if (managedCourses.length === 0) {
+      setSelectedManagedCourseId(null);
+      return;
+    }
+
+    if (
+      selectedManagedCourseId &&
+      managedCourses.some((course) => String(course.id) === String(selectedManagedCourseId))
+    ) {
+      return;
+    }
+
+    setSelectedManagedCourseId(managedCourses[0].id);
+  }, [isMentorManagementScreen, mentorManagementProfile?.courses, selectedManagedCourseId]);
 
   function selectReservationSuggestion(suggestion, nextWeekIndex = reservationWeekIndex) {
     if (!suggestion) {
@@ -2165,36 +2487,30 @@ export default function HubPage() {
     );
   }
 
-  async function handleLogout() {
-    try {
-      await logout();
-    } catch {
-      // Access token 기반 세션이라 서버 로그아웃 실패 시에도 로컬 상태를 정리한다.
-    } finally {
-      clearAuth();
-      navigate('/login', { replace: true });
-    }
-  }
-
-  function handleEnterMetaverse() {
-    navigate(primarySpacePath);
-  }
-
   function openMentoringSession(request) {
     navigate(`/mentoring/session/${request.id}?type=request`, {
-      state: { request },
+      state: {
+        request,
+        returnToItemId: buildScheduleItemId('request', request.id),
+      },
     });
   }
 
   function openReservationSession(reservation) {
     navigate(`/mentoring/session/${reservation.id}?type=reservation`, {
-      state: { reservation },
+      state: {
+        reservation,
+        returnToItemId: buildScheduleItemId('reservation', reservation.id),
+      },
     });
   }
 
   function openCourseApplicationSession(courseApplication) {
     navigate(`/mentoring/session/${courseApplication.id}?type=course_application`, {
-      state: { courseApplication },
+      state: {
+        courseApplication,
+        returnToItemId: buildScheduleItemId('course_application', courseApplication.id),
+      },
     });
   }
 
@@ -2293,7 +2609,7 @@ export default function HubPage() {
           ? '멘토링 요청을 수락했습니다. 이제 내 활동이나 알림에서 바로 세션에 입장할 수 있습니다.'
           : '멘토링 요청을 거절했습니다.'
       );
-      focusCategory('received_requests', `received-request-${requestId}`);
+      focusCategory('mentor_management', 'mentor-management-self');
     } catch (error) {
       setRequestActionError(
         error?.response?.data?.message ||
@@ -2326,7 +2642,7 @@ export default function HubPage() {
           ? '예약을 수락했습니다. 예약 시간이 되면 내 활동이나 알림에서 세션 입장이 열립니다.'
           : '예약을 거절했습니다.'
       );
-      focusCategory('received_reservations', `received-reservation-${reservationId}`);
+      focusCategory('mentor_management', 'mentor-management-self');
     } catch (error) {
       setReceivedReservationError(
         error?.response?.data?.message ||
@@ -2346,7 +2662,7 @@ export default function HubPage() {
       await cancelReservation(reservationId);
       await refreshReservations();
       setPageNotice('예약을 취소했습니다.');
-      focusCategory('my_progress');
+      navigate(buildActivityPath('schedule'));
     } catch (error) {
       setReservationError(
         error?.response?.data?.message || error.message || '예약 취소에 실패했습니다.'
@@ -2378,8 +2694,8 @@ export default function HubPage() {
       await refreshMentoringRequests();
       setMentoringMessage('');
       setMentoringFeedback('멘토링 요청을 보냈습니다.');
-      setPageNotice('멘토링 요청을 보냈습니다. 상태는 내 진행에서 계속 확인할 수 있습니다.');
-      focusCategory('my_progress');
+      setPageNotice('멘토링 요청을 보냈습니다. 상태는 내 활동 일정에서 계속 확인할 수 있습니다.');
+      navigate(buildActivityPath('schedule'));
     } catch (error) {
       setMentoringError(
         error?.response?.data?.message || error.message || '멘토링 요청 전송에 실패했습니다.'
@@ -2605,6 +2921,7 @@ export default function HubPage() {
   }
 
   function handleEditMentorCourse(course) {
+    setSelectedManagedCourseId(course.id);
     setMentorCourseForm({
       title: course.title || '',
       summary: course.summary || '',
@@ -2713,11 +3030,11 @@ export default function HubPage() {
       await Promise.all([refreshCourseApplications(), refreshMentorProfiles()]);
       setCourseApplicationStatus('saved');
       setCourseApplicationNotice(
-        `${mentor.nickname} 멘토의 수업 신청을 보냈습니다. 상태는 내 진행에서 확인할 수 있습니다.`
+        `${mentor.nickname} 멘토의 수업 신청을 보냈습니다. 상태는 내 활동 일정에서 확인할 수 있습니다.`
       );
       setPageNotice('수업 신청을 보냈습니다.');
       setCourseApplicationMessage('');
-      focusCategory('my_progress');
+      navigate(buildActivityPath('schedule'));
     } catch (error) {
       setCourseApplicationStatus('error');
       setCourseApplicationError(
@@ -2756,7 +3073,7 @@ export default function HubPage() {
       setPageNotice(
         decision === 'approve' ? '수업 신청을 승인했습니다.' : '수업 신청을 반려했습니다.'
       );
-      focusCategory('received_course_applications', `received-course-application-${applicationId}`);
+      focusCategory('mentor_management', 'mentor-management-self');
     } catch (error) {
       setCourseApplicationError(
         error?.response?.data?.message || error.message || '수업 신청 상태 변경에 실패했습니다.'
@@ -2776,7 +3093,7 @@ export default function HubPage() {
       await refreshCourseApplications();
       setCourseApplicationNotice('수업 신청을 취소했습니다.');
       setPageNotice('수업 신청을 취소했습니다.');
-      focusCategory('my_progress');
+      navigate(buildActivityPath('schedule'));
     } catch (error) {
       setCourseApplicationError(
         error?.response?.data?.message || error.message || '수업 신청 취소에 실패했습니다.'
@@ -2817,8 +3134,8 @@ export default function HubPage() {
       setReservationDateTime(getDefaultReservationDateTime());
       setReservationCreateStatus('saved');
       setReservationCreateNotice('예약을 생성했습니다.');
-      setPageNotice('예약 제안을 보냈습니다. 상태는 내 진행에서 계속 확인할 수 있습니다.');
-      focusCategory('my_progress');
+      setPageNotice('예약 제안을 보냈습니다. 상태는 내 활동 일정에서 계속 확인할 수 있습니다.');
+      navigate(buildActivityPath('schedule'));
     } catch (error) {
       setReservationCreateStatus('error');
       setReservationCreateError(
@@ -2921,12 +3238,12 @@ export default function HubPage() {
     }
 
     if (notification.actionType === 'view_my_reservations') {
-      focusCategory('my_progress');
+      navigate(buildActivityPath('schedule'));
       return;
     }
 
     if (notification.actionType === 'view_requests') {
-      focusCategory('my_progress');
+      navigate(buildActivityPath('schedule'));
     }
   }
 
@@ -3055,6 +3372,34 @@ export default function HubPage() {
       setErrorMessage('');
 
       try {
+        if (isPublicDiscoverScreen && (!accessToken || authStatus === 'guest')) {
+          const [spacesResponse, mentorsResponse] = await Promise.all([
+            getSpaces(),
+            getMentors(),
+          ]);
+
+          if (!isMounted) {
+            return;
+          }
+
+          setSpaces(Array.isArray(spacesResponse) ? spacesResponse : []);
+          setMentorProfiles(normalizeMentorProfiles(mentorsResponse));
+          setCurrentUser(null);
+          setSentRequests([]);
+          setReceivedRequests([]);
+          setReservations([]);
+          setReceivedReservations([]);
+          setFeedbackHistory([]);
+          setServerNotifications([]);
+          setMentorApplication(null);
+          setPendingMentorApplications([]);
+          setAdminDashboard(null);
+          syncMentorManagementState(null);
+          setMyCourseApplications([]);
+          setReceivedCourseApplications([]);
+          return;
+        }
+
         const meResponse = await getMe();
 
         const [
@@ -3088,11 +3433,11 @@ export default function HubPage() {
             : Promise.resolve(null),
           meResponse.role === 'ADMIN' ? getPendingMentorApplications() : Promise.resolve([]),
           meResponse.role === 'ADMIN' ? getAdminDashboard() : Promise.resolve(null),
-          meResponse.role === 'MENTOR' || meResponse.role === 'ADMIN'
+          meResponse.role === 'MENTOR'
             ? getMyMentorProfile()
             : Promise.resolve(null),
           getMyMentorCourseApplications(),
-          meResponse.role === 'MENTOR' || meResponse.role === 'ADMIN'
+          meResponse.role === 'MENTOR'
             ? getReceivedMentorCourseApplications()
             : Promise.resolve([]),
         ]);
@@ -3146,11 +3491,33 @@ export default function HubPage() {
     return () => {
       isMounted = false;
     };
-  }, [clearAuth, navigate, setCurrentUser]);
+  }, [accessToken, authStatus, clearAuth, isPublicDiscoverScreen, navigate, setCurrentUser]);
 
   useEffect(() => {
     setDismissedNotificationIds(getDismissedLobbyNotificationIds(currentUser?.id));
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (isLoading || !currentUser?.role) {
+      return;
+    }
+
+    if (isMentorManagementScreen && !isMentorAccount) {
+      navigate('/hub', { replace: true });
+      return;
+    }
+
+    if (isAdminConsoleScreen && currentUser.role !== 'ADMIN') {
+      navigate('/hub', { replace: true });
+    }
+  }, [
+    currentUser?.role,
+    isAdminConsoleScreen,
+    isLoading,
+    isMentorAccount,
+    isMentorManagementScreen,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (!mentorApplication || mentorApplication.status !== 'REJECTED') {
@@ -3169,7 +3536,7 @@ export default function HubPage() {
       return;
     }
 
-    if (currentUser.role === 'MENTOR' || currentUser.role === 'ADMIN') {
+    if (currentUser.role === 'MENTOR') {
       refreshMentorManagementProfile().catch(() => {});
       return;
     }
@@ -3227,7 +3594,7 @@ export default function HubPage() {
           currentUser?.role === 'ADMIN' ? getPendingMentorApplications() : Promise.resolve([]),
           currentUser?.role === 'ADMIN' ? getAdminDashboard() : Promise.resolve(null),
           getMyMentorCourseApplications(),
-          currentUser?.role === 'MENTOR' || currentUser?.role === 'ADMIN'
+          currentUser?.role === 'MENTOR'
             ? getReceivedMentorCourseApplications()
             : Promise.resolve([]),
         ]);
@@ -3272,8 +3639,10 @@ export default function HubPage() {
   useEffect(() => {
     const nextNotice = location.state?.sessionMessage || location.state?.message;
     const nextFeedbackPrompt = normalizeFeedbackPrompt(location.state?.feedbackPrompt);
+    const nextMentorId = location.state?.mentorId;
+    const nextCourseId = location.state?.courseId;
 
-    if (!nextNotice && !nextFeedbackPrompt) {
+    if (!nextNotice && !nextFeedbackPrompt && !nextMentorId && !nextCourseId) {
       return;
     }
 
@@ -3287,11 +3656,51 @@ export default function HubPage() {
       setSelectedItemId(`feedback-prompt-${nextFeedbackPrompt.requestId}`);
     }
 
-    navigate('/hub', {
+    if (nextMentorId && isMentorDiscoverScreen) {
+      setActiveCategory('find_mentors');
+      setSelectedItemId(`mentor-${nextMentorId}`);
+    }
+
+    if (nextCourseId && isCourseDiscoverScreen) {
+      setActiveCategory('discover_courses');
+      setSelectedItemId(`discover-course-${nextCourseId}`);
+    }
+
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search,
+      },
+      {
       replace: true,
       state: null,
-    });
-  }, [location.state, navigate]);
+      }
+    );
+  }, [isCourseDiscoverScreen, isMentorDiscoverScreen, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    if (!isActivityScreen || !requestedActivitySelection) {
+      return;
+    }
+
+    if (
+      requestedActivitySelection.categoryId &&
+      categoryDefinitions.some((category) => category.id === requestedActivitySelection.categoryId) &&
+      requestedActivitySelection.categoryId !== activeCategory
+    ) {
+      setActiveCategory(requestedActivitySelection.categoryId);
+    }
+
+    if (requestedActivitySelection.itemId && requestedActivitySelection.itemId !== selectedItemId) {
+      setSelectedItemId(requestedActivitySelection.itemId);
+    }
+  }, [
+    activeCategory,
+    categoryDefinitions,
+    isActivityScreen,
+    requestedActivitySelection,
+    selectedItemId,
+  ]);
 
   useEffect(() => {
     if (!feedbackPrompt?.requestId) {
@@ -3444,6 +3853,59 @@ export default function HubPage() {
   }, [selectedItem]);
 
   useEffect(() => {
+    if (!isMentorManagementScreen) {
+      return;
+    }
+
+    if (receivedCourseApplications.length > 0 && !selectedMentorApplicationId) {
+      setSelectedMentorApplicationId(receivedCourseApplications[0].id);
+    }
+
+    if (
+      selectedMentorApplicationId &&
+      !receivedCourseApplications.some(
+        (application) => String(application.id) === String(selectedMentorApplicationId)
+      )
+    ) {
+      setSelectedMentorApplicationId(receivedCourseApplications[0]?.id ?? null);
+    }
+  }, [
+    isMentorManagementScreen,
+    receivedCourseApplications,
+    selectedMentorApplicationId,
+  ]);
+
+  useEffect(() => {
+    if (!isMentorManagementScreen || mentorWorkspaceTab !== 'applications') {
+      return;
+    }
+
+    const selectedApplication = receivedCourseApplications.find(
+      (application) => String(application.id) === String(selectedMentorApplicationId)
+    );
+
+    if (!selectedApplication) {
+      setCourseApplicationAssignedScheduleId('');
+      setCourseApplicationReviewNote('');
+      return;
+    }
+
+    const assignedScheduleId =
+      selectedApplication.assignedScheduleItemId ||
+      selectedApplication.preferredScheduleItemId ||
+      selectedApplication.courseScheduleItems?.[0]?.id ||
+      '';
+
+    setCourseApplicationAssignedScheduleId(assignedScheduleId ? String(assignedScheduleId) : '');
+    setCourseApplicationReviewNote(selectedApplication.reviewNote || '');
+  }, [
+    isMentorManagementScreen,
+    mentorWorkspaceTab,
+    receivedCourseApplications,
+    selectedMentorApplicationId,
+  ]);
+
+  useEffect(() => {
     if (selectedItem?.kind !== 'mentor_profile') {
       return;
     }
@@ -3469,6 +3931,13 @@ export default function HubPage() {
         <div className="activity-list__empty">
           <strong>조건에 맞는 멘토가 없습니다.</strong>
           <p>검색어를 줄이거나 요일, 수업 방식, 가격 조건을 완화해 보세요.</p>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setMentorFilters(DEFAULT_MENTOR_FILTERS)}
+          >
+            필터 초기화
+          </button>
         </div>
       );
     }
@@ -3479,6 +3948,15 @@ export default function HubPage() {
       <div className="activity-list__empty">
         <strong>{emptyCopy.title}</strong>
         <p>{emptyCopy.description}</p>
+        {isActivityScreen ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => navigate('/mentors')}
+          >
+            멘토 찾아보기
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -3498,9 +3976,6 @@ export default function HubPage() {
             >
               필터 초기화
             </button>
-            <button type="button" className="secondary-button" onClick={handleEnterMetaverse}>
-              메타버스 입장
-            </button>
           </div>
         </section>
       );
@@ -3513,14 +3988,17 @@ export default function HubPage() {
         <span className="activity-detail__eyebrow">내 활동</span>
         <h2>{emptyCopy.title}</h2>
         <p>{emptyCopy.description}</p>
-        <div className="activity-detail__actions">
-          <button type="button" className="primary-button" onClick={handleEnterMetaverse}>
-            메타버스 입장
-          </button>
-          <button type="button" className="secondary-button" onClick={() => navigate('/lobby')}>
-            로비로 돌아가기
-          </button>
-        </div>
+        {isActivityScreen ? (
+          <div className="activity-detail__actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => navigate('/mentors')}
+            >
+              멘토 찾아보기
+            </button>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -3550,14 +4028,23 @@ export default function HubPage() {
   }
 
   function renderMentorFilterPanel() {
-    if (activeCategory !== 'find_mentors') {
+    if (activeCategory !== 'find_mentors' && activeCategory !== 'discover_courses') {
       return null;
     }
 
-    return (
+    const resultCount =
+      activeCategory === 'discover_courses'
+        ? filteredAvailableCourses.length
+        : filteredAvailableMentors.length;
+    const keywordPlaceholder =
+      activeCategory === 'discover_courses'
+        ? '멘토링 제목, 소개, 멘토 이름으로 검색'
+        : '멘토 이름, 전문 분야, 멘토링명으로 검색';
+
+      return (
       <section className="mentor-filter-panel">
         <label className="app-field mentor-filter-panel__field">
-          <span>검색어</span>
+          <span>검색</span>
           <input
             className="app-input"
             value={mentorFilters.keyword}
@@ -3567,12 +4054,12 @@ export default function HubPage() {
                 keyword: event.target.value,
               }))
             }
-            placeholder="멘토 이름, 전문 분야, 수업명으로 검색"
+            placeholder={keywordPlaceholder}
           />
         </label>
         <div className="mentor-filter-panel__grid">
           <label className="app-field mentor-filter-panel__field">
-            <span>가능 요일</span>
+            <span>가능 시간</span>
             <select
               className="app-input"
               value={mentorFilters.dayOfWeek}
@@ -3592,7 +4079,7 @@ export default function HubPage() {
             </select>
           </label>
           <label className="app-field mentor-filter-panel__field">
-            <span>수업 방식</span>
+            <span>진행 방식</span>
             <select
               className="app-input"
               value={mentorFilters.meetingType}
@@ -3610,7 +4097,7 @@ export default function HubPage() {
             </select>
           </label>
           <label className="app-field mentor-filter-panel__field">
-            <span>최대 가격</span>
+            <span>가격대</span>
             <select
               className="app-input"
               value={mentorFilters.maxPrice}
@@ -3648,7 +4135,11 @@ export default function HubPage() {
           </label>
         </div>
         <div className="mentor-filter-panel__footer">
-          <small>{filteredAvailableMentors.length}명의 멘토가 조건에 맞습니다.</small>
+          <small>
+            {activeCategory === 'discover_courses'
+              ? `${resultCount}개의 멘토링을 바로 비교할 수 있습니다.`
+              : `${resultCount}명의 멘토를 바로 비교할 수 있습니다.`}
+          </small>
           {hasActiveMentorFilters ? (
             <button
               type="button"
@@ -3720,6 +4211,93 @@ export default function HubPage() {
               요청을 수락하면 바로 멘토링 세션으로 이어집니다. 보류 중이면 여기서 상태를 바로 결정할 수 있습니다.
             </p>
           </section>
+        </>
+      ),
+    });
+  }
+
+  function renderDiscoverCourseDetail(course) {
+    const mentor = course.mentor || null;
+    const isCourseFull = Number(course.remainingCapacity ?? 0) <= 0;
+
+    return renderDetailFrame({
+      eyebrow: '멘토링 찾기',
+      title: course.title,
+      badge: formatCurrency(course.price),
+      tone: 'info',
+      meta: mentor ? `${mentor.nickname} · ${formatMeetingTypeLabel(course.meetingType)}` : formatMeetingTypeLabel(course.meetingType),
+      actions: (
+        <>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => navigate(`/courses/${course.id}`)}
+          >
+            상세 보기
+          </button>
+          {mentor ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate('/mentors', { state: { mentorId: mentor.id } })}
+            >
+              멘토 보기
+            </button>
+          ) : null}
+        </>
+      ),
+      children: (
+        <>
+          <section className="activity-detail__section">
+            <h3>한 줄 소개</h3>
+            <p>{course.summary || '등록된 소개가 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>다룰 내용</h3>
+            <p>{course.description || '상세 설명이 아직 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>운영 정보</h3>
+            <p>진행 방식: {formatMeetingTypeLabel(course.meetingType)}</p>
+            <p>정원: {course.capacity}명</p>
+            <p>남은 자리: {course.remainingCapacity}석</p>
+            <p>승인된 참여자: {course.approvedApplicationCount}명</p>
+          </section>
+          {course.curriculumItems?.length ? (
+            <section className="activity-detail__section">
+              <h3>진행 구성</h3>
+              {course.curriculumItems.map((item) => (
+                <p key={item.id}>
+                  {item.sequence}. {item.title}
+                  {item.description ? ` · ${item.description}` : ''}
+                </p>
+              ))}
+            </section>
+          ) : null}
+          {course.scheduleItems?.length ? (
+            <section className="activity-detail__section">
+              <h3>예정 회차</h3>
+              {course.scheduleItems.map((item) => (
+                <p key={item.id}>
+                  {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)}
+                </p>
+              ))}
+            </section>
+          ) : null}
+          {mentor ? (
+            <section className="activity-detail__section">
+              <h3>멘토 정보</h3>
+              <p>{mentor.nickname}</p>
+              <p>{mentor.specialties || '전문 분야 정보가 없습니다.'}</p>
+              <p>{mentor.bio || '소개가 아직 없습니다.'}</p>
+            </section>
+          ) : null}
+          {isCourseFull ? (
+            <section className="activity-detail__section">
+              <h3>신청 상태</h3>
+              <p>현재 잔여 좌석이 없습니다. 다른 멘토링을 확인하거나 멘토 상세에서 문의를 남겨 보세요.</p>
+            </section>
+          ) : null}
         </>
       ),
     });
@@ -3806,7 +4384,7 @@ export default function HubPage() {
 
   function renderSentRequestDetail(request) {
     return renderDetailFrame({
-      eyebrow: '내 진행',
+      eyebrow: '일정',
       title: request.mentorLabel,
       badge: formatRequestStatus(request.status),
       tone: getStatusTone(request.status),
@@ -3860,7 +4438,7 @@ export default function HubPage() {
     const isProcessing = activeReservationActionId === reservation.id;
 
     return renderDetailFrame({
-      eyebrow: '내 진행',
+      eyebrow: '일정',
       title: reservation.mentorLabel,
       badge: formatReservationStatus(reservation.status),
       tone: getStatusTone(reservation.status),
@@ -3906,6 +4484,157 @@ export default function HubPage() {
                 <p>{formatReservationEntryWindow(reservationEntryState)}</p>
               </>
             ) : null}
+          </section>
+        </>
+      ),
+    });
+  }
+
+  function renderMessageRequestDetail(request) {
+    return renderDetailFrame({
+      eyebrow: '메시지',
+      title: request.mentorLabel,
+      badge: '멘토링 요청',
+      tone: getStatusTone(request.status),
+      meta: request.createdAt ? formatDateTime(request.createdAt) : '메시지',
+      actions: (
+        <>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => focusCategory('schedule', buildScheduleItemId('request', request.id))}
+          >
+            일정 보기
+          </button>
+          {request.status === 'ACCEPTED' ? (
+            <button type="button" className="primary-button" onClick={() => openMentoringSession(request)}>
+              세션 입장
+            </button>
+          ) : null}
+        </>
+      ),
+      children: (
+        <>
+          <section className="activity-detail__section">
+            <h3>대화 내용</h3>
+            <p>{request.message || '남긴 메시지가 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>현재 상태</h3>
+            <p>{formatRequestStatus(request.status)}</p>
+            <p>
+              {request.status === 'PENDING'
+                ? '멘토의 응답을 기다리는 중입니다.'
+                : request.status === 'ACCEPTED'
+                  ? '요청이 수락되었습니다. 일정 화면이나 세션 입장에서 다음 단계를 이어갈 수 있습니다.'
+                  : '이 요청은 더 이상 진행되지 않습니다.'}
+            </p>
+          </section>
+        </>
+      ),
+    });
+  }
+
+  function renderMessageReservationDetail(reservation) {
+    const reservationEntryState = getReservationEntryState(reservation, reservationClock);
+    const accessCopy = getReservationAccessCopy(reservation, reservationEntryState, 'sent');
+    const canEnterReservation =
+      reservation.status === 'ACCEPTED' && reservationEntryState.canEnter;
+
+    return renderDetailFrame({
+      eyebrow: '메시지',
+      title: reservation.mentorLabel,
+      badge: '예약',
+      tone: getStatusTone(reservation.status),
+      meta: formatReservationTimestamp(reservation.reservedAt),
+      actions: (
+        <>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => focusCategory('schedule', buildScheduleItemId('reservation', reservation.id))}
+          >
+            일정 보기
+          </button>
+          {canEnterReservation ? (
+            <button type="button" className="primary-button" onClick={() => openReservationSession(reservation)}>
+              세션 입장
+            </button>
+          ) : null}
+        </>
+      ),
+      children: (
+        <>
+          <section className="activity-detail__section">
+            <h3>대화 내용</h3>
+            <p>{reservation.message || '남긴 메시지가 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>현재 상태</h3>
+            <p>{formatReservationStatus(reservation.status)}</p>
+            <p>{accessCopy.headline}</p>
+            <p>{accessCopy.detail}</p>
+          </section>
+        </>
+      ),
+    });
+  }
+
+  function renderMessageCourseApplicationDetail(application) {
+    const sessionEntryState = getCourseSessionEntryState(application, reservationClock);
+    const accessCopy = getCourseSessionAccessCopy(application, sessionEntryState, 'sent');
+    const canEnterCourseSession =
+      application.status === 'APPROVED' &&
+      application.assignedScheduleItemId &&
+      sessionEntryState.canEnter;
+
+    return renderDetailFrame({
+      eyebrow: '메시지',
+      title: application.mentorNickname,
+      badge: application.courseTitle || '멘토링 신청',
+      tone: getStatusTone(
+        application.status === 'APPROVED'
+          ? 'ACCEPTED'
+          : application.status === 'REJECTED'
+            ? 'REJECTED'
+            : application.status === 'CANCELED'
+              ? 'CANCELED'
+              : 'PENDING'
+      ),
+      meta: application.assignedScheduleTitle || formatDateTime(application.createdAt),
+      actions: (
+        <>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              focusCategory('schedule', buildScheduleItemId('course_application', application.id))
+            }
+          >
+            일정 보기
+          </button>
+          {canEnterCourseSession ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => openCourseApplicationSession(application)}
+            >
+              세션 입장
+            </button>
+          ) : null}
+        </>
+      ),
+      children: (
+        <>
+          <section className="activity-detail__section">
+            <h3>대화 내용</h3>
+            <p>{application.message || '남긴 메시지가 없습니다.'}</p>
+          </section>
+          <section className="activity-detail__section">
+            <h3>현재 상태</h3>
+            <p>{formatCourseApplicationStatus(application.status)}</p>
+            <p>{accessCopy.headline}</p>
+            <p>{accessCopy.detail}</p>
           </section>
         </>
       ),
@@ -3963,7 +4692,7 @@ export default function HubPage() {
           <section className="activity-detail__section">
             <h3>다음 행동</h3>
             <p>
-              요청이나 예약 상태가 바뀌면 여기서 바로 확인하고, 필요한 경우 즉시 세션으로 이어갈 수 있습니다.
+              요청이나 예약 상태가 바뀌면 여기서 바로 확인하고, 필요한 경우 즉시 진행 화면으로 이어갈 수 있습니다.
             </p>
           </section>
         </>
@@ -3973,8 +4702,8 @@ export default function HubPage() {
 
   function renderFeedbackPromptDetail(prompt) {
     return renderDetailFrame({
-      eyebrow: '세션 기록',
-      title: `${prompt.counterpartName} 세션 피드백`,
+      eyebrow: '진행 기록',
+      title: `${prompt.counterpartName} 피드백`,
       badge: feedbackStatus === 'saved' ? '저장됨' : '작성 필요',
       tone: feedbackStatus === 'saved' ? 'accepted' : 'pending',
       meta: prompt.reservedAt
@@ -4004,7 +4733,7 @@ export default function HubPage() {
           {feedbackNotice ? <p className="app-success">{feedbackNotice}</p> : null}
           {feedbackError ? <p className="app-error">{feedbackError}</p> : null}
           <section className="activity-detail__section">
-            <h3>세션 정보</h3>
+            <h3>진행 정보</h3>
             <p>유형: {formatSessionSourceLabel(prompt.sessionSource)}</p>
             <p>내 역할: {formatParticipantRole(prompt.role)}</p>
             {prompt.requestMessage ? <p>요청 요약: {prompt.requestMessage}</p> : null}
@@ -4028,13 +4757,13 @@ export default function HubPage() {
             </label>
 
             <label className="app-field">
-              <span>세션 요약</span>
+              <span>진행 요약</span>
               <textarea
                 className="app-input mentoring-textarea"
                 value={feedbackSummary}
                 onChange={(event) => setFeedbackSummary(event.target.value)}
                 rows={2}
-                placeholder="이번 세션에서 다룬 내용을 짧게 정리해 주세요."
+                placeholder="이번 진행에서 다룬 내용을 짧게 정리해 주세요."
                 disabled={isFeedbackLocked}
               />
             </label>
@@ -4046,7 +4775,7 @@ export default function HubPage() {
                 value={feedbackMessage}
                 onChange={(event) => setFeedbackMessage(event.target.value)}
                 rows={4}
-                placeholder="세션이 어땠는지 짧은 후기를 남겨 주세요."
+                placeholder="이번 진행이 어땠는지 짧은 후기를 남겨 주세요."
                 disabled={isFeedbackLocked}
               />
             </label>
@@ -4058,15 +4787,15 @@ export default function HubPage() {
 
   function renderFeedbackHistoryDetail(feedbackItem) {
     return renderDetailFrame({
-      eyebrow: '세션 기록',
-      title: feedbackItem.counterpartName || '세션 상대',
+      eyebrow: '진행 기록',
+      title: feedbackItem.counterpartName || '상대 사용자',
       badge: `${feedbackItem.rating || 0}/5`,
       tone: 'info',
       meta: formatFeedbackTimestamp(feedbackItem.submittedAt),
       children: (
         <>
           <section className="activity-detail__section">
-            <h3>세션 정보</h3>
+            <h3>진행 정보</h3>
             <p>{formatSessionSourceLabel(feedbackItem.sessionSource)}</p>
             <p>{formatHistorySessionLabel(feedbackItem)}</p>
             {feedbackItem.reservedAt ? (
@@ -4074,8 +4803,8 @@ export default function HubPage() {
             ) : null}
           </section>
           <section className="activity-detail__section">
-            <h3>세션 요약</h3>
-            <p>{feedbackItem.summary || '저장된 세션 요약이 없습니다.'}</p>
+            <h3>진행 요약</h3>
+            <p>{feedbackItem.summary || '저장된 진행 요약이 없습니다.'}</p>
           </section>
           <section className="activity-detail__section">
             <h3>남긴 피드백</h3>
@@ -4418,513 +5147,887 @@ export default function HubPage() {
     const managedProfile = profile || mentorManagementProfile;
     const publishedCourseCount =
       managedProfile?.courses?.filter((course) => course.status === 'PUBLISHED').length || 0;
+    const pendingApplicationCount = receivedCourseApplications.filter(
+      (application) => application.status === 'PENDING'
+    ).length;
+    const mentorFeedbackHistory = feedbackHistory.filter((feedbackItem) => feedbackItem.role === 'Mentor');
+    const managedCourses = managedProfile?.courses || [];
+    const selectedManagedCourse =
+      managedCourses.find((course) => String(course.id) === String(selectedManagedCourseId)) ||
+      managedCourses[0] ||
+      null;
+    const selectedReceivedApplication =
+      receivedCourseApplications.find(
+        (application) => String(application.id) === String(selectedMentorApplicationId)
+      ) || receivedCourseApplications[0] || null;
+    const mentorTabs = [
+      { id: 'profile', label: '멘토 프로필' },
+      { id: 'availability', label: '일정 관리' },
+      { id: 'courses', label: '개설한 멘토링' },
+      { id: 'applications', label: '신청 관리' },
+      { id: 'records', label: '진행 기록' },
+    ];
+    const mentorNotices = (
+      <>
+        {mentorProfileNotice ? <p className="app-success">{mentorProfileNotice}</p> : null}
+        {mentorProfileError ? <p className="app-error">{mentorProfileError}</p> : null}
+        {mentorAvailabilityNotice ? <p className="app-success">{mentorAvailabilityNotice}</p> : null}
+        {mentorAvailabilityError ? <p className="app-error">{mentorAvailabilityError}</p> : null}
+        {mentorCourseNotice ? <p className="app-success">{mentorCourseNotice}</p> : null}
+        {mentorCourseError ? <p className="app-error">{mentorCourseError}</p> : null}
+        {courseApplicationNotice ? <p className="app-success">{courseApplicationNotice}</p> : null}
+        {courseApplicationError ? <p className="app-error">{courseApplicationError}</p> : null}
+      </>
+    );
+    const tabActions =
+      mentorWorkspaceTab === 'profile' ? (
+        <button
+          type="submit"
+          form="mentor-profile-form"
+          className="primary-button"
+          disabled={mentorProfileStatus === 'saving'}
+        >
+          {mentorProfileStatus === 'saving' ? '저장 중...' : '프로필 저장'}
+        </button>
+      ) : mentorWorkspaceTab === 'availability' ? (
+        <button
+          type="submit"
+          form="mentor-availability-form"
+          className="primary-button"
+          disabled={mentorAvailabilityStatus === 'saving'}
+        >
+          {mentorAvailabilityStatus === 'saving' ? '저장 중...' : '가능 시간 저장'}
+        </button>
+      ) : mentorWorkspaceTab === 'courses' ? (
+        <>
+          <button
+            type="submit"
+            form="mentor-course-form"
+            className="primary-button"
+            disabled={mentorCourseStatus === 'saving'}
+          >
+            {mentorCourseStatus === 'saving'
+              ? '저장 중...'
+              : mentorCourseFormMode === 'edit'
+                ? '멘토링 수정'
+                : '멘토링 개설'}
+          </button>
+          {mentorCourseFormMode === 'edit' ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={resetMentorCourseEditor}
+              disabled={mentorCourseStatus === 'saving'}
+            >
+              편집 취소
+            </button>
+          ) : null}
+        </>
+      ) : null;
 
     return renderDetailFrame({
-      eyebrow: '멘토 관리',
-      title: managedProfile?.nickname || currentUser?.nickname || '내 멘토 관리',
+      eyebrow: '멘토 활동',
+      title: managedProfile?.nickname || currentUser?.nickname || '내 멘토 활동',
       badge: mentorProfileEnabled ? '노출 중' : '비노출',
       tone: mentorProfileEnabled ? 'accepted' : 'muted',
       meta: managedProfile?.email || '멘토 프로필',
-      actions: (
-        <>
-          <button
-            type="submit"
-            form="mentor-profile-form"
-            className="primary-button"
-            disabled={mentorProfileStatus === 'saving'}
-          >
-            {mentorProfileStatus === 'saving' ? '저장 중...' : '프로필 저장'}
-          </button>
-          <button
-            type="submit"
-            form="mentor-availability-form"
-            className="secondary-button"
-            disabled={mentorAvailabilityStatus === 'saving'}
-          >
-            {mentorAvailabilityStatus === 'saving' ? '저장 중...' : '가능 시간 저장'}
-          </button>
-        </>
-      ),
+      actions: tabActions,
       children: (
         <>
-          {mentorProfileNotice ? <p className="app-success">{mentorProfileNotice}</p> : null}
-          {mentorProfileError ? <p className="app-error">{mentorProfileError}</p> : null}
-          {mentorAvailabilityNotice ? <p className="app-success">{mentorAvailabilityNotice}</p> : null}
-          {mentorAvailabilityError ? <p className="app-error">{mentorAvailabilityError}</p> : null}
-          {mentorCourseNotice ? <p className="app-success">{mentorCourseNotice}</p> : null}
-          {mentorCourseError ? <p className="app-error">{mentorCourseError}</p> : null}
+          {mentorNotices}
 
           <section className="activity-detail__section">
             <h3>운영 현황</h3>
             <p>멘토 공개 상태: {mentorProfileEnabled ? '멘토 목록에 노출되고 있습니다.' : '멘토 목록에서 숨김 상태입니다.'}</p>
             <p>등록한 가능 시간: {mentorAvailabilityDrafts.length}개</p>
-            <p>공개 중인 수업: {publishedCourseCount}개</p>
+            <p>공개 중인 멘토링: {publishedCourseCount}개</p>
+            <p>검토할 신청: {pendingApplicationCount}건</p>
+            <p>저장된 진행 기록: {mentorFeedbackHistory.length}건</p>
           </section>
 
-          <section className="activity-detail__section">
-            <h3>프로필 설정</h3>
-            <form id="mentor-profile-form" className="mentoring-form" onSubmit={handleMentorProfileSave}>
-              <label className="app-field">
-                <span>소개</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={mentorProfileBio}
-                  onChange={(event) => setMentorProfileBio(event.target.value)}
-                  rows={3}
-                  placeholder="멘토로 어떤 도움을 줄 수 있는지 적어 주세요."
-                  disabled={mentorProfileStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>전문 분야</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={mentorProfileSpecialties}
-                  onChange={(event) => setMentorProfileSpecialties(event.target.value)}
-                  rows={2}
-                  placeholder="예: Spring Boot, 포트폴리오 리뷰, 커리어 상담"
-                  disabled={mentorProfileStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>관심사</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={mentorProfileInterests}
-                  onChange={(event) => setMentorProfileInterests(event.target.value)}
-                  rows={2}
-                  placeholder="예: 백엔드 설계, 테스트 코드, 이직 준비"
-                  disabled={mentorProfileStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>아바타 URL</span>
-                <input
-                  className="app-input"
-                  value={mentorProfileAvatarUrl}
-                  onChange={(event) => setMentorProfileAvatarUrl(event.target.value)}
-                  placeholder="https://example.com/avatar.png"
-                  disabled={mentorProfileStatus === 'saving'}
-                />
-              </label>
-              <label className="app-checkbox">
-                <input
-                  type="checkbox"
-                  checked={mentorProfileEnabled}
-                  onChange={(event) => setMentorProfileEnabled(event.target.checked)}
-                  disabled={mentorProfileStatus === 'saving'}
-                />
-                <span>멘토 목록에 프로필 공개하기</span>
-              </label>
-            </form>
-          </section>
-
-          <section className="activity-detail__section">
-            <h3>멘토 가능 시간</h3>
-            <p>가능 시간을 등록하면 사용자가 그 시간대 안에서만 예약을 제안할 수 있습니다.</p>
-            <form id="mentor-availability-form" className="mentoring-form" onSubmit={handleMentorAvailabilitySave}>
-              <div className="mentor-availability-list">
-                {mentorAvailabilityDrafts.length === 0 ? (
-                  <p>아직 등록된 가능 시간이 없습니다. 최소 한 개 이상 추가하면 예약 유도에 도움이 됩니다.</p>
-                ) : (
-                  mentorAvailabilityDrafts.map((draft) => (
-                    <div key={draft.id} className="mentor-availability-row">
-                      <select
-                        className="app-input"
-                        value={draft.dayOfWeek}
-                        onChange={(event) =>
-                          handleAvailabilityDraftChange(draft.id, 'dayOfWeek', event.target.value)
-                        }
-                        disabled={mentorAvailabilityStatus === 'saving'}
-                      >
-                        {Object.entries(DAY_OF_WEEK_LABELS).map(([dayKey, dayLabel]) => (
-                          <option key={dayKey} value={dayKey}>
-                            {dayLabel}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="time"
-                        className="app-input"
-                        value={draft.startTime}
-                        onChange={(event) =>
-                          handleAvailabilityDraftChange(draft.id, 'startTime', event.target.value)
-                        }
-                        disabled={mentorAvailabilityStatus === 'saving'}
-                      />
-                      <input
-                        type="time"
-                        className="app-input"
-                        value={draft.endTime}
-                        onChange={(event) =>
-                          handleAvailabilityDraftChange(draft.id, 'endTime', event.target.value)
-                        }
-                        disabled={mentorAvailabilityStatus === 'saving'}
-                      />
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => handleRemoveAvailabilityDraft(draft.id)}
-                        disabled={mentorAvailabilityStatus === 'saving'}
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
+          <div className="mentor-workspace-tabs" role="tablist" aria-label="멘토 활동 섹션">
+            {mentorTabs.map((tab) => (
               <button
+                key={tab.id}
                 type="button"
-                className="secondary-button"
-                onClick={handleAddAvailabilityDraft}
-                disabled={mentorAvailabilityStatus === 'saving'}
+                role="tab"
+                aria-selected={mentorWorkspaceTab === tab.id}
+                className={
+                  mentorWorkspaceTab === tab.id
+                    ? 'mentor-workspace-tab mentor-workspace-tab--active'
+                    : 'mentor-workspace-tab'
+                }
+                onClick={() => setMentorWorkspaceTab(tab.id)}
               >
-                가능 시간 추가
+                {tab.label}
               </button>
-            </form>
-          </section>
+            ))}
+          </div>
 
-          <section className="activity-detail__section">
-            <h3>{mentorCourseFormMode === 'edit' ? '수업 수정' : '수업 개설'}</h3>
-            <form className="mentoring-form" onSubmit={handleMentorCourseSubmit}>
-              <label className="app-field">
-                <span>수업명</span>
-                <input
-                  className="app-input"
-                  value={mentorCourseForm.title}
-                  onChange={(event) =>
-                    setMentorCourseForm((currentForm) => ({
-                      ...currentForm,
-                      title: event.target.value,
-                    }))
-                  }
-                  placeholder="예: 취업 준비 백엔드 코드 리뷰"
-                  disabled={mentorCourseStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>짧은 소개</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={mentorCourseForm.summary}
-                  onChange={(event) =>
-                    setMentorCourseForm((currentForm) => ({
-                      ...currentForm,
-                      summary: event.target.value,
-                    }))
-                  }
-                  rows={2}
-                  placeholder="사용자 목록에 노출될 한 줄 소개입니다."
-                  disabled={mentorCourseStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>상세 설명</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={mentorCourseForm.description}
-                  onChange={(event) =>
-                    setMentorCourseForm((currentForm) => ({
-                      ...currentForm,
-                      description: event.target.value,
-                    }))
-                  }
-                  rows={4}
-                  placeholder="어떤 내용을 다루는지 자세히 적어 주세요."
-                  disabled={mentorCourseStatus === 'saving'}
-                />
-              </label>
-              <div className="mentor-course-grid">
+          {mentorWorkspaceTab === 'profile' ? (
+            <section className="activity-detail__section">
+              <h3>멘토 프로필</h3>
+              <form id="mentor-profile-form" className="mentoring-form" onSubmit={handleMentorProfileSave}>
                 <label className="app-field">
-                  <span>진행 방식</span>
-                  <select
-                    className="app-input"
-                    value={mentorCourseForm.meetingType}
-                    onChange={(event) =>
-                      setMentorCourseForm((currentForm) => ({
-                        ...currentForm,
-                        meetingType: event.target.value,
-                      }))
-                    }
-                    disabled={mentorCourseStatus === 'saving'}
-                  >
-                    <option value="ONLINE">온라인</option>
-                    <option value="OFFLINE">오프라인</option>
-                    <option value="HYBRID">온오프라인</option>
-                  </select>
-                </label>
-                <label className="app-field">
-                  <span>가격</span>
-                  <input
-                    type="number"
-                    min="0"
-                    className="app-input"
-                    value={mentorCourseForm.price}
-                    onChange={(event) =>
-                      setMentorCourseForm((currentForm) => ({
-                        ...currentForm,
-                        price: event.target.value,
-                      }))
-                    }
-                    disabled={mentorCourseStatus === 'saving'}
+                  <span>소개</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    value={mentorProfileBio}
+                    onChange={(event) => setMentorProfileBio(event.target.value)}
+                    rows={3}
+                    placeholder="멘토로 어떤 도움을 줄 수 있는지 적어 주세요."
+                    disabled={mentorProfileStatus === 'saving'}
                   />
                 </label>
                 <label className="app-field">
-                  <span>정원</span>
-                  <input
-                    type="number"
-                    min="1"
-                    className="app-input"
-                    value={mentorCourseForm.capacity}
-                    onChange={(event) =>
-                      setMentorCourseForm((currentForm) => ({
-                        ...currentForm,
-                        capacity: event.target.value,
-                      }))
-                    }
-                    disabled={mentorCourseStatus === 'saving'}
+                  <span>전문 분야</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    value={mentorProfileSpecialties}
+                    onChange={(event) => setMentorProfileSpecialties(event.target.value)}
+                    rows={2}
+                    placeholder="예: Spring Boot, 포트폴리오 리뷰, 커리어 상담"
+                    disabled={mentorProfileStatus === 'saving'}
                   />
                 </label>
                 <label className="app-field">
-                  <span>공개 상태</span>
-                  <select
-                    className="app-input"
-                    value={mentorCourseForm.status}
-                    onChange={(event) =>
-                      setMentorCourseForm((currentForm) => ({
-                        ...currentForm,
-                        status: event.target.value,
-                      }))
-                    }
-                    disabled={mentorCourseStatus === 'saving'}
-                  >
-                    <option value="DRAFT">초안</option>
-                    <option value="PUBLISHED">공개</option>
-                    <option value="ARCHIVED">보관</option>
-                  </select>
+                  <span>관심사</span>
+                  <textarea
+                    className="app-input mentoring-textarea"
+                    value={mentorProfileInterests}
+                    onChange={(event) => setMentorProfileInterests(event.target.value)}
+                    rows={2}
+                    placeholder="예: 백엔드 설계, 테스트 코드, 이직 준비"
+                    disabled={mentorProfileStatus === 'saving'}
+                  />
                 </label>
-              </div>
-              <div className="mentor-course-curriculum">
-                <div className="mentor-course-curriculum__header">
-                  <strong>수업 일정</strong>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={handleAddScheduleItem}
-                    disabled={mentorCourseStatus === 'saving'}
-                  >
-                    회차 추가
-                  </button>
-                </div>
-                {mentorCourseForm.scheduleItems.length === 0 ? (
-                  <p>회차를 추가하면 수업 상세와 멘토 목록에서 일정 흐름을 함께 보여줄 수 있습니다.</p>
-                ) : (
-                  mentorCourseForm.scheduleItems.map((item, itemIndex) => (
-                    <div key={item.id} className="mentor-course-curriculum__item">
-                      <label className="app-field">
-                        <span>{itemIndex + 1}회차 제목</span>
-                        <input
+                <label className="app-field">
+                  <span>아바타 URL</span>
+                  <input
+                    className="app-input"
+                    value={mentorProfileAvatarUrl}
+                    onChange={(event) => setMentorProfileAvatarUrl(event.target.value)}
+                    placeholder="https://example.com/avatar.png"
+                    disabled={mentorProfileStatus === 'saving'}
+                  />
+                </label>
+                <label className="app-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={mentorProfileEnabled}
+                    onChange={(event) => setMentorProfileEnabled(event.target.checked)}
+                    disabled={mentorProfileStatus === 'saving'}
+                  />
+                  <span>멘토 목록에 프로필 공개하기</span>
+                </label>
+              </form>
+            </section>
+          ) : null}
+
+          {mentorWorkspaceTab === 'availability' ? (
+            <section className="activity-detail__section">
+              <h3>일정 관리</h3>
+              <p>가능 시간을 등록하면 사용자가 그 시간대 안에서만 예약을 제안할 수 있습니다.</p>
+              <form id="mentor-availability-form" className="mentoring-form" onSubmit={handleMentorAvailabilitySave}>
+                <div className="mentor-availability-list">
+                  {mentorAvailabilityDrafts.length === 0 ? (
+                    <p>아직 등록된 가능 시간이 없습니다. 최소 한 개 이상 추가하면 예약 유도에 도움이 됩니다.</p>
+                  ) : (
+                    mentorAvailabilityDrafts.map((draft) => (
+                      <div key={draft.id} className="mentor-availability-row">
+                        <select
                           className="app-input"
-                          value={item.title}
+                          value={draft.dayOfWeek}
                           onChange={(event) =>
-                            handleScheduleItemChange(item.id, 'title', event.target.value)
+                            handleAvailabilityDraftChange(draft.id, 'dayOfWeek', event.target.value)
                           }
-                          placeholder="예: 1회차 현재 구조 진단"
-                          disabled={mentorCourseStatus === 'saving'}
+                          disabled={mentorAvailabilityStatus === 'saving'}
+                        >
+                          {Object.entries(DAY_OF_WEEK_LABELS).map(([dayKey, dayLabel]) => (
+                            <option key={dayKey} value={dayKey}>
+                              {dayLabel}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="time"
+                          className="app-input"
+                          value={draft.startTime}
+                          onChange={(event) =>
+                            handleAvailabilityDraftChange(draft.id, 'startTime', event.target.value)
+                          }
+                          disabled={mentorAvailabilityStatus === 'saving'}
                         />
-                      </label>
-                      <div className="mentor-course-grid">
-                        <label className="app-field">
-                          <span>시작 일시</span>
-                          <input
-                            type="datetime-local"
-                            className="app-input"
-                            value={item.startsAt}
-                            onChange={(event) =>
-                              handleScheduleItemChange(item.id, 'startsAt', event.target.value)
-                            }
-                            disabled={mentorCourseStatus === 'saving'}
-                          />
-                        </label>
-                        <label className="app-field">
-                          <span>종료 일시</span>
-                          <input
-                            type="datetime-local"
-                            className="app-input"
-                            value={item.endsAt}
-                            onChange={(event) =>
-                              handleScheduleItemChange(item.id, 'endsAt', event.target.value)
-                            }
-                            disabled={mentorCourseStatus === 'saving'}
-                          />
-                        </label>
+                        <input
+                          type="time"
+                          className="app-input"
+                          value={draft.endTime}
+                          onChange={(event) =>
+                            handleAvailabilityDraftChange(draft.id, 'endTime', event.target.value)
+                          }
+                          disabled={mentorAvailabilityStatus === 'saving'}
+                        />
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleRemoveAvailabilityDraft(draft.id)}
+                          disabled={mentorAvailabilityStatus === 'saving'}
+                        >
+                          삭제
+                        </button>
                       </div>
-                      <label className="app-field">
-                        <span>{itemIndex + 1}회차 설명</span>
-                        <textarea
-                          className="app-input mentoring-textarea"
-                          value={item.description}
-                          onChange={(event) =>
-                            handleScheduleItemChange(item.id, 'description', event.target.value)
-                          }
-                          rows={3}
-                          placeholder="이 회차에서 다루는 핵심 내용을 적어 주세요."
-                          disabled={mentorCourseStatus === 'saving'}
-                        />
-                      </label>
+                    ))
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleAddAvailabilityDraft}
+                  disabled={mentorAvailabilityStatus === 'saving'}
+                >
+                  가능 시간 추가
+                </button>
+              </form>
+            </section>
+          ) : null}
+
+          {mentorWorkspaceTab === 'courses' ? (
+            <>
+              <section className="activity-detail__section">
+                <div className="mentor-course-workspace">
+                  <div className="mentor-course-workspace__list">
+                    <div className="mentor-course-workspace__list-header">
+                      <div>
+                        <h3>개설한 멘토링</h3>
+                        <p>편집할 멘토링을 고르거나 새 멘토링을 만들 수 있습니다.</p>
+                      </div>
                       <button
                         type="button"
                         className="secondary-button"
-                        onClick={() => handleRemoveScheduleItem(item.id)}
+                        onClick={resetMentorCourseEditor}
                         disabled={mentorCourseStatus === 'saving'}
                       >
-                        삭제
+                        새 수업
                       </button>
                     </div>
-                  ))
+                    {managedCourses.length ? (
+                      <div className="mentor-course-summary-list">
+                        {managedCourses.map((course) => (
+                          <button
+                            key={course.id}
+                            type="button"
+                            className={
+                              String(selectedManagedCourse?.id) === String(course.id) &&
+                              mentorCourseFormMode === 'edit'
+                                ? 'mentor-course-summary mentor-course-summary--active'
+                                : 'mentor-course-summary'
+                            }
+                            onClick={() => handleEditMentorCourse(course)}
+                          >
+                            <strong>{course.title}</strong>
+                            <span>{course.summary || '요약이 없습니다.'}</span>
+                            <small>{formatMentorCourseStatus(course.status)}</small>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>아직 개설한 멘토링이 없습니다. 새 수업 버튼으로 첫 멘토링을 만들어 보세요.</p>
+                    )}
+                  </div>
+
+                  <div className="mentor-course-workspace__editor">
+                    <section className="activity-detail__section">
+                      <h3>{mentorCourseFormMode === 'edit' ? '멘토링 수정' : '멘토링 개설'}</h3>
+                      {mentorCourseFormMode === 'edit' && selectedManagedCourse ? (
+                        <p>
+                          현재 선택한 멘토링: <strong>{selectedManagedCourse.title}</strong>
+                        </p>
+                      ) : (
+                        <p>새 멘토링 정보를 입력하고 공개 상태를 정할 수 있습니다.</p>
+                      )}
+                      <form id="mentor-course-form" className="mentoring-form" onSubmit={handleMentorCourseSubmit}>
+                        <label className="app-field">
+                          <span>멘토링명</span>
+                          <input
+                            className="app-input"
+                            value={mentorCourseForm.title}
+                            onChange={(event) =>
+                              setMentorCourseForm((currentForm) => ({
+                                ...currentForm,
+                                title: event.target.value,
+                              }))
+                            }
+                            placeholder="예: 취업 준비 백엔드 코드 리뷰"
+                            disabled={mentorCourseStatus === 'saving'}
+                          />
+                        </label>
+                        <label className="app-field">
+                          <span>짧은 소개</span>
+                          <textarea
+                            className="app-input mentoring-textarea"
+                            value={mentorCourseForm.summary}
+                            onChange={(event) =>
+                              setMentorCourseForm((currentForm) => ({
+                                ...currentForm,
+                                summary: event.target.value,
+                              }))
+                            }
+                            rows={2}
+                            placeholder="사용자 목록에 노출될 한 줄 소개입니다."
+                            disabled={mentorCourseStatus === 'saving'}
+                          />
+                        </label>
+                        <label className="app-field">
+                          <span>상세 설명</span>
+                          <textarea
+                            className="app-input mentoring-textarea"
+                            value={mentorCourseForm.description}
+                            onChange={(event) =>
+                              setMentorCourseForm((currentForm) => ({
+                                ...currentForm,
+                                description: event.target.value,
+                              }))
+                            }
+                            rows={4}
+                            placeholder="어떤 내용을 다루는지 자세히 적어 주세요."
+                            disabled={mentorCourseStatus === 'saving'}
+                          />
+                        </label>
+                        <div className="mentor-course-grid">
+                          <label className="app-field">
+                            <span>진행 방식</span>
+                            <select
+                              className="app-input"
+                              value={mentorCourseForm.meetingType}
+                              onChange={(event) =>
+                                setMentorCourseForm((currentForm) => ({
+                                  ...currentForm,
+                                  meetingType: event.target.value,
+                                }))
+                              }
+                              disabled={mentorCourseStatus === 'saving'}
+                            >
+                              <option value="ONLINE">온라인</option>
+                              <option value="OFFLINE">오프라인</option>
+                              <option value="HYBRID">온오프라인</option>
+                            </select>
+                          </label>
+                          <label className="app-field">
+                            <span>가격</span>
+                            <input
+                              type="number"
+                              min="0"
+                              className="app-input"
+                              value={mentorCourseForm.price}
+                              onChange={(event) =>
+                                setMentorCourseForm((currentForm) => ({
+                                  ...currentForm,
+                                  price: event.target.value,
+                                }))
+                              }
+                              disabled={mentorCourseStatus === 'saving'}
+                            />
+                          </label>
+                          <label className="app-field">
+                            <span>정원</span>
+                            <input
+                              type="number"
+                              min="1"
+                              className="app-input"
+                              value={mentorCourseForm.capacity}
+                              onChange={(event) =>
+                                setMentorCourseForm((currentForm) => ({
+                                  ...currentForm,
+                                  capacity: event.target.value,
+                                }))
+                              }
+                              disabled={mentorCourseStatus === 'saving'}
+                            />
+                          </label>
+                          <label className="app-field">
+                            <span>공개 상태</span>
+                            <select
+                              className="app-input"
+                              value={mentorCourseForm.status}
+                              onChange={(event) =>
+                                setMentorCourseForm((currentForm) => ({
+                                  ...currentForm,
+                                  status: event.target.value,
+                                }))
+                              }
+                              disabled={mentorCourseStatus === 'saving'}
+                            >
+                              <option value="DRAFT">초안</option>
+                              <option value="PUBLISHED">공개</option>
+                              <option value="ARCHIVED">보관</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div className="mentor-course-curriculum">
+                          <div className="mentor-course-curriculum__header">
+                            <strong>진행 일정</strong>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={handleAddScheduleItem}
+                              disabled={mentorCourseStatus === 'saving'}
+                            >
+                              회차 추가
+                            </button>
+                          </div>
+                          {mentorCourseForm.scheduleItems.length === 0 ? (
+                            <p>회차를 추가하면 수업 상세와 멘토 목록에서 일정 흐름을 함께 보여줄 수 있습니다.</p>
+                          ) : (
+                            mentorCourseForm.scheduleItems.map((item, itemIndex) => (
+                              <div key={item.id} className="mentor-course-curriculum__item">
+                                <label className="app-field">
+                                  <span>{itemIndex + 1}회차 제목</span>
+                                  <input
+                                    className="app-input"
+                                    value={item.title}
+                                    onChange={(event) =>
+                                      handleScheduleItemChange(item.id, 'title', event.target.value)
+                                    }
+                                    placeholder="예: 1회차 현재 구조 진단"
+                                    disabled={mentorCourseStatus === 'saving'}
+                                  />
+                                </label>
+                                <div className="mentor-course-grid">
+                                  <label className="app-field">
+                                    <span>시작 일시</span>
+                                    <input
+                                      type="datetime-local"
+                                      className="app-input"
+                                      value={item.startsAt}
+                                      onChange={(event) =>
+                                        handleScheduleItemChange(item.id, 'startsAt', event.target.value)
+                                      }
+                                      disabled={mentorCourseStatus === 'saving'}
+                                    />
+                                  </label>
+                                  <label className="app-field">
+                                    <span>종료 일시</span>
+                                    <input
+                                      type="datetime-local"
+                                      className="app-input"
+                                      value={item.endsAt}
+                                      onChange={(event) =>
+                                        handleScheduleItemChange(item.id, 'endsAt', event.target.value)
+                                      }
+                                      disabled={mentorCourseStatus === 'saving'}
+                                    />
+                                  </label>
+                                </div>
+                                <label className="app-field">
+                                  <span>{itemIndex + 1}회차 설명</span>
+                                  <textarea
+                                    className="app-input mentoring-textarea"
+                                    value={item.description}
+                                    onChange={(event) =>
+                                      handleScheduleItemChange(item.id, 'description', event.target.value)
+                                    }
+                                    rows={3}
+                                    placeholder="이 회차에서 다루는 핵심 내용을 적어 주세요."
+                                    disabled={mentorCourseStatus === 'saving'}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => handleRemoveScheduleItem(item.id)}
+                                  disabled={mentorCourseStatus === 'saving'}
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="mentor-course-curriculum">
+                          <div className="mentor-course-curriculum__header">
+                            <strong>다룰 내용</strong>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={handleAddCurriculumItem}
+                              disabled={mentorCourseStatus === 'saving'}
+                            >
+                              커리큘럼 추가
+                            </button>
+                          </div>
+                          {mentorCourseForm.curriculumItems.map((item, itemIndex) => (
+                            <div key={item.id} className="mentor-course-curriculum__item">
+                              <label className="app-field">
+                                <span>{itemIndex + 1}단계 제목</span>
+                                <input
+                                  className="app-input"
+                                  value={item.title}
+                                  onChange={(event) =>
+                                    handleCurriculumItemChange(item.id, 'title', event.target.value)
+                                  }
+                                  placeholder="예: 현재 코드 구조 진단"
+                                  disabled={mentorCourseStatus === 'saving'}
+                                />
+                              </label>
+                              <label className="app-field">
+                                <span>{itemIndex + 1}단계 설명</span>
+                                <textarea
+                                  className="app-input mentoring-textarea"
+                                  value={item.description}
+                                  onChange={(event) =>
+                                    handleCurriculumItemChange(item.id, 'description', event.target.value)
+                                  }
+                                  rows={3}
+                                  placeholder="이 단계에서 무엇을 다루는지 적어 주세요."
+                                  disabled={mentorCourseStatus === 'saving'}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleRemoveCurriculumItem(item.id)}
+                                disabled={mentorCourseStatus === 'saving'}
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </form>
+                    </section>
+
+                    {selectedManagedCourse ? (
+                      <section className="activity-detail__section">
+                        <h3>선택한 멘토링 요약</h3>
+                        <p><strong>멘토링명:</strong> {selectedManagedCourse.title}</p>
+                        <p><strong>상태:</strong> {formatMentorCourseStatus(selectedManagedCourse.status)}</p>
+                        <p><strong>진행 방식:</strong> {formatMeetingTypeLabel(selectedManagedCourse.meetingType)}</p>
+                        <p><strong>가격:</strong> {formatCurrency(selectedManagedCourse.price)}</p>
+                        <p><strong>승인:</strong> {selectedManagedCourse.approvedApplicationCount}명</p>
+                        <div className="activity-detail__actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => navigate(`/courses/${selectedManagedCourse.id}`)}
+                          >
+                            상세 보기
+                          </button>
+                        </div>
+                      </section>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+            </>
+          ) : null}
+
+          {mentorWorkspaceTab === 'applications' ? (
+            <section className="activity-detail__section">
+              <div className="mentor-application-workspace__header">
+                <div>
+                  <h3>신청 관리</h3>
+                  <p>받은 요청, 예약, 멘토링 신청을 여기서 한 번에 확인하고 처리합니다.</p>
+                </div>
+              </div>
+              <div className="mentor-inbox-grid">
+                <section className="mentor-inbox-panel">
+                  <div className="mentor-inbox-panel__header">
+                    <h4>받은 요청</h4>
+                    <span>{receivedRequests.length}건</span>
+                  </div>
+                  {receivedRequests.length === 0 ? (
+                    <p>아직 받은 요청이 없습니다.</p>
+                  ) : (
+                    <div className="mentor-inbox-list">
+                      {receivedRequests.map((request) => {
+                        const isProcessing = activeRequestActionId === request.id;
+                        return (
+                          <article key={request.id} className="mentor-inbox-card">
+                            <div className="mentor-inbox-card__meta">
+                              <strong>{request.requesterLabel || '신청자'}</strong>
+                              <span>{formatRequestStatus(request.status)}</span>
+                            </div>
+                            <p>{request.message || '남긴 메시지가 없습니다.'}</p>
+                            <small>
+                              {request.createdAt ? formatDateTime(request.createdAt) : '도착 시간 정보 없음'}
+                            </small>
+                            <div className="activity-detail__actions">
+                              {request.status === 'PENDING' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="primary-button"
+                                    onClick={() => handleMentoringDecision(request.id, 'accept')}
+                                    disabled={isProcessing}
+                                  >
+                                    {isProcessing ? '처리 중...' : '수락'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => handleMentoringDecision(request.id, 'reject')}
+                                    disabled={isProcessing}
+                                  >
+                                    거절
+                                  </button>
+                                </>
+                              ) : null}
+                              {request.status === 'ACCEPTED' ? (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => openMentoringSession(request)}
+                                >
+                                  세션 입장
+                                </button>
+                              ) : null}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                <section className="mentor-inbox-panel">
+                  <div className="mentor-inbox-panel__header">
+                    <h4>받은 예약</h4>
+                    <span>{receivedReservations.length}건</span>
+                  </div>
+                  {receivedReservations.length === 0 ? (
+                    <p>아직 받은 예약이 없습니다.</p>
+                  ) : (
+                    <div className="mentor-inbox-list">
+                      {receivedReservations.map((reservation) => {
+                        const entryState = getReservationEntryState(reservation, reservationClock);
+                        const canEnter =
+                          reservation.status === 'ACCEPTED' && entryState.canEnter;
+                        const isProcessing =
+                          activeReceivedReservationActionId === reservation.id;
+                        return (
+                          <article key={reservation.id} className="mentor-inbox-card">
+                            <div className="mentor-inbox-card__meta">
+                              <strong>{reservation.requesterLabel || '신청자'}</strong>
+                              <span>{formatReservationStatus(reservation.status)}</span>
+                            </div>
+                            <p>{formatReservationTimestamp(reservation.reservedAt)}</p>
+                            <p>{reservation.message || '예약 메시지가 없습니다.'}</p>
+                            <div className="activity-detail__actions">
+                              {reservation.status === 'PENDING' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="primary-button"
+                                    onClick={() =>
+                                      handleReceivedReservationDecision(reservation.id, 'accept')
+                                    }
+                                    disabled={isProcessing}
+                                  >
+                                    {isProcessing ? '처리 중...' : '수락'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() =>
+                                      handleReceivedReservationDecision(reservation.id, 'reject')
+                                    }
+                                    disabled={isProcessing}
+                                  >
+                                    거절
+                                  </button>
+                                </>
+                              ) : null}
+                              {canEnter ? (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => openReservationSession(reservation)}
+                                >
+                                  세션 입장
+                                </button>
+                              ) : null}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <section className="mentor-application-section">
+                <div className="mentor-inbox-panel__header">
+                  <h4>받은 멘토링 신청</h4>
+                  <span>{receivedCourseApplications.length}건</span>
+                </div>
+                {receivedCourseApplications.length === 0 ? (
+                  <p>아직 받은 멘토링 신청이 없습니다.</p>
+                ) : (
+                  <div className="mentor-application-workspace">
+                    <div className="mentor-application-workspace__list">
+                      {receivedCourseApplications.map((application) => (
+                        <button
+                          key={application.id}
+                          type="button"
+                          className={
+                            String(selectedMentorApplicationId) === String(application.id)
+                              ? 'mentor-application-summary mentor-application-summary--active'
+                              : 'mentor-application-summary'
+                          }
+                          onClick={() => setSelectedMentorApplicationId(application.id)}
+                        >
+                          <strong>{application.courseTitle}</strong>
+                          <span>{application.applicantNickname || '신청자'}</span>
+                          <small>{formatCourseApplicationStatus(application.status)}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mentor-application-workspace__detail">
+                      {selectedReceivedApplication ? (
+                        <>
+                          <p><strong>신청자:</strong> {selectedReceivedApplication.applicantNickname}</p>
+                          <p><strong>진행 방식:</strong> {formatMeetingTypeLabel(selectedReceivedApplication.courseMeetingType)}</p>
+                          <p><strong>가격:</strong> {formatCurrency(selectedReceivedApplication.coursePrice)}</p>
+                          {selectedReceivedApplication.preferredScheduleTitle ? (
+                            <p><strong>희망 회차:</strong> {selectedReceivedApplication.preferredScheduleTitle}</p>
+                          ) : null}
+                          {selectedReceivedApplication.assignedScheduleTitle ? (
+                            <p><strong>확정 회차:</strong> {selectedReceivedApplication.assignedScheduleTitle}</p>
+                          ) : null}
+                          <p><strong>신청 메시지:</strong> {selectedReceivedApplication.message || '남긴 메시지가 없습니다.'}</p>
+                          {selectedReceivedApplication.status === 'PENDING' && selectedReceivedApplication.courseScheduleItems?.length ? (
+                            <label className="app-field">
+                              <span>승인 시 배정할 회차</span>
+                              <select
+                                className="app-input"
+                                value={courseApplicationAssignedScheduleId}
+                                onChange={(event) => setCourseApplicationAssignedScheduleId(event.target.value)}
+                                disabled={activeCourseApplicationId === selectedReceivedApplication.id}
+                              >
+                                {selectedReceivedApplication.courseScheduleItems.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {selectedReceivedApplication.status === 'PENDING' ? (
+                            <label className="app-field">
+                              <span>검토 메모</span>
+                              <textarea
+                                className="app-input mentoring-textarea"
+                                value={courseApplicationReviewNote}
+                                onChange={(event) => setCourseApplicationReviewNote(event.target.value)}
+                                rows={3}
+                                placeholder="승인 또는 반려 사유를 남길 수 있습니다."
+                                disabled={activeCourseApplicationId === selectedReceivedApplication.id}
+                              />
+                            </label>
+                          ) : null}
+                          <div className="activity-detail__actions">
+                            {selectedReceivedApplication.status === 'APPROVED' &&
+                            selectedReceivedApplication.assignedScheduleItemId &&
+                            getCourseSessionEntryState(selectedReceivedApplication, reservationClock).canEnter ? (
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() => openCourseApplicationSession(selectedReceivedApplication)}
+                              >
+                                세션 입장
+                              </button>
+                            ) : null}
+                            {selectedReceivedApplication.status === 'PENDING' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  onClick={() =>
+                                    handleReceivedCourseApplicationDecision(
+                                      selectedReceivedApplication.id,
+                                      'approve'
+                                    )
+                                  }
+                                  disabled={activeCourseApplicationId === selectedReceivedApplication.id}
+                                >
+                                  {activeCourseApplicationId === selectedReceivedApplication.id ? '처리 중...' : '승인'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() =>
+                                    handleReceivedCourseApplicationDecision(
+                                      selectedReceivedApplication.id,
+                                      'reject'
+                                    )
+                                  }
+                                  disabled={activeCourseApplicationId === selectedReceivedApplication.id}
+                                >
+                                  반려
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                          {selectedReceivedApplication.reviewNote ? (
+                            <p><strong>검토 메모:</strong> {selectedReceivedApplication.reviewNote}</p>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </section>
+          ) : null}
+
+          {mentorWorkspaceTab === 'records' ? (
+            <section className="activity-detail__section">
+              <div className="mentor-records-panel">
+                <div className="mentor-records-panel__summary">
+                  <article className="mentor-record-card">
+                    <strong>완료 기록</strong>
+                    <p>{mentorFeedbackHistory.length}건</p>
+                  </article>
+                  <article className="mentor-record-card">
+                    <strong>받은 신청</strong>
+                    <p>{receivedCourseApplications.length}건</p>
+                  </article>
+                  <article className="mentor-record-card">
+                    <strong>대기 신청</strong>
+                    <p>{pendingApplicationCount}건</p>
+                  </article>
+                </div>
+
+                {mentorFeedbackHistory.length === 0 ? (
+                  <div className="workspace-empty">
+                    <strong>아직 진행 기록이 없습니다.</strong>
+                    <p>멘토링을 완료하고 피드백이 저장되면 이곳에 기록이 쌓입니다.</p>
+                  </div>
+                ) : (
+                  <div className="mentor-record-list">
+                    {mentorFeedbackHistory.map((feedbackItem) => (
+                      <article key={feedbackItem.id} className="mentor-record-item">
+                        <div className="mentor-record-item__header">
+                          <strong>{feedbackItem.counterpartName || '참여자'}</strong>
+                          <span className="activity-badge activity-badge--info">
+                            {feedbackItem.rating || 0}/5
+                          </span>
+                        </div>
+                        <p>{formatSessionSourceLabel(feedbackItem.sessionSource)}</p>
+                        <p>{formatHistorySessionLabel(feedbackItem)}</p>
+                        {feedbackItem.reservedAt ? (
+                          <p>일정: {formatReservationTimestamp(feedbackItem.reservedAt)}</p>
+                        ) : null}
+                        <p>요약: {feedbackItem.summary || '저장된 진행 요약이 없습니다.'}</p>
+                        <p>후기: {feedbackItem.feedback || '저장된 후기가 없습니다.'}</p>
+                        <small>{formatFeedbackTimestamp(feedbackItem.submittedAt)}</small>
+                      </article>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="mentor-course-curriculum">
-                <div className="mentor-course-curriculum__header">
-                  <strong>커리큘럼</strong>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={handleAddCurriculumItem}
-                    disabled={mentorCourseStatus === 'saving'}
-                  >
-                    커리큘럼 추가
-                  </button>
-                </div>
-                {mentorCourseForm.curriculumItems.map((item, itemIndex) => (
-                  <div key={item.id} className="mentor-course-curriculum__item">
-                    <label className="app-field">
-                      <span>{itemIndex + 1}단계 제목</span>
-                      <input
-                        className="app-input"
-                        value={item.title}
-                        onChange={(event) =>
-                          handleCurriculumItemChange(item.id, 'title', event.target.value)
-                        }
-                        placeholder="예: 현재 코드 구조 진단"
-                        disabled={mentorCourseStatus === 'saving'}
-                      />
-                    </label>
-                    <label className="app-field">
-                      <span>{itemIndex + 1}단계 설명</span>
-                      <textarea
-                        className="app-input mentoring-textarea"
-                        value={item.description}
-                        onChange={(event) =>
-                          handleCurriculumItemChange(item.id, 'description', event.target.value)
-                        }
-                        rows={3}
-                        placeholder="이 단계에서 무엇을 다루는지 적어 주세요."
-                        disabled={mentorCourseStatus === 'saving'}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => handleRemoveCurriculumItem(item.id)}
-                      disabled={mentorCourseStatus === 'saving'}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="activity-detail__actions">
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={mentorCourseStatus === 'saving'}
-                >
-                  {mentorCourseStatus === 'saving'
-                    ? '저장 중...'
-                    : mentorCourseFormMode === 'edit'
-                      ? '수업 수정'
-                      : '수업 개설'}
-                </button>
-                {mentorCourseFormMode === 'edit' ? (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={resetMentorCourseEditor}
-                    disabled={mentorCourseStatus === 'saving'}
-                  >
-                    편집 취소
-                  </button>
-                ) : null}
-              </div>
-            </form>
-          </section>
-
-          <section className="activity-detail__section">
-            <h3>개설한 수업</h3>
-            {managedProfile?.courses?.length ? (
-              <div className="mentor-course-list">
-                {managedProfile.courses.map((course) => (
-                  <article key={course.id} className="mentor-course-card">
-                    <div className="mentor-course-card__header">
-                      <div>
-                        <strong>{course.title}</strong>
-                        <p>{course.summary || '요약이 없습니다.'}</p>
-                      </div>
-                      <span className={`activity-badge activity-badge--${course.status === 'PUBLISHED' ? 'accepted' : course.status === 'ARCHIVED' ? 'muted' : 'info'}`}>
-                        {formatMentorCourseStatus(course.status)}
-                      </span>
-                    </div>
-                    <p>{course.description || '설명이 없습니다.'}</p>
-                    <div className="mentor-course-card__meta">
-                      <span>{formatMeetingTypeLabel(course.meetingType)}</span>
-                      <span>{formatCurrency(course.price)}</span>
-                      <span>정원 {course.capacity}명</span>
-                      <span>승인 {course.approvedApplicationCount}명</span>
-                      <span>잔여 {course.remainingCapacity}석</span>
-                    </div>
-                    {course.curriculumItems?.length ? (
-                      <div className="mentor-course-curriculum-preview">
-                        {course.curriculumItems.map((item) => (
-                          <p key={item.id}>
-                            {item.sequence}. {item.title}
-                          </p>
-                        ))}
-                      </div>
-                    ) : null}
-                    {course.scheduleItems?.length ? (
-                      <div className="mentor-course-schedule-preview">
-                        {course.scheduleItems.map((item) => (
-                          <p key={item.id}>
-                            {item.sequence}회차 · {item.title} · {formatDateTime(item.startsAt)} ·
-                            배정 {item.approvedApplicationCount || 0}명
-                          </p>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="activity-detail__actions">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => navigate(`/courses/${course.id}`)}
-                      >
-                        상세 보기
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => handleEditMentorCourse(course)}
-                      >
-                        편집
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p>아직 개설한 수업이 없습니다. 초안으로 저장한 뒤 공개 상태로 전환할 수 있습니다.</p>
-            )}
-          </section>
+            </section>
+          ) : null}
         </>
       ),
     });
@@ -5111,7 +6214,7 @@ export default function HubPage() {
       sessionEntryState.canEnter;
 
     return renderDetailFrame({
-      eyebrow: '내 진행',
+      eyebrow: '일정',
       title: application.courseTitle,
       badge: formatCourseApplicationStatus(application.status),
       tone: getStatusTone(
@@ -5244,6 +6347,18 @@ export default function HubPage() {
       return renderSentReservationDetail(selectedItem.raw);
     }
 
+    if (selectedItem.kind === 'message_request') {
+      return renderMessageRequestDetail(selectedItem.raw);
+    }
+
+    if (selectedItem.kind === 'message_course_application') {
+      return renderMessageCourseApplicationDetail(selectedItem.raw);
+    }
+
+    if (selectedItem.kind === 'message_reservation') {
+      return renderMessageReservationDetail(selectedItem.raw);
+    }
+
     if (selectedItem.kind === 'notification') {
       return renderNotificationDetail(selectedItem.raw);
     }
@@ -5274,6 +6389,10 @@ export default function HubPage() {
 
     if (selectedItem.kind === 'mentor_profile') {
       return renderMentorProfileDetail(selectedItem.raw);
+    }
+
+    if (selectedItem.kind === 'discover_course') {
+      return renderDiscoverCourseDetail(selectedItem.raw);
     }
 
     if (selectedItem.kind === 'feedback_prompt') {
@@ -5686,121 +6805,164 @@ export default function HubPage() {
 
   return (
     <AppLayout panelClassName="app-panel--wide activity-page-shell" headerHidden>
-      <section className="activity-page">
+      <section className={isPublicDiscoverScreen ? 'activity-page activity-page--discover' : 'activity-page'}>
         <header className="activity-page__header">
           <div className="activity-page__heading">
-            <span className="activity-page__eyebrow">내 활동</span>
-            <h1>요청, 예약, 알림을 한곳에서 확인하세요</h1>
-            <p>메타버스에서 시작된 연결을 정리하고, 수락된 세션은 여기서 바로 이어갈 수 있습니다.</p>
+            <span className="activity-page__eyebrow">{pageHeader.eyebrow}</span>
+            <h1>{pageHeader.title}</h1>
+            <p>{pageHeader.description}</p>
           </div>
 
-          <div className="activity-page__header-actions">
-            <div className="activity-page__user">
-              {currentUser ? (
-                <>
-                  <strong>{currentUser.nickname}</strong>
-                  <span>{currentRoleLabel} · {currentUser.email}</span>
-                </>
-              ) : (
-                <span>사용자 불러오는 중...</span>
-              )}
-            </div>
-            <button type="button" className="secondary-button" onClick={() => navigate('/lobby')}>
-              로비
-            </button>
-            <button type="button" className="primary-button" onClick={handleEnterMetaverse}>
-              메타버스 입장
-            </button>
-            <button type="button" className="secondary-button" onClick={handleLogout}>
-              로그아웃
-            </button>
-          </div>
         </header>
 
         <section className="activity-page__summary">
           {sectionSummaryItems.map((summaryItem) => (
-            <article key={summaryItem.label} className="activity-summary-card">
-              <span>{summaryItem.label}</span>
-              <strong>{summaryItem.value}</strong>
-            </article>
+            summaryItem.action ? (
+              <button
+                key={summaryItem.label}
+                type="button"
+                className={
+                  summaryItem.emphasis === 'primary'
+                    ? 'activity-summary-card activity-summary-card--interactive activity-summary-card--primary'
+                    : 'activity-summary-card activity-summary-card--interactive'
+                }
+                onClick={summaryItem.action}
+              >
+                <span>{summaryItem.label}</span>
+                <strong>{summaryItem.value}</strong>
+                {summaryItem.helper ? <small>{summaryItem.helper}</small> : null}
+              </button>
+            ) : (
+              <article key={summaryItem.label} className="activity-summary-card">
+                <span>{summaryItem.label}</span>
+                <strong>{summaryItem.value}</strong>
+              </article>
+            )
           ))}
         </section>
 
         <div className="activity-page__notices">
           {pageNotice ? <p className="app-success">{pageNotice}</p> : null}
           {errorMessage ? <p className="app-error">{errorMessage}</p> : null}
-          <div className="activity-role-banner">
-            <strong>{isMentorAccount ? '멘토 계정으로 보고 있습니다.' : '일반 사용자 계정으로 보고 있습니다.'}</strong>
-            <span>
-              {currentUser?.role === 'ADMIN'
-                ? '멘토 지원 검토, 멘토 노출 제어, 수업 공개 상태 운영을 여기서 처리할 수 있습니다.'
-                : isMentorAccount
-                ? '받은 멘토링 요청과 예약을 여기서 확인하고 수락한 뒤 세션으로 이어갈 수 있습니다.'
-                : '멘토 신청과 멘토링 요청은 여기서 관리합니다. 승인 전까지는 일반 사용자 계정으로 동작합니다.'}
-            </span>
-          </div>
+          {!isActivityScreen ? (
+            <div className="activity-role-banner">
+              <strong>
+                {isMentorDiscoverScreen
+                  ? '공개 멘토 탐색 화면입니다.'
+                  : isCourseDiscoverScreen
+                    ? '공개 멘토링 탐색 화면입니다.'
+                  : !accessToken && isPublicDiscoverScreen
+                    ? '비로그인 상태로 둘러보고 있습니다.'
+                  : isAdminAccount
+                  ? '관리자 계정으로 보고 있습니다.'
+                  : isMentorAccount
+                    ? '멘토 계정으로 보고 있습니다.'
+                    : '일반 사용자 계정으로 보고 있습니다.'}
+              </strong>
+              <span>
+                {isMentorDiscoverScreen
+                  ? '멘토 프로필과 개설 멘토링을 비교하고 바로 연결할 수 있습니다.'
+                  : isCourseDiscoverScreen
+                    ? '개설된 멘토링을 비교하고 상세 신청으로 이어갈 수 있습니다.'
+                  : !accessToken && isPublicDiscoverScreen
+                    ? '요청과 예약은 로그인 후 이어서 진행할 수 있습니다.'
+                  : isAdminAccount
+                  ? '운영 검토와 공개 상태 관리를 이 화면에서 처리합니다.'
+                  : '실제 운영 처리는 각 전용 화면에서 진행합니다.'}
+              </span>
+            </div>
+          ) : null}
         </div>
 
-        <section className="activity-page__layout">
-          <aside className="activity-page__sidebar" aria-label="활동 목록">
-            <div className="activity-category-list">
-              {categoryDefinitions.map((category) => (
+        {pageTabs.length > 1 ? (
+          <div className="activity-page__mode-switcher" aria-label="활동 섹션 전환">
+            {pageTabs.map((tab) => {
+              const isActive =
+                (tab.id === 'activity' && isActivityScreen) ||
+                (tab.id === 'mentor_management' && isMentorManagementScreen) ||
+                (tab.id === 'admin_console' && isAdminConsoleScreen);
+
+              return (
                 <button
-                  key={category.id}
+                  key={tab.id}
                   type="button"
-                  className={
-                    activeCategory === category.id
-                      ? 'activity-category-button activity-category-button--active'
-                      : 'activity-category-button'
-                  }
-                  onClick={() => focusCategory(category.id)}
+                  className={isActive ? 'activity-mode-button activity-mode-button--active' : 'activity-mode-button'}
+                  onClick={() => navigate(tab.path)}
                 >
-                  <span>{category.label}</span>
-                  <strong>{category.count}</strong>
+                  {tab.label}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+        ) : null}
 
-            {renderMentorFilterPanel()}
-
-            <div className="activity-thread-list">
-              {isLoading ? (
-                <div className="activity-list__empty">
-                  <strong>내 활동을 불러오는 중입니다.</strong>
-                  <p>요청, 예약, 알림을 정리하고 있습니다.</p>
+        <section className={showSidebar ? 'activity-page__layout' : 'activity-page__layout activity-page__layout--single'}>
+          {showSidebar ? (
+            <aside className="activity-page__sidebar" aria-label="활동 목록">
+              {categoryDefinitions.length > 0 ? (
+                <div className="activity-category-list">
+                  {categoryDefinitions.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={
+                        activeCategory === category.id
+                          ? 'activity-category-button activity-category-button--active'
+                          : 'activity-category-button'
+                      }
+                      onClick={() => focusCategory(category.id)}
+                    >
+                      <span>{category.label}</span>
+                      <strong>{category.count}</strong>
+                    </button>
+                  ))}
                 </div>
-              ) : activeItems.length === 0 ? (
-                renderSidebarEmpty()
-              ) : (
-                activeItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={
-                      selectedItem?.id === item.id
-                        ? 'activity-thread activity-thread--active'
-                        : 'activity-thread'
-                    }
-                    onClick={() => setSelectedItemId(item.id)}
-                  >
-                    <div className="activity-thread__header">
-                      <strong>{item.title}</strong>
-                      {item.unread ? <span className="activity-thread__dot" aria-hidden="true" /> : null}
-                    </div>
-                    <p>{item.preview}</p>
-                    <div className="activity-thread__meta">
-                      <span className={`activity-badge activity-badge--${item.tone || 'info'}`}>
-                        {item.badge}
-                      </span>
-                      <small>{item.meta}</small>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </aside>
+              ) : null}
 
-          <section className="activity-page__detail" aria-label="활동 상세">
+              {renderMentorFilterPanel()}
+
+              <div className="activity-thread-list">
+                {isLoading ? (
+                  <div className="activity-list__empty">
+                    <strong>내 활동을 불러오는 중입니다.</strong>
+                    <p>요청, 예약, 알림을 정리하고 있습니다.</p>
+                  </div>
+                ) : activeItems.length === 0 ? (
+                  renderSidebarEmpty()
+                ) : (
+                  activeItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        selectedItem?.id === item.id
+                          ? 'activity-thread activity-thread--active'
+                          : 'activity-thread'
+                      }
+                      onClick={() => selectActivityItem(item.id)}
+                    >
+                      <div className="activity-thread__header">
+                        <strong>{item.title}</strong>
+                        {item.unread ? <span className="activity-thread__dot" aria-hidden="true" /> : null}
+                      </div>
+                      <p>{item.preview}</p>
+                      <div className="activity-thread__meta">
+                        <span className={`activity-badge activity-badge--${item.tone || 'info'}`}>
+                          {item.badge}
+                        </span>
+                        <small>{item.meta}</small>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </aside>
+          ) : null}
+
+          <section
+            className={showSidebar ? 'activity-page__detail' : 'activity-page__detail activity-page__detail--full'}
+            aria-label="활동 상세"
+          >
             {renderSelectedDetail()}
           </section>
         </section>

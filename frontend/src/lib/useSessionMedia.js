@@ -1,12 +1,60 @@
 import { useEffect, useRef, useState } from 'react';
 
-function getMediaErrorMessage(error) {
+function isSecureMediaContext() {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  return window.isSecureContext;
+}
+
+function getEnvironmentMediaErrorMessage() {
+  if (!isSecureMediaContext()) {
+    return '카메라와 마이크는 HTTPS 또는 localhost에서만 접근할 수 있습니다.';
+  }
+
+  return '이 브라우저는 카메라와 마이크 접근을 지원하지 않습니다.';
+}
+
+async function getPermissionState(permissionName) {
+  if (
+    typeof navigator === 'undefined' ||
+    !navigator.permissions ||
+    typeof navigator.permissions.query !== 'function'
+  ) {
+    return null;
+  }
+
+  try {
+    const status = await navigator.permissions.query({ name: permissionName });
+    return status?.state || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getMediaErrorMessage(error) {
   if (error?.name === 'NotAllowedError') {
-    return '카메라 또는 마이크 권한이 거부되었습니다.';
+    if (!isSecureMediaContext()) {
+      return '카메라와 마이크는 HTTPS 또는 localhost에서만 접근할 수 있습니다.';
+    }
+
+    const [cameraPermission, microphonePermission] = await Promise.all([
+      getPermissionState('camera'),
+      getPermissionState('microphone'),
+    ]);
+
+    if (cameraPermission === 'denied' || microphonePermission === 'denied') {
+      return '브라우저 사이트 권한에서 카메라 또는 마이크가 차단되었습니다. 주소창의 권한 설정을 허용으로 바꿔 주세요.';
+    }
+
+    return '브라우저 또는 운영체제에서 카메라 또는 마이크 권한이 거부되었습니다. 사이트 권한과 시스템 설정을 확인해 주세요.';
   }
 
   if (error?.name === 'SecurityError') {
-    return '보안 설정 때문에 카메라 또는 마이크에 접근할 수 없습니다.';
+    return isSecureMediaContext()
+      ? '보안 설정 때문에 카메라 또는 마이크에 접근할 수 없습니다.'
+      : '카메라와 마이크는 HTTPS 또는 localhost에서만 접근할 수 있습니다.';
   }
 
   if (error?.name === 'NotFoundError') {
@@ -78,7 +126,7 @@ export function useSessionMedia() {
       typeof navigator.mediaDevices.getUserMedia !== 'function'
     ) {
       setConnectionStatus('error');
-      setErrorMessage('이 브라우저는 카메라와 마이크 접근을 지원하지 않습니다.');
+      setErrorMessage(getEnvironmentMediaErrorMessage());
       setStatusMessage('현재 환경에서는 로컬 미디어를 사용할 수 없습니다.');
       return false;
     }
@@ -122,7 +170,7 @@ export function useSessionMedia() {
       setCameraOn(false);
       setMicrophoneOn(false);
       setConnectionStatus('error');
-      setErrorMessage(getMediaErrorMessage(error));
+      setErrorMessage(await getMediaErrorMessage(error));
       setStatusMessage('로컬 미디어를 준비하지 못했습니다.');
       return null;
     }

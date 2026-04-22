@@ -10,6 +10,7 @@ import {
   getReservationSessionEntry,
 } from '../api/reservations';
 import AppLayout from '../components/AppLayout';
+import { buildActivityPath } from '../lib/activityNavigation';
 import { getCourseSessionEntryState } from '../lib/courseSessionEntryState';
 import { getReservationEntryState } from '../lib/reservationEntryState';
 import { useMentoringSessionChat } from '../lib/useMentoringSessionChat';
@@ -679,13 +680,18 @@ export default function MentoringSessionPage() {
     stopLocalPreview();
   };
 
-  const navigateToLobby = (state) => {
+  const navigateToActivity = (state) => {
+    const returnToItemId = location.state?.returnToItemId;
+    const targetPath = returnToItemId
+      ? buildActivityPath('schedule', returnToItemId)
+      : '/hub';
+
     if (endSessionTimeoutRef.current) {
       window.clearTimeout(endSessionTimeoutRef.current);
       endSessionTimeoutRef.current = null;
     }
 
-    navigate('/hub', {
+    navigate(targetPath, {
       replace: true,
       state,
     });
@@ -729,9 +735,9 @@ export default function MentoringSessionPage() {
   const handleEndSession = async () => {
     if (isCourseSession) {
       cleanupSessionResources();
-      navigateToLobby({
+      navigateToActivity({
         refreshMentoring: true,
-        sessionMessage: '수업 세션 화면을 나갔습니다. 허브에서 다음 회차와 신청 상태를 계속 확인할 수 있습니다.',
+        sessionMessage: '멘토링 화면을 나갔습니다. 내 활동 일정에서 다음 상태를 계속 확인할 수 있습니다.',
       });
       return;
     }
@@ -760,14 +766,14 @@ export default function MentoringSessionPage() {
       setSessionRequest(completedSession);
       cleanupSessionResources();
       setSessionExitStatus('ended');
-      setActionMessage('세션이 종료되었습니다. 허브로 돌아가 빠르게 피드백을 남겨 보세요.');
+      setActionMessage('멘토링이 종료되었습니다. 내 활동에서 바로 피드백과 다음 행동을 확인할 수 있습니다.');
 
       endSessionTimeoutRef.current = window.setTimeout(() => {
-        navigateToLobby({
+        navigateToActivity({
           refreshMentoring: true,
           sessionMessage: isReservationSession
-            ? '멘토링 세션이 종료되었습니다. 아래에서 예약 세션 피드백을 남길 수 있습니다.'
-            : '멘토링 세션이 종료되었습니다. 아래에서 빠르게 피드백을 남길 수 있습니다.',
+            ? '멘토링이 종료되었습니다. 내 활동 기록에서 예약 피드백을 남길 수 있습니다.'
+            : '멘토링이 종료되었습니다. 내 활동 기록에서 빠르게 피드백을 남길 수 있습니다.',
           feedbackPrompt: {
             requestId: completedSession?.id ?? sessionRequest?.id ?? requestId,
             counterpartName: counterpartName || '세션 상대',
@@ -799,9 +805,9 @@ export default function MentoringSessionPage() {
     toggleMicrophone();
   };
 
-  const handleBackToLobby = () => {
+  const handleBackToActivity = () => {
     cleanupSessionResources();
-    navigateToLobby({
+    navigateToActivity({
       refreshMentoring: true,
     });
   };
@@ -974,10 +980,10 @@ export default function MentoringSessionPage() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={handleBackToLobby}
+                onClick={handleBackToActivity}
                 disabled={sessionExitStatus === 'ending'}
               >
-                로비로 돌아가기
+                내 활동으로 돌아가기
               </button>
             </div>
           </section>

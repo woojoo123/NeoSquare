@@ -3,11 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getMe } from '../api/auth';
 import { getSpace, getSpaces } from '../api/spaces';
-import {
-  createStudySession,
-  getStudySessionsBySpace,
-  joinStudySession,
-} from '../api/study';
+import { getStudySessionsBySpace } from '../api/study';
 import AvatarPreview from '../components/AvatarPreview';
 import SpaceGame from '../components/SpaceGame';
 import { AVATAR_PRESETS, getAvatarPreset } from '../lib/avatarPresets';
@@ -22,21 +18,12 @@ import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useSessionMedia } from '../lib/useSessionMedia';
 import { useAuthStore } from '../store/authStore';
 
-const STUDY_RECRUIT_PREFIX = '[스터디 모집]';
 const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY'];
 const CHAT_SCOPE_PUBLIC = 'PUBLIC';
 const CHAT_SCOPE_WHISPER = 'WHISPER';
 const CHAT_VARIANT_TEXT = 'TEXT';
 const CHAT_VARIANT_EMOJI = 'EMOJI';
 const QUICK_EMOJI_OPTIONS = ['😀', '👍', '🙌', '❤️', '😂'];
-
-function buildStudyRecruitmentMessage(topic, note) {
-  const trimmedTopic = topic.trim();
-  const trimmedNote = note.trim();
-  const topicPart = `주제: ${trimmedTopic}`;
-  const notePart = trimmedNote ? ` | 메모: ${trimmedNote}` : '';
-  return `${STUDY_RECRUIT_PREFIX} ${topicPart}${notePart}`;
-}
 
 function formatChatTimestamp(value) {
   if (!value) {
@@ -56,6 +43,14 @@ function formatChatTimestamp(value) {
 }
 
 function formatStudySessionStatus(status) {
+  if (status === 'RECRUITING') {
+    return '모집 중';
+  }
+
+  if (status === 'READY') {
+    return '시작 가능';
+  }
+
   if (status === 'ACTIVE') {
     return '진행 중';
   }
@@ -90,11 +85,7 @@ export default function SpacePage() {
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
   const [chatInput, setChatInput] = useState('');
   const [chatScope, setChatScope] = useState(CHAT_SCOPE_PUBLIC);
-  const [studyTopic, setStudyTopic] = useState('');
-  const [studyNote, setStudyNote] = useState('');
-  const [studyStatus, setStudyStatus] = useState('idle');
   const [studyNotice, setStudyNotice] = useState('');
-  const [studyError, setStudyError] = useState('');
   const [studySessions, setStudySessions] = useState([]);
   const [studySessionsStatus, setStudySessionsStatus] = useState('idle');
   const [studySessionsError, setStudySessionsError] = useState('');
@@ -109,9 +100,13 @@ export default function SpacePage() {
     typeof location.state?.entryFromSpaceType === 'string'
       ? location.state.entryFromSpaceType
       : null;
+  const studyEntryMessage =
+    typeof location.state?.studyEntryMessage === 'string'
+      ? location.state.studyEntryMessage
+      : '';
+  const highlightedStudySessionId = location.state?.highlightStudySessionId ?? null;
   const chatInputRef = useRef(null);
   const chatMessagesEndRef = useRef(null);
-  const studyTopicInputRef = useRef(null);
   const {
     localVideoRef,
     hasLocalPreview,
@@ -217,6 +212,23 @@ export default function SpacePage() {
     setActiveDrawer(null);
     setIsSupportPanelOpen(false);
   }, [space?.id, space?.type]);
+
+  useEffect(() => {
+    if (space?.type !== 'STUDY') {
+      return;
+    }
+
+    if (!location.state?.openStudyDrawer && !studyEntryMessage) {
+      return;
+    }
+
+    setActiveDrawer('study');
+    setIsSupportPanelOpen(true);
+
+    if (studyEntryMessage) {
+      setStudyNotice(studyEntryMessage);
+    }
+  }, [location.state?.openStudyDrawer, space?.type, studyEntryMessage]);
 
   useEffect(() => {
     if (activeDrawer == null) {
@@ -412,8 +424,6 @@ export default function SpacePage() {
     }
 
     setSelectedParticipantId(participant.userId);
-    setStudyNotice('');
-    setStudyError('');
     handleActivateWhisper(participant);
   };
 
@@ -469,79 +479,6 @@ export default function SpacePage() {
     }
 
     setIsEmojiPaletteOpen(false);
-  };
-
-  const handleCreateStudySession = async (event) => {
-    event.preventDefault();
-
-    if (!studyTopic.trim()) {
-      setStudyError('스터디 주제를 입력해 주세요.');
-      setStudyNotice('');
-      return;
-    }
-
-    if (!space?.id) {
-      setStudyError('스터디 공간 정보가 아직 준비되지 않았습니다.');
-      setStudyNotice('');
-      return;
-    }
-
-    setStudyStatus('saving');
-    setStudyNotice('');
-    setStudyError('');
-
-    try {
-      const createdStudySession = await createStudySession({
-        spaceId: Number(space.id),
-        title: studyTopic.trim(),
-        description: studyNote.trim(),
-      });
-
-      setStudySessions((previousSessions) => [
-        createdStudySession,
-        ...previousSessions.filter((studySession) => studySession.id !== createdStudySession.id),
-      ]);
-
-      const didBroadcast = sendChatMessage(buildStudyRecruitmentMessage(studyTopic, studyNote));
-
-      setStudyTopic('');
-      setStudyNote('');
-      setStudyStatus('saved');
-      setStudyError('');
-      setStudyNotice(
-        didBroadcast
-          ? '스터디 세션을 만들고 공간 채팅에도 모집 메시지를 남겼습니다.'
-          : '스터디 세션을 만들었습니다. 현재 스터디 목록에서 바로 입장할 수 있습니다.'
-      );
-    } catch (error) {
-      setStudyStatus('error');
-      setStudyError(
-        error?.response?.data?.message || error.message || '스터디 세션 생성에 실패했습니다.'
-      );
-    }
-  };
-
-  const handleJoinStudySession = async (studySession) => {
-    if (!studySession?.id) {
-      return;
-    }
-
-    try {
-      const joinedStudySession = await joinStudySession(studySession.id);
-      setStudySessions((previousSessions) =>
-        previousSessions.map((currentSession) =>
-          currentSession.id === joinedStudySession.id ? joinedStudySession : currentSession
-        )
-      );
-      navigate(`/study/sessions/${joinedStudySession.id}`, {
-        state: { studySession: joinedStudySession },
-      });
-    } catch (error) {
-      setStudyError(
-        error?.response?.data?.message || error.message || '스터디 세션 참가에 실패했습니다.'
-      );
-      setStudyNotice('');
-    }
   };
 
   const handleOpenStudySession = (studySession) => {
@@ -618,8 +555,18 @@ export default function SpacePage() {
     setIsSupportPanelOpen(true);
   };
 
-  const handleReturnToLobby = () => {
-    navigate('/lobby');
+  const handleReturnToHome = () => {
+    navigate('/');
+  };
+
+  const handleOpenStudyHub = (studySessionId = null) => {
+    navigate('/study', {
+      state: studySessionId
+        ? {
+            highlightStudySessionId: studySessionId,
+          }
+        : undefined,
+    });
   };
 
   const handleCloseSupportPanel = () => {
@@ -680,25 +627,24 @@ export default function SpacePage() {
     }
   };
 
+  const handlePlayerMove = (position) => {
+    sendUserMove(position);
+  };
+
   const activeDrawerLabel = drawerTabs.find((tab) => tab.id === activeDrawer)?.label || '채팅';
 
   const activeDrawerDescription =
     activeDrawer === 'chat'
-      ? ''
+      ? `${spaceDefinition?.label || '현재 공간'}에서 대화합니다.`
       : activeDrawer === 'study'
-          ? '스터디 세션을 열거나 참여합니다.'
+          ? '스터디 목록'
           : '현재 공간에서 필요한 도구를 확인합니다.';
+  const participantCountLabel = `${remoteUsers.length + 1}명 접속 중`;
 
   const renderDrawerContent = () => {
     if (activeDrawer === 'chat') {
       return (
-        <section className="lobby-chat-panel space-hud-chat-panel">
-          <div className="lobby-chat-header">
-            <div>
-              <h3>{spaceDefinition.label} 채팅</h3>
-            </div>
-          </div>
-
+        <section className="space-chat-layout">
           <div className="space-chat-target-bar">
             <label className="space-chat-target-label" htmlFor="space-chat-target-select">
               대상
@@ -718,9 +664,9 @@ export default function SpacePage() {
             </select>
           </div>
 
-          <div className="lobby-chat-messages">
+          <div className="lobby-chat-messages space-chat-layout__messages">
             {chatMessages.length === 0 ? (
-              <p className="app-note">아직 채팅 메시지가 없습니다.</p>
+              <p className="app-note space-chat-layout__empty">아직 채팅 메시지가 없습니다.</p>
             ) : (
               chatMessages.map((message) => (
                 <article
@@ -744,7 +690,7 @@ export default function SpacePage() {
             <div ref={chatMessagesEndRef} />
           </div>
 
-          <form className="lobby-chat-form" onSubmit={handleChatSubmit}>
+          <form className="lobby-chat-form space-chat-layout__form" onSubmit={handleChatSubmit}>
             <input
               ref={chatInputRef}
               type="text"
@@ -769,37 +715,13 @@ export default function SpacePage() {
       return (
         <div className="space-hud-stack">
           <section className="space-hud-card">
-            <h3>스터디 모집 게시</h3>
-            <form className="mentoring-form" onSubmit={handleCreateStudySession}>
-              <label className="app-field">
-                <span>스터디 주제</span>
-                <input
-                  ref={studyTopicInputRef}
-                  type="text"
-                  className="app-input"
-                  value={studyTopic}
-                  onChange={(event) => setStudyTopic(event.target.value)}
-                  placeholder="예: React 상태관리, 코딩테스트, 포트폴리오 리뷰"
-                  disabled={studyStatus === 'saving'}
-                />
-              </label>
-              <label className="app-field">
-                <span>메모</span>
-                <textarea
-                  className="app-input mentoring-textarea"
-                  value={studyNote}
-                  onChange={(event) => setStudyNote(event.target.value)}
-                  rows={3}
-                  placeholder="진행 방식이나 목표를 간단히 적어 주세요."
-                  disabled={studyStatus === 'saving'}
-                />
-              </label>
-              <button type="submit" className="primary-button">
-                {studyStatus === 'saving' ? '스터디 세션 생성 중...' : '스터디 세션 만들기'}
+            <h3>스터디</h3>
+            <div className="space-selected-actions">
+              <button type="button" className="primary-button" onClick={() => handleOpenStudyHub()}>
+                스터디로 이동
               </button>
-            </form>
+            </div>
             {studyNotice ? <p className="app-success">{studyNotice}</p> : null}
-            {studyError ? <p className="app-error">{studyError}</p> : null}
           </section>
 
           <section className="space-hud-card">
@@ -809,11 +731,18 @@ export default function SpacePage() {
             ) : studySessionsError ? (
               <p className="app-error">{studySessionsError}</p>
             ) : studySessions.length === 0 ? (
-              <p className="app-note">아직 진행 중인 스터디 세션이 없습니다.</p>
+              <p className="app-note">진행 중인 스터디가 없습니다.</p>
             ) : (
               <ul className="space-study-list">
                 {studySessions.map((studySession) => (
-                  <li key={studySession.id} className="space-study-card">
+                  <li
+                    key={studySession.id}
+                    className={
+                      String(studySession.id) === String(highlightedStudySessionId)
+                        ? 'space-study-card space-study-card--highlighted'
+                        : 'space-study-card'
+                    }
+                  >
                     <div className="space-study-card__meta">
                       <strong>{studySession.title}</strong>
                       <span>
@@ -838,10 +767,10 @@ export default function SpacePage() {
                       ) : (
                         <button
                           type="button"
-                          className="primary-button"
-                          onClick={() => handleJoinStudySession(studySession)}
+                          className="secondary-button"
+                          onClick={() => handleOpenStudyHub(studySession.id)}
                         >
-                          참여하기
+                          허브에서 참여
                         </button>
                       )}
                     </div>
@@ -870,7 +799,7 @@ export default function SpacePage() {
                 avatarPresetId={avatarPresetId}
                 connectedSpaces={connectedSpaces}
                 spawnFromSpaceType={spawnFromSpaceType}
-                onPlayerMove={sendUserMove}
+                onPlayerMove={handlePlayerMove}
                 onSpaceEnter={handleSpacePortalEnter}
                 onParticipantSelect={selectParticipant}
                 remoteEvent={remoteEvent}
@@ -883,9 +812,9 @@ export default function SpacePage() {
                 <button
                   type="button"
                   className="space-top-overlay__menu-button"
-                  onClick={handleReturnToLobby}
+                  onClick={handleReturnToHome}
                 >
-                  로비
+                  홈
                 </button>
               </div>
             </header>
@@ -980,6 +909,19 @@ export default function SpacePage() {
                 >
                   채팅
                 </button>
+                {space?.type === 'STUDY' ? (
+                  <button
+                    type="button"
+                    className={`space-bottom-bar__action ${
+                      isSupportPanelOpen && activeDrawer === 'study'
+                        ? 'space-bottom-bar__action--active'
+                        : ''
+                    }`}
+                    onClick={() => handleToggleSupportDrawer('study')}
+                  >
+                    스터디
+                  </button>
+                ) : null}
                 {hasLocalPreview && cameraOn ? (
                   <div className="space-bottom-bar__preview">
                     <video

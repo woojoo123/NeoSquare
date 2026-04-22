@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 840">
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#2d1e0f" />
+      <stop offset="60%" stop-color="#392511" />
+      <stop offset="100%" stop-color="#130c06" />
+    </linearGradient>
+    <linearGradient id="hall" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#7b624f" />
+      <stop offset="100%" stop-color="#5b4638" />
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="840" fill="url(#sky)" />
+  <rect x="46" y="92" width="1188" height="560" rx="36" fill="#24160c" stroke="#6d512f" stroke-opacity="0.4"/>
+  <rect x="96" y="124" width="1088" height="474" rx="30" fill="url(#hall)" />
+  <rect x="96" y="124" width="1088" height="68" rx="30" fill="#52361d" opacity="0.58"/>
+  <g opacity="0.14" stroke="#fff7ed">
+    <path d="M120 214h1040M120 290h1040M120 366h1040M120 442h1040M120 518h1040"/>
+    <path d="M198 198v362M276 198v362M354 198v362M432 198v362M510 198v362M770 198v362M848 198v362M926 198v362M1004 198v362M1082 198v362"/>
+  </g>
+  <g>
+    <rect x="92" y="102" width="234" height="204" rx="22" fill="#6e5948"/>
+    <rect x="80" y="84" width="258" height="32" rx="16" fill="#493221"/>
+    <rect x="954" y="102" width="234" height="204" rx="22" fill="#6e5948"/>
+    <rect x="942" y="84" width="258" height="32" rx="16" fill="#493221"/>
+    <rect x="474" y="162" width="332" height="114" rx="28" fill="#443122"/>
+    <rect x="410" y="338" width="460" height="74" rx="22" fill="#3d2b1f"/>
+    <rect x="212" y="604" width="192" height="84" rx="22" fill="#453022"/>
+    <rect x="876" y="604" width="192" height="84" rx="22" fill="#453022"/>
+  </g>
+  <g>
+    <rect x="512" y="184" width="256" height="28" rx="14" fill="#fef3c7" opacity="0.9"/>
+    <rect x="560" y="222" width="160" height="18" rx="9" fill="#fde68a" opacity="0.84"/>
+  </g>
+  <g>
+    <rect x="516" y="446" width="248" height="118" rx="30" fill="#2a1b10"/>
+    <rect x="548" y="472" width="184" height="18" rx="9" fill="#fff7ed"/>
+    <rect x="574" y="506" width="132" height="14" rx="7" fill="#fed7aa"/>
+    <rect x="594" y="534" width="92" height="14" rx="7" fill="#fdba74"/>
+  </g>
+  <g opacity="0.24">
+    <circle cx="206" cy="284" r="48" fill="#f59e0b"/>
+    <circle cx="1074" cy="284" r="48" fill="#f59e0b"/>
+    <circle cx="640" cy="154" r="74" fill="#fbbf24"/>
+  </g>
+  <g>
+    <rect x="0" y="648" width="1280" height="152" fill="#231913"/>
+    <rect x="0" y="666" width="1280" height="18" fill="#140d09"/>
+    <g fill="#f8fafc" opacity="0.18">
+      <rect x="30" y="744" width="42" height="5" rx="2"/>
+      <rect x="116" y="744" width="42" height="5" rx="2"/>
+      <rect x="202" y="744" width="42" height="5" rx="2"/>
+      <rect x="288" y="744" width="42" height="5" rx="2"/>
+      <rect x="374" y="744" width="42" height="5" rx="2"/>
+      <rect x="460" y="744" width="42" height="5" rx="2"/>
+      <rect x="546" y="744" width="42" height="5" rx="2"/>
+      <rect x="632" y="744" width="42" height="5" rx="2"/>
+      <rect x="718" y="744" width="42" height="5" rx="2"/>
+      <rect x="804" y="744" width="42" height="5" rx="2"/>
+      <rect x="890" y="744" width="42" height="5" rx="2"/>
+      <rect x="976" y="744" width="42" height="5" rx="2"/>
+      <rect x="1062" y="744" width="42" height="5" rx="2"/>
+      <rect x="1148" y="744" width="42" height="5" rx="2"/>
+    </g>
+  </g>
+  <text x="640" y="110" text-anchor="middle" fill="#fffbeb" font-family="Arial, sans-serif" font-size="42" letter-spacing="4" opacity="0.78">MENTORING HALL</text>
+</svg>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { logout } from '../api/auth';
 import { getSpaces } from '../api/spaces';
 import { getPrimarySpace } from '../lib/primarySpaceNavigation';
 import { useAuthStore } from '../store/authStore';
@@ -42,8 +43,10 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.currentUser);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [spaceLoadError, setSpaceLoadError] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -79,13 +82,32 @@ export default function LandingPage() {
 
   const orderedSpaces = useMemo(() => getOrderedSpaces(spaces), [spaces]);
   const primarySpace = useMemo(() => getPrimarySpace(orderedSpaces), [orderedSpaces]);
-  const studySpace = useMemo(
-    () => orderedSpaces.find((space) => space.type === 'STUDY') || null,
-    [orderedSpaces]
-  );
   const primarySpaceName = primarySpace?.name || '메인광장';
-  const studySpaceName = studySpace?.name || '스터디 라운지';
   const userLabel = currentUser?.nickname || '사용자';
+  const isMentorAccount = currentUser?.role === 'MENTOR';
+  const landingNavLinks = useMemo(() => {
+    const links = [
+      { to: '/study', label: '스터디' },
+      { to: '/mentors', label: '멘토 찾기' },
+      { to: '/courses', label: '멘토링 찾기' },
+    ];
+
+    if (!accessToken) {
+      return links;
+    }
+
+    links.push({ to: '/hub', label: '내 활동' });
+
+    if (isMentorAccount) {
+      links.push({ to: '/mentor/manage', label: '멘토 활동' });
+    }
+
+    if (currentUser?.role === 'ADMIN') {
+      links.push({ to: '/admin/console', label: '운영 콘솔' });
+    }
+
+    return links;
+  }, [accessToken, currentUser?.role, isMentorAccount]);
 
   const featureCards = useMemo<FeatureCard[]>(
     () => [
@@ -104,13 +126,13 @@ export default function LandingPage() {
         iconClassName: 'landing-feature-icon--chat',
       },
       {
-        title: '대화에서 스터디와 멘토링까지',
-        description: `${studySpaceName}에서는 공개 대화와 스터디가 이어지고, 멘토링은 내 활동에서 요청과 세션으로 자연스럽게 확장됩니다.`,
+        title: '스터디와 멘토링을 나눠서 시작',
+        description: '스터디를 만들고 참여할 수 있습니다.',
         accentClassName: 'landing-feature-card--growth',
         iconClassName: 'landing-feature-icon--growth',
       },
     ],
-    [studySpaceName]
+    []
   );
 
   const supportCards = useMemo<SupportCard[]>(
@@ -121,7 +143,7 @@ export default function LandingPage() {
         items: [
           `${primarySpaceName} 둘러보기`,
           '사람들과 실시간 채팅 참여',
-          `${studySpaceName}에서 함께 공부하기`,
+          '스터디 개설 및 참여',
           '내 활동에서 멘토링 요청과 예약 관리',
         ],
       },
@@ -136,20 +158,38 @@ export default function LandingPage() {
         ],
       },
     ],
-    [primarySpaceName, studySpaceName]
+    [primarySpaceName]
   );
 
   function handlePrimaryAction() {
     if (accessToken) {
-      navigate('/lobby');
+      navigate('/enter');
       return;
     }
 
     navigate('/login', {
       state: {
-        message: '로그인 후 로비에서 캐릭터를 고르고 메타버스에 입장할 수 있습니다.',
+        message: '로그인 후 캐릭터를 고르고 메타버스에 입장할 수 있습니다.',
       },
     });
+  }
+
+  async function handleLogout() {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+
+    try {
+      await logout();
+    } catch {
+      // 토큰 기반 세션이라 서버 요청이 실패해도 로컬 상태는 정리한다.
+    } finally {
+      clearAuth();
+      navigate('/', { replace: true });
+      setIsLoggingOut(false);
+    }
   }
 
   return (
@@ -163,18 +203,38 @@ export default function LandingPage() {
             <span className="landing-topbar__name">NeoSquare</span>
           </Link>
 
+          {landingNavLinks.length > 0 ? (
+            <nav className="landing-topbar__nav" aria-label="주요 메뉴">
+              {landingNavLinks.map((link) => (
+                <Link key={link.to} className="landing-topbar__nav-link" to={link.to}>
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+
           <div className="landing-topbar__actions">
             {accessToken ? (
               <span className="landing-topbar__status">{userLabel}님 이용 중</span>
-            ) : null}
-            <Link className="landing-topbar__link" to={accessToken ? '/lobby' : '/login'}>
-              {accessToken ? '로비' : '로그인'}
-            </Link>
-            {!accessToken ? (
+            ) : (
+              <Link className="landing-topbar__link" to="/login">
+                로그인
+              </Link>
+            )}
+            {accessToken ? (
+              <button
+                type="button"
+                className="landing-topbar__button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? '로그아웃 중...' : '로그아웃'}
+              </button>
+            ) : (
               <Link className="landing-topbar__button" to="/signup">
                 회원가입
               </Link>
-            ) : null}
+            )}
           </div>
         </header>
 
@@ -183,15 +243,14 @@ export default function LandingPage() {
             <h1>NeoSquare</h1>
             <p>
               NeoSquare는 메타버스 공간 안에서 사람들이 자유롭게 만나고, 대화하고,
-              스터디하고, 필요하면 멘토링 세션까지 이어갈 수 있는 가상 커뮤니티 공간입니다.
+              필요하면 스터디와 멘토링으로 자연스럽게 이어질 수 있는 가상 커뮤니티 공간입니다.
             </p>
             <p>
               단순히 글만 주고받는 서비스가 아니라, 같은 공간 안에서 다른 사람을 만나고
               실시간으로 소통하며 자연스럽게 관계를 만들 수 있습니다.
             </p>
             <p>
-              관심사가 맞는 사람과 대화를 시작할 수도 있고, 스터디처럼 공개 공간에서 바로
-              이어가거나 멘토링처럼 허브 기반 세션으로 확장할 수도 있습니다.
+              관심사가 맞는 사람과 대화를 시작한 뒤, 스터디와 멘토링 메뉴로 바로 이어질 수 있습니다.
             </p>
             <p>지금 NeoSquare에 입장해서 새로운 연결을 시작해보세요.</p>
           </article>
@@ -224,14 +283,14 @@ export default function LandingPage() {
             </section>
 
             <button type="button" className="landing-primary-button" onClick={handlePrimaryAction}>
-              {accessToken ? '로비로 이동하기' : '메타버스 입장하기'}
+              {accessToken ? '메타버스 입장하기' : '메타버스 입장하기'}
             </button>
 
             <p className="landing-cta-note">
               {spaceLoadError
                 ? spaceLoadError
                 : accessToken
-                  ? '로그인된 상태라면 로비에서 캐릭터를 고르고 메타버스에 입장할 수 있습니다.'
+                  ? `캐릭터를 고른 뒤 바로 ${primarySpaceName}으로 입장할 수 있습니다.`
                   : '로그인 후 캐릭터를 고르고 메인광장으로 입장할 수 있습니다.'}
             </p>
           </div>

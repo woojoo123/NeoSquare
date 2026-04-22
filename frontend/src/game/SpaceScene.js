@@ -9,6 +9,7 @@ import {
   getAvatarSpriteFrame,
 } from '../lib/avatarPresets';
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
+import { getSpaceWorldConfig } from '../lib/spaceWorlds';
 
 const WORLD_WIDTH = 1280;
 const WORLD_HEIGHT = 840;
@@ -17,14 +18,34 @@ const WORLD_PADDING = 56;
 const PORTAL_ENTRY_DISTANCE = 92;
 const PARTICIPANT_INTERACTION_DISTANCE = 96;
 const PORTAL_SPAWN_OFFSET_Y = 112;
-const CAMERA_ZOOM = 1.02;
+const DEFAULT_CAMERA_ZOOM = 1;
+const CAMERA_ZOOM_BY_SPACE_TYPE = {
+  MAIN: 0.96,
+};
+const AVATAR_RENDER_SCALE = 0.88;
 const AVATAR_HIT_AREA_WIDTH = 68;
 const AVATAR_HIT_AREA_HEIGHT = 96;
-const AVATAR_RING_Y = 16;
-const AVATAR_NAME_OFFSET_Y = 42;
+const AVATAR_SHADOW_OFFSET_Y = 22 * AVATAR_RENDER_SCALE;
+const AVATAR_SHADOW_WIDTH = 38 * AVATAR_RENDER_SCALE;
+const AVATAR_SHADOW_HEIGHT = 16 * AVATAR_RENDER_SCALE;
+const AVATAR_RING_Y = 16 * AVATAR_RENDER_SCALE;
+const AVATAR_RING_WIDTH = 52 * AVATAR_RENDER_SCALE;
+const AVATAR_RING_HEIGHT = 22 * AVATAR_RENDER_SCALE;
+const AVATAR_NAME_OFFSET_Y = 40;
+const AVATAR_BADGE_OFFSET_X = 21 * AVATAR_RENDER_SCALE;
+const AVATAR_BADGE_OFFSET_Y = -16 * AVATAR_RENDER_SCALE;
+const AVATAR_BADGE_RADIUS = 4 * AVATAR_RENDER_SCALE;
 const AVATAR_WALK_FRAME_DURATION = 140;
 const CHAT_BUBBLE_DURATION_MS = 3600;
 const EMOJI_BUBBLE_DURATION_MS = 2200;
+const CHAT_BUBBLE_TEXT_WRAP_WIDTH = 136;
+const CHAT_BUBBLE_TEXT_OFFSET_Y = -70 * AVATAR_RENDER_SCALE;
+const CHAT_BUBBLE_EMOJI_OFFSET_Y = -62 * AVATAR_RENDER_SCALE;
+const CHAT_BUBBLE_TEXT_MAX_LENGTH = 40;
+const SCENE_DECOR_DEPTH = 8;
+const AVATAR_DEPTH_BASE = 120;
+const FOREGROUND_DEPTH = 980;
+const PLAYER_COLLISION_RADIUS = 22;
 
 const SPACE_PORTAL_LAYOUTS = {
   MAIN: [],
@@ -78,6 +99,10 @@ function getSpaceTheme(spaceType) {
   };
 }
 
+function getCameraZoom(spaceType) {
+  return CAMERA_ZOOM_BY_SPACE_TYPE[spaceType] || DEFAULT_CAMERA_ZOOM;
+}
+
 function getPortalDefinitions(spaceType, connectedSpaces) {
   const layouts = SPACE_PORTAL_LAYOUTS[spaceType] || [];
 
@@ -104,6 +129,20 @@ function getPortalDefinitions(spaceType, connectedSpaces) {
       };
     })
     .filter(Boolean);
+}
+
+function clampColorChannel(value) {
+  return Phaser.Math.Clamp(Math.round(value), 0, 255);
+}
+
+function shadeColor(color, amount = 0) {
+  const baseColor = Phaser.Display.Color.IntegerToColor(color);
+
+  return Phaser.Display.Color.GetColor(
+    clampColorChannel(baseColor.red + amount),
+    clampColorChannel(baseColor.green + amount),
+    clampColorChannel(baseColor.blue + amount)
+  );
 }
 
 export default class SpaceScene extends Phaser.Scene {
@@ -136,30 +175,41 @@ export default class SpaceScene extends Phaser.Scene {
     this.interactionKey = null;
     this.remotePlayers = new Map();
     this.theme = getSpaceTheme(spaceType);
+    this.worldConfig = getSpaceWorldConfig(spaceType);
     this.portals = [];
     this.activePortalTargetType = null;
     this.activeParticipantUserId = null;
     this.isEnteringPortal = false;
+    this.blockingZones = [];
+    this.ambientLights = [];
   }
 
   preload() {
-    if (this.textures.exists(AVATAR_SPRITE_SHEET_KEY)) {
-      return;
+    if (!this.textures.exists(AVATAR_SPRITE_SHEET_KEY)) {
+      this.load.spritesheet(AVATAR_SPRITE_SHEET_KEY, AVATAR_SPRITE_SHEET_URL, {
+        frameWidth: AVATAR_SPRITE_FRAME_SIZE,
+        frameHeight: AVATAR_SPRITE_FRAME_SIZE,
+      });
     }
 
-    this.load.spritesheet(AVATAR_SPRITE_SHEET_KEY, AVATAR_SPRITE_SHEET_URL, {
-      frameWidth: AVATAR_SPRITE_FRAME_SIZE,
-      frameHeight: AVATAR_SPRITE_FRAME_SIZE,
-    });
+    if (!this.textures.exists(this.worldConfig.assetKey)) {
+      this.load.image(this.worldConfig.assetKey, this.worldConfig.backgroundUrl);
+    }
+
+    if (this.worldConfig.portalAssetKey && this.worldConfig.portalAssetUrl) {
+      if (!this.textures.exists(this.worldConfig.portalAssetKey)) {
+        this.load.image(this.worldConfig.portalAssetKey, this.worldConfig.portalAssetUrl);
+      }
+    }
   }
 
   create() {
     this.cameras.main.setBackgroundColor('#0f172a');
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setRoundPixels(true);
-    this.cameras.main.setZoom(CAMERA_ZOOM);
+    this.cameras.main.setZoom(getCameraZoom(this.spaceType));
 
-    this.drawSpaceBackground();
+    this.renderSpaceWorld();
     this.portals = this.drawPortals();
 
     const spawnPosition = this.resolveSpawnPosition();
@@ -220,16 +270,15 @@ export default class SpaceScene extends Phaser.Scene {
     const previousX = this.player.x;
     const previousY = this.player.y;
 
-    this.player.x = Phaser.Math.Clamp(
+    const nextPosition = this.resolveMovement(
       this.player.x + direction.x * distance,
-      WORLD_PADDING,
-      WORLD_WIDTH - WORLD_PADDING
-    );
-    this.player.y = Phaser.Math.Clamp(
       this.player.y + direction.y * distance,
-      WORLD_PADDING,
-      WORLD_HEIGHT - WORLD_PADDING
+      this.player.x,
+      this.player.y
     );
+
+    this.player.x = nextPosition.x;
+    this.player.y = nextPosition.y;
 
     this.updateAvatarMotion(
       this.playerAvatar,
@@ -354,7 +403,7 @@ export default class SpaceScene extends Phaser.Scene {
       }
     }
 
-    return DEFAULT_SPAWN_POSITIONS[this.spaceType] || DEFAULT_SPAWN_POSITIONS.MAIN;
+    return this.worldConfig.spawn || DEFAULT_SPAWN_POSITIONS[this.spaceType] || DEFAULT_SPAWN_POSITIONS.MAIN;
   }
 
   addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
@@ -465,11 +514,14 @@ export default class SpaceScene extends Phaser.Scene {
     const fallbackPosition = this.getRemoteSpawnPosition(userId, fallbackX, fallbackY);
     const nextX = Number.isFinite(x) ? x : fallbackPosition.x;
     const nextY = Number.isFinite(y) ? y : fallbackPosition.y;
+    const resolvedPosition = this.resolveMovement(
+      nextX,
+      nextY,
+      Number.isFinite(fallbackX) ? fallbackX : fallbackPosition.x,
+      Number.isFinite(fallbackY) ? fallbackY : fallbackPosition.y
+    );
 
-    return {
-      x: Phaser.Math.Clamp(nextX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
-      y: Phaser.Math.Clamp(nextY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
-    };
+    return resolvedPosition;
   }
 
   getRemoteSpawnPosition(userId, fallbackX, fallbackY) {
@@ -486,6 +538,51 @@ export default class SpaceScene extends Phaser.Scene {
       x: 140 + ((seed * 127) % (WORLD_WIDTH - 280)),
       y: 140 + ((seed * 101) % (WORLD_HEIGHT - 280)),
     };
+  }
+
+  resolveMovement(nextX, nextY, previousX, previousY) {
+    const clampedPosition = {
+      x: Phaser.Math.Clamp(nextX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
+      y: Phaser.Math.Clamp(nextY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
+    };
+
+    if (!this.isPositionBlocked(clampedPosition.x, clampedPosition.y)) {
+      return clampedPosition;
+    }
+
+    const xOnly = {
+      x: Phaser.Math.Clamp(nextX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
+      y: Phaser.Math.Clamp(previousY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
+    };
+
+    if (!this.isPositionBlocked(xOnly.x, xOnly.y)) {
+      return xOnly;
+    }
+
+    const yOnly = {
+      x: Phaser.Math.Clamp(previousX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
+      y: Phaser.Math.Clamp(nextY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
+    };
+
+    if (!this.isPositionBlocked(yOnly.x, yOnly.y)) {
+      return yOnly;
+    }
+
+    return {
+      x: Phaser.Math.Clamp(previousX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
+      y: Phaser.Math.Clamp(previousY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
+    };
+  }
+
+  isPositionBlocked(x, y) {
+    const footprint = new Phaser.Geom.Rectangle(
+      x - PLAYER_COLLISION_RADIUS,
+      y - PLAYER_COLLISION_RADIUS * 0.68,
+      PLAYER_COLLISION_RADIUS * 2,
+      PLAYER_COLLISION_RADIUS * 1.36
+    );
+
+    return this.blockingZones.some((zone) => Phaser.Geom.Intersects.RectangleToRectangle(footprint, zone));
   }
 
   resolveActivePortal() {
@@ -555,17 +652,33 @@ export default class SpaceScene extends Phaser.Scene {
     });
   }
 
+  syncAvatarDepth(avatarState) {
+    if (!avatarState?.container) {
+      return;
+    }
+
+    avatarState.container.setDepth(AVATAR_DEPTH_BASE + Math.round(avatarState.container.y));
+  }
+
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
     const palette = getAvatarPalette(avatarPresetId);
     const avatar = this.add.container(x, y);
-    const shadow = this.add.ellipse(0, 22, 38, 16, 0x020617, 0.24);
-    const focusRing = this.add.ellipse(0, AVATAR_RING_Y, 52, 22);
+    const shadow = this.add.ellipse(
+      0,
+      AVATAR_SHADOW_OFFSET_Y,
+      AVATAR_SHADOW_WIDTH,
+      AVATAR_SHADOW_HEIGHT,
+      0x020617,
+      0.24
+    );
+    const focusRing = this.add.ellipse(0, AVATAR_RING_Y, AVATAR_RING_WIDTH, AVATAR_RING_HEIGHT);
     const sprite = this.add.sprite(
       0,
       0,
       AVATAR_SPRITE_SHEET_KEY,
       getAvatarSpriteFrame(avatarPresetId, 'down', 0).index
     );
+    sprite.setScale(AVATAR_RENDER_SCALE);
     const nameLabel = this.add
       .text(0, AVATAR_NAME_OFFSET_Y, label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
@@ -574,16 +687,22 @@ export default class SpaceScene extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5, 0);
-    const badge = this.add.circle(21, -16, 4, palette.accentColorValue, 1);
-    const chatBubbleContainer = this.add.container(0, -72).setVisible(false);
+    const badge = this.add.circle(
+      AVATAR_BADGE_OFFSET_X,
+      AVATAR_BADGE_OFFSET_Y,
+      AVATAR_BADGE_RADIUS,
+      palette.accentColorValue,
+      1
+    );
+    const chatBubbleContainer = this.add.container(0, CHAT_BUBBLE_TEXT_OFFSET_Y).setVisible(false);
     const chatBubbleBackground = this.add.graphics();
     const chatBubbleText = this.add
       .text(0, 0, '', {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-        fontSize: '13px',
+        fontSize: '12px',
         color: '#0f172a',
         align: 'center',
-        wordWrap: { width: 168 },
+        wordWrap: { width: CHAT_BUBBLE_TEXT_WRAP_WIDTH },
       })
       .setOrigin(0.5);
 
@@ -612,6 +731,7 @@ export default class SpaceScene extends Phaser.Scene {
 
     focusRing.setAlpha(focusAlpha);
     this.applyAvatarAppearance(avatarState);
+    this.syncAvatarDepth(avatarState);
 
     return avatarState;
   }
@@ -652,6 +772,7 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     this.applyAvatarAppearance(avatarState);
+    this.syncAvatarDepth(avatarState);
   }
 
   setAvatarHoverState(avatarState, isHovered) {
@@ -714,23 +835,23 @@ export default class SpaceScene extends Phaser.Scene {
     const isWhisper = chatMessage.scope === 'WHISPER';
     const bubbleText = isEmoji
       ? chatMessage.content
-      : chatMessage.content.length > 52
-        ? `${chatMessage.content.slice(0, 52)}...`
+      : chatMessage.content.length > CHAT_BUBBLE_TEXT_MAX_LENGTH
+        ? `${chatMessage.content.slice(0, CHAT_BUBBLE_TEXT_MAX_LENGTH)}...`
         : chatMessage.content;
 
     avatarState.chatBubbleText.setText(bubbleText);
     avatarState.chatBubbleText.setStyle({
       fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-      fontSize: isEmoji ? '28px' : '13px',
+      fontSize: isEmoji ? '26px' : '12px',
       color: isWhisper ? '#f8fafc' : '#0f172a',
       align: 'center',
-      wordWrap: { width: isEmoji ? 72 : 168 },
+      wordWrap: { width: isEmoji ? 64 : CHAT_BUBBLE_TEXT_WRAP_WIDTH },
     });
 
     const textBounds = avatarState.chatBubbleText.getBounds();
-    const paddingX = isEmoji ? 16 : 14;
-    const paddingY = isEmoji ? 12 : 10;
-    const bubbleWidth = textBounds.width + paddingX * 2;
+    const paddingX = isEmoji ? 14 : 12;
+    const paddingY = isEmoji ? 10 : 8;
+    const bubbleWidth = Math.max(textBounds.width + paddingX * 2, isEmoji ? 54 : 68);
     const bubbleHeight = textBounds.height + paddingY * 2;
     const bubbleBackground = avatarState.chatBubbleBackground;
 
@@ -742,25 +863,27 @@ export default class SpaceScene extends Phaser.Scene {
       -bubbleHeight / 2,
       bubbleWidth,
       bubbleHeight,
-      16
+      14
     );
     bubbleBackground.strokeRoundedRect(
       -bubbleWidth / 2,
       -bubbleHeight / 2,
       bubbleWidth,
       bubbleHeight,
-      16
+      14
     );
     bubbleBackground.fillTriangle(
       0,
-      bubbleHeight / 2 + 8,
-      -10,
+      bubbleHeight / 2 + 6,
+      -8,
       bubbleHeight / 2 - 2,
-      10,
+      8,
       bubbleHeight / 2 - 2
     );
 
-    avatarState.chatBubbleContainer.y = isEmoji ? -82 : -96;
+    avatarState.chatBubbleContainer.y = isEmoji
+      ? CHAT_BUBBLE_EMOJI_OFFSET_Y
+      : CHAT_BUBBLE_TEXT_OFFSET_Y;
     avatarState.chatBubbleContainer.setVisible(true);
     avatarState.chatBubbleExpiresAt =
       this.time.now + (isEmoji ? EMOJI_BUBBLE_DURATION_MS : CHAT_BUBBLE_DURATION_MS);
@@ -781,55 +904,139 @@ export default class SpaceScene extends Phaser.Scene {
     const portalDefinitions = getPortalDefinitions(this.spaceType, this.connectedSpaces);
 
     return portalDefinitions.map((portalDefinition) => {
+      const accentSoft = shadeColor(portalDefinition.accentColor, -18);
+      const accentBright = shadeColor(portalDefinition.accentColor, 42);
       const glow = this.add.ellipse(
         portalDefinition.x,
-        portalDefinition.y + 18,
-        portalDefinition.width + 72,
-        104,
+        portalDefinition.y + 24,
+        portalDefinition.width + 120,
+        136,
         portalDefinition.accentColor,
-        0.34
+        0.26
       );
-      const frame = this.add
-        .rectangle(
-          portalDefinition.x,
-          portalDefinition.y,
-          portalDefinition.width,
-          portalDefinition.height,
-          portalDefinition.accentColor,
-          0.24
-        )
-        .setStrokeStyle(4, portalDefinition.accentColor, 0.92);
-      const door = this.add
-        .rectangle(
-          portalDefinition.x,
-          portalDefinition.y - 2,
-          portalDefinition.width - 24,
-          portalDefinition.height - 18,
-          0x020617,
-          0.92
-        )
-        .setStrokeStyle(3, portalDefinition.borderColor, 0.88);
+      const portalImage = this.worldConfig.portalAssetKey
+        ? this.add
+            .image(portalDefinition.x, portalDefinition.y + 2, this.worldConfig.portalAssetKey)
+            .setDisplaySize(portalDefinition.width + 72, portalDefinition.height + 122)
+        : null;
+      const frame = portalImage
+        ? this.add
+            .rectangle(
+              portalDefinition.x,
+              portalDefinition.y + 2,
+              portalDefinition.width + 12,
+              portalDefinition.height + 12,
+              accentSoft,
+              0
+            )
+            .setStrokeStyle(5, accentBright, 0.52)
+        : this.add
+            .rectangle(
+              portalDefinition.x,
+              portalDefinition.y + 2,
+              portalDefinition.width + 12,
+              portalDefinition.height + 12,
+              accentSoft,
+              0.22
+            )
+            .setStrokeStyle(5, accentBright, 0.84);
+      const door = portalImage
+        ? this.add
+            .rectangle(
+              portalDefinition.x,
+              portalDefinition.y + 2,
+              portalDefinition.width - 24,
+              portalDefinition.height - 4,
+              0x020617,
+              0.18
+            )
+            .setStrokeStyle(2, portalDefinition.borderColor, 0.3)
+        : this.add
+            .rectangle(
+              portalDefinition.x,
+              portalDefinition.y + 2,
+              portalDefinition.width - 16,
+              portalDefinition.height + 8,
+              0x020617,
+              0.92
+            )
+            .setStrokeStyle(3, portalDefinition.borderColor, 0.88);
       const label = this.add
-        .text(portalDefinition.x, portalDefinition.y + 8, portalDefinition.label, {
+        .text(portalDefinition.x, portalDefinition.y - 84, portalDefinition.label, {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '15px',
+          fontSize: '13px',
           color: '#f8fafc',
           align: 'center',
+          backgroundColor: Phaser.Display.Color.IntegerToColor(shadeColor(this.theme.surfaceColor, 24)).rgba,
+          padding: { x: 10, y: 5 },
         })
         .setOrigin(0.5)
-        .setDepth(2);
+        .setDepth(SCENE_DECOR_DEPTH + 2);
 
-      glow.setDepth(1);
-      frame.setDepth(1);
-      door.setDepth(1);
+      glow.setDepth(SCENE_DECOR_DEPTH - 1);
+      portalImage?.setDepth(SCENE_DECOR_DEPTH);
+      frame.setDepth(SCENE_DECOR_DEPTH + 1);
+      door.setDepth(SCENE_DECOR_DEPTH + 1);
 
       return {
         ...portalDefinition,
         glow,
+        portalImage,
         frame,
         door,
         labelText: label,
       };
+    });
+  }
+
+  renderSpaceWorld() {
+    this.blockingZones = (this.worldConfig.blockingZones || []).map(
+      (zone) => new Phaser.Geom.Rectangle(zone.x, zone.y, zone.width, zone.height)
+    );
+
+    this.add
+      .image(0, 0, this.worldConfig.assetKey)
+      .setOrigin(0)
+      .setDisplaySize(WORLD_WIDTH, WORLD_HEIGHT)
+      .setDepth(0);
+
+    const vignette = this.add.graphics();
+    vignette.fillGradientStyle(0x000000, 0x000000, 0x020617, 0x020617, 0);
+    vignette.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    vignette.fillStyle(0x020617, 0.16);
+    vignette.fillRect(0, 0, WORLD_WIDTH, 92);
+    vignette.fillStyle(0x020617, 0.18);
+    vignette.fillRect(0, WORLD_HEIGHT - 128, WORLD_WIDTH, 128);
+    vignette.setDepth(1);
+
+    this.createAmbientLights();
+  }
+
+  createAmbientLights() {
+    this.ambientLights = (this.worldConfig.ambienceLights || []).map((lightConfig, index) => {
+      const light = this.add
+        .ellipse(
+          lightConfig.x,
+          lightConfig.y,
+          lightConfig.radius * 1.6,
+          lightConfig.radius,
+          lightConfig.color,
+          lightConfig.intensity
+        )
+        .setDepth(2);
+
+      this.tweens.add({
+        targets: light,
+        alpha: { from: light.alpha, to: Math.max(0.06, light.alpha * 0.58) },
+        scaleX: { from: 1, to: 1.08 + (index % 2) * 0.04 },
+        scaleY: { from: 1, to: 1.08 + (index % 3) * 0.03 },
+        duration: 2200 + index * 280,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+      });
+
+      return light;
     });
   }
 
@@ -891,6 +1098,66 @@ export default class SpaceScene extends Phaser.Scene {
     graphics.fillCircle(x + 16, y + 12, 16);
   }
 
+  drawPlanter(graphics, x, y, width, height, accentColor) {
+    graphics.fillStyle(0x1e293b, 0.92);
+    graphics.fillRoundedRect(x, y, width, height, 12);
+    graphics.lineStyle(2, shadeColor(accentColor, 26), 0.42);
+    graphics.strokeRoundedRect(x, y, width, height, 12);
+    graphics.fillStyle(0x15803d, 0.94);
+    graphics.fillCircle(x + width * 0.28, y + height * 0.3, 16);
+    graphics.fillCircle(x + width * 0.5, y + height * 0.18, 20);
+    graphics.fillCircle(x + width * 0.72, y + height * 0.32, 15);
+  }
+
+  drawBannerStand(graphics, x, y, accentColor, label) {
+    graphics.fillStyle(0x475569, 0.98);
+    graphics.fillRoundedRect(x - 4, y - 14, 8, 82, 4);
+    graphics.fillStyle(0x0f172a, 0.92);
+    graphics.fillRoundedRect(x - 34, y - 8, 68, 22, 10);
+    graphics.lineStyle(2, accentColor, 0.62);
+    graphics.strokeRoundedRect(x - 34, y - 8, 68, 22, 10);
+    graphics.fillStyle(accentColor, 0.16);
+    graphics.fillRoundedRect(x - 28, y + 16, 56, 34, 10);
+    graphics.lineStyle(2, accentColor, 0.38);
+    graphics.strokeRoundedRect(x - 28, y + 16, 56, 34, 10);
+    this.add
+      .text(x, y + 33, label, {
+        fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+        fontSize: '11px',
+        color: '#e2e8f0',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(SCENE_DECOR_DEPTH + 1);
+  }
+
+  drawCanopyLounge(graphics, x, y, accentColor) {
+    graphics.fillStyle(0x334155, 0.95);
+    graphics.fillRoundedRect(x - 92, y - 6, 184, 12, 6);
+    graphics.fillRoundedRect(x - 78, y + 6, 8, 54, 4);
+    graphics.fillRoundedRect(x + 70, y + 6, 8, 54, 4);
+    graphics.fillStyle(accentColor, 0.22);
+    graphics.fillRoundedRect(x - 98, y - 34, 196, 34, 12);
+    graphics.lineStyle(3, accentColor, 0.46);
+    graphics.strokeRoundedRect(x - 98, y - 34, 196, 34, 12);
+    graphics.fillStyle(0x64748b, 0.94);
+    graphics.fillRoundedRect(x - 64, y + 22, 128, 18, 8);
+    graphics.fillRoundedRect(x - 52, y + 50, 104, 14, 7);
+    graphics.fillStyle(0x7c2d12, 0.96);
+    graphics.fillRoundedRect(x - 62, y + 74, 124, 14, 7);
+  }
+
+  drawForegroundRailing(graphics, y, accentColor) {
+    graphics.fillStyle(0x111827, 0.92);
+    graphics.fillRoundedRect(0, y, WORLD_WIDTH, 18, 0);
+    for (let x = 18; x < WORLD_WIDTH; x += 42) {
+      graphics.fillStyle(0x475569, 0.9);
+      graphics.fillRoundedRect(x, y - 46, 8, 46, 3);
+      graphics.fillStyle(accentColor, x % 84 === 0 ? 0.28 : 0.12);
+      graphics.fillRoundedRect(x - 2, y - 22, 12, 4, 2);
+    }
+  }
+
   drawLamp(graphics, x, y) {
     graphics.fillStyle(0x334155, 1);
     graphics.fillRoundedRect(x - 3, y, 6, 48, 3);
@@ -902,85 +1169,177 @@ export default class SpaceScene extends Phaser.Scene {
 
   drawSpaceBackground() {
     const zone = getLobbyZoneDefinition(this.spaceType);
-    const background = this.add.graphics();
-    const plazaX = 86;
-    const plazaY = 106;
-    const plazaWidth = WORLD_WIDTH - 172;
-    const plazaHeight = 550;
-    const roadY = 680;
+    const sky = this.add.graphics();
+    const skyline = this.add.graphics();
+    const ground = this.add.graphics();
+    const decor = this.add.graphics();
+    const foreground = this.add.graphics();
+    const plazaX = 92;
+    const plazaY = 126;
+    const plazaWidth = WORLD_WIDTH - 184;
+    const plazaHeight = 472;
+    const boulevardY = 646;
+    const boulevardHeight = 148;
+    const accentShadow = shadeColor(this.theme.accentColor, -48);
+    const accentGlow = shadeColor(this.theme.accentColor, 34);
 
-    background.fillGradientStyle(0x0f172a, 0x0f172a, 0x020617, 0x020617, 1);
-    background.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    sky.fillGradientStyle(
+      shadeColor(this.theme.surfaceColor, -18),
+      shadeColor(this.theme.surfaceColor, -18),
+      0x020617,
+      0x020617,
+      1
+    );
+    sky.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    for (let index = 0; index < 22; index += 1) {
+      const starX = 48 + ((index * 57) % (WORLD_WIDTH - 96));
+      const starY = 42 + ((index * 37) % 172);
+      sky.fillStyle(this.theme.highlightColor, index % 4 === 0 ? 0.42 : 0.18);
+      sky.fillCircle(starX, starY, index % 5 === 0 ? 2.4 : 1.4);
+    }
 
-    background.fillStyle(this.theme.surfaceColor, 1);
-    background.fillRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 32);
-    background.lineStyle(4, this.theme.accentColor, 0.34);
-    background.strokeRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 32);
-
-    for (let row = 0; row < 12; row += 1) {
-      for (let column = 0; column < 25; column += 1) {
-        const tileX = plazaX + 14 + column * 42;
-        const tileY = plazaY + 14 + row * 42;
-        const tileColor = (row + column) % 2 === 0 ? 0x708094 : 0x64748b;
-        background.fillStyle(tileColor, 0.9);
-        background.fillRoundedRect(tileX, tileY, 34, 34, 8);
+    skyline.fillStyle(0x09111f, 0.88);
+    skyline.fillRect(0, 178, WORLD_WIDTH, 190);
+    for (let block = 0; block < 9; block += 1) {
+      const width = 92 + (block % 3) * 28;
+      const x = 12 + block * 142;
+      const height = 106 + (block % 4) * 24;
+      const y = 216 - (block % 2) * 22;
+      skyline.fillStyle(block % 2 === 0 ? 0x142238 : 0x101c2f, 0.96);
+      skyline.fillRect(x, y, width, height);
+      for (let row = 0; row < 4; row += 1) {
+        for (let column = 0; column < 3; column += 1) {
+          skyline.fillStyle(this.theme.highlightColor, row === 0 ? 0.1 : 0.06);
+          skyline.fillRect(x + 12 + column * 24, y + 14 + row * 22, 10, 10);
+        }
       }
     }
 
-    background.fillStyle(0x1f2937, 1);
-    background.fillRect(0, roadY, WORLD_WIDTH, WORLD_HEIGHT - roadY);
+    ground.fillStyle(shadeColor(this.theme.surfaceColor, -16), 0.98);
+    ground.fillRoundedRect(44, 92, WORLD_WIDTH - 88, 556, 36);
+    ground.lineStyle(4, this.theme.accentColor, 0.22);
+    ground.strokeRoundedRect(44, 92, WORLD_WIDTH - 88, 556, 36);
 
-    for (let x = 0; x < WORLD_WIDTH; x += 74) {
-      background.fillStyle(0xf8fafc, 0.34);
-      background.fillRect(x + 8, roadY + 74, 42, 4);
+    ground.fillStyle(shadeColor(this.theme.surfaceColor, 8), 0.98);
+    ground.fillRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 34);
+    ground.lineStyle(4, this.theme.accentColor, 0.22);
+    ground.strokeRoundedRect(plazaX, plazaY, plazaWidth, plazaHeight, 34);
+
+    for (let row = 0; row < 10; row += 1) {
+      for (let column = 0; column < 20; column += 1) {
+        const tileX = plazaX + 20 + column * 53;
+        const tileY = plazaY + 18 + row * 44;
+        const tileColor = (row + column) % 2 === 0 ? 0x7c8b9c : 0x6b7b8f;
+        ground.fillStyle(tileColor, row % 3 === 0 ? 0.7 : 0.58);
+        ground.fillRoundedRect(tileX, tileY, 42, 32, 7);
+      }
     }
 
-    for (let stripeIndex = 0; stripeIndex < 7; stripeIndex += 1) {
-      background.fillStyle(0xf8fafc, 0.82);
-      background.fillRect(WORLD_WIDTH / 2 - 54 + stripeIndex * 16, roadY - 2, 10, 84);
+    ground.fillStyle(0xd6c59a, 0.78);
+    ground.fillRoundedRect(WORLD_WIDTH / 2 - 228, plazaY + 206, 456, 22, 11);
+    ground.fillRoundedRect(WORLD_WIDTH / 2 - 11, plazaY + 86, 22, 264, 11);
+    ground.lineStyle(2, 0xf8fafc, 0.08);
+    ground.strokeCircle(WORLD_WIDTH / 2, plazaY + 226, 104);
+
+    ground.fillStyle(0x1f2937, 1);
+    ground.fillRoundedRect(0, boulevardY, WORLD_WIDTH, boulevardHeight, 0);
+    ground.fillStyle(0x111827, 0.84);
+    ground.fillRoundedRect(0, boulevardY + 18, WORLD_WIDTH, 22, 0);
+    ground.fillStyle(0xf8fafc, 0.24);
+    for (let x = 26; x < WORLD_WIDTH; x += 86) {
+      ground.fillRect(x, boulevardY + 92, 48, 5);
+    }
+    for (let stripeIndex = 0; stripeIndex < 8; stripeIndex += 1) {
+      ground.fillStyle(0xf8fafc, 0.82);
+      ground.fillRoundedRect(WORLD_WIDTH / 2 - 72 + stripeIndex * 20, boulevardY - 2, 12, 86, 4);
+    }
+    ground.fillStyle(0x0f172a, 0.78);
+    ground.fillRoundedRect(0, boulevardY - 20, WORLD_WIDTH, 20, 0);
+
+    this.drawBuildingBlock(ground, 104, 124, 238, 156, {
+      bodyColor: 0x6c627e,
+      roofColor: 0x40324f,
+      trimColor: accentGlow,
+      windowColor: 0xdbeafe,
+    });
+    this.drawBuildingBlock(ground, WORLD_WIDTH - 342, 124, 238, 156, {
+      bodyColor: 0x5e7189,
+      roofColor: 0x24354a,
+      trimColor: accentGlow,
+      windowColor: 0xe0f2fe,
+    });
+    this.drawBuildingBlock(ground, 92, 338, 192, 180, {
+      bodyColor: this.spaceType === 'MENTORING' ? 0x7b6047 : 0x4b6a63,
+      roofColor: this.spaceType === 'MENTORING' ? 0x5c3927 : 0x213d3a,
+      trimColor: accentGlow,
+      windowColor: 0xfef3c7,
+    });
+    this.drawBuildingBlock(ground, WORLD_WIDTH - 286, 338, 192, 180, {
+      bodyColor: this.spaceType === 'STUDY' ? 0x436c55 : 0x736255,
+      roofColor: this.spaceType === 'STUDY' ? 0x1f4938 : 0x4b3525,
+      trimColor: accentGlow,
+      windowColor: 0xf1f5f9,
+    });
+
+    this.drawPlanter(decor, 170, boulevardY - 56, 86, 34, this.theme.accentColor);
+    this.drawPlanter(decor, 280, boulevardY - 56, 86, 34, this.theme.accentColor);
+    this.drawPlanter(decor, WORLD_WIDTH - 366, boulevardY - 56, 86, 34, this.theme.accentColor);
+    this.drawPlanter(decor, WORLD_WIDTH - 256, boulevardY - 56, 86, 34, this.theme.accentColor);
+    this.drawBench(decor, WORLD_WIDTH / 2 - 242, boulevardY - 54);
+    this.drawBench(decor, WORLD_WIDTH / 2 + 242, boulevardY - 54);
+    this.drawLamp(decor, WORLD_WIDTH / 2 - 236, plazaY + 154);
+    this.drawLamp(decor, WORLD_WIDTH / 2 + 236, plazaY + 154);
+    this.drawLamp(decor, 174, boulevardY - 34);
+    this.drawLamp(decor, WORLD_WIDTH - 174, boulevardY - 34);
+    this.drawTree(decor, 162, boulevardY - 22);
+    this.drawTree(decor, 298, boulevardY - 24);
+    this.drawTree(decor, WORLD_WIDTH - 162, boulevardY - 22);
+    this.drawTree(decor, WORLD_WIDTH - 298, boulevardY - 24);
+    this.drawBannerStand(decor, 430, plazaY + 102, this.theme.accentColor, 'COMMUNITY');
+    this.drawBannerStand(decor, WORLD_WIDTH - 430, plazaY + 102, this.theme.accentColor, 'LIVE');
+
+    if (this.spaceType === 'STUDY') {
+      this.drawCanopyLounge(decor, WORLD_WIDTH / 2, plazaY + 306, this.theme.accentColor);
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 - 128, plazaY + 264, this.theme.accentColor, 'STUDY');
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 + 128, plazaY + 264, this.theme.accentColor, 'FOCUS');
     }
 
-    this.drawBuildingBlock(background, 126, 132, 214, 148, {
-      bodyColor: 0x6d5f7d,
-      roofColor: 0x433252,
-      trimColor: this.theme.accentColor,
-    });
-    this.drawBuildingBlock(background, WORLD_WIDTH - 340, 132, 214, 148, {
-      bodyColor: 0x5d7084,
-      roofColor: 0x26384d,
-      trimColor: this.theme.accentColor,
-    });
-    this.drawBuildingBlock(background, 112, 360, 176, 166, {
-      bodyColor: 0x7b6047,
-      roofColor: 0x5b3b28,
-      trimColor: this.theme.accentColor,
-    });
-    this.drawBuildingBlock(background, WORLD_WIDTH - 288, 360, 176, 166, {
-      bodyColor: 0x506d69,
-      roofColor: 0x2b4541,
-      trimColor: this.theme.accentColor,
-    });
+    if (this.spaceType === 'MENTORING') {
+      decor.fillStyle(0x24150c, 0.58);
+      decor.fillRoundedRect(WORLD_WIDTH / 2 - 176, plazaY + 252, 352, 102, 28);
+      decor.lineStyle(3, this.theme.accentColor, 0.34);
+      decor.strokeRoundedRect(WORLD_WIDTH / 2 - 176, plazaY + 252, 352, 102, 28);
+      decor.fillStyle(0xf8fafc, 0.92);
+      decor.fillRoundedRect(WORLD_WIDTH / 2 - 102, plazaY + 280, 204, 14, 7);
+      decor.fillRoundedRect(WORLD_WIDTH / 2 - 82, plazaY + 308, 164, 14, 7);
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 - 186, plazaY + 274, this.theme.accentColor, 'MENTOR');
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 + 186, plazaY + 274, this.theme.accentColor, 'ROOM');
+    }
 
-    background.fillStyle(0xe2d3a0, 0.9);
-    background.fillRoundedRect(WORLD_WIDTH / 2 - 210, plazaY + 238, 420, 18, 9);
-    background.fillRoundedRect(WORLD_WIDTH / 2 - 9, plazaY + 118, 18, 228, 9);
+    if (this.spaceType === 'MAIN') {
+      decor.fillStyle(this.theme.accentColor, 0.1);
+      decor.fillCircle(WORLD_WIDTH / 2, plazaY + 226, 92);
+      decor.lineStyle(3, this.theme.accentColor, 0.28);
+      decor.strokeCircle(WORLD_WIDTH / 2, plazaY + 226, 92);
+      decor.fillStyle(accentShadow, 0.24);
+      decor.fillRoundedRect(WORLD_WIDTH / 2 - 116, plazaY + 308, 232, 22, 11);
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 - 208, plazaY + 248, this.theme.accentColor, 'LOUNGE');
+      this.drawBannerStand(decor, WORLD_WIDTH / 2 + 208, plazaY + 248, this.theme.accentColor, 'EVENT');
+    }
 
-    this.drawBench(background, WORLD_WIDTH / 2 + 196, roadY - 58);
-    this.drawBench(background, WORLD_WIDTH / 2 - 228, roadY - 58);
-    this.drawLamp(background, WORLD_WIDTH / 2 - 164, plazaY + 148);
-    this.drawLamp(background, WORLD_WIDTH / 2 + 164, plazaY + 148);
-    this.drawTree(background, 170, roadY - 24);
-    this.drawTree(background, 298, roadY - 24);
-    this.drawTree(background, WORLD_WIDTH - 170, roadY - 24);
-    this.drawTree(background, WORLD_WIDTH - 298, roadY - 24);
+    foreground.fillGradientStyle(0x000000, 0x000000, 0x020617, 0x020617, 0);
+    this.drawForegroundRailing(foreground, 792, this.theme.accentColor);
+    foreground.setDepth(FOREGROUND_DEPTH);
 
     this.add
-      .text(WORLD_WIDTH / 2, 392, zone.label, {
+      .text(WORLD_WIDTH / 2, 104, zone.label, {
         fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
         fontSize: '44px',
         color: '#f8fafc',
+        letterSpacing: 2,
       })
       .setOrigin(0.5)
-      .setAlpha(0.28);
+      .setAlpha(0.18)
+      .setDepth(SCENE_DECOR_DEPTH + 1);
   }
 }

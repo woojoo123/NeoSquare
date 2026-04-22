@@ -114,7 +114,7 @@ export default function LoginPage() {
         currentUser: currentUserResponse,
       });
 
-      navigate(locationState?.from || '/lobby', { replace: true });
+      navigate(locationState?.from || '/', { replace: true });
     } catch (error) {
       const serverFieldErrors = extractFieldErrors<LoginFieldName>(error);
 

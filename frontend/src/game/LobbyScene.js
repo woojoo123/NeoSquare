@@ -27,6 +27,21 @@ const AVATAR_HIT_AREA_HEIGHT = 96;
 const AVATAR_RING_Y = 16;
 const AVATAR_NAME_OFFSET_Y = 42;
 const AVATAR_WALK_FRAME_DURATION = 140;
+const AVATAR_DEPTH_BASE = 120;
+
+function clampColorChannel(value) {
+  return Phaser.Math.Clamp(Math.round(value), 0, 255);
+}
+
+function shadeColor(color, amount = 0) {
+  const baseColor = Phaser.Display.Color.IntegerToColor(color);
+
+  return Phaser.Display.Color.GetColor(
+    clampColorChannel(baseColor.red + amount),
+    clampColorChannel(baseColor.green + amount),
+    clampColorChannel(baseColor.blue + amount)
+  );
+}
 
 export default class LobbyScene extends Phaser.Scene {
   constructor({
@@ -460,6 +475,14 @@ export default class LobbyScene extends Phaser.Scene {
     remotePlayer.nameLabel.setColor(isSelected || remotePlayer.isHovered ? '#f8fafc' : '#e2e8f0');
   }
 
+  syncAvatarDepth(avatarState) {
+    if (!avatarState?.container) {
+      return;
+    }
+
+    avatarState.container.setDepth(AVATAR_DEPTH_BASE + Math.round(avatarState.container.y));
+  }
+
   createAvatar(x, y, label, avatarPresetId, { focusAlpha = 0 } = {}) {
     const palette = getAvatarPalette(avatarPresetId);
     const avatar = this.add.container(x, y);
@@ -499,6 +522,7 @@ export default class LobbyScene extends Phaser.Scene {
 
     focusRing.setAlpha(focusAlpha);
     this.applyAvatarAppearance(avatarState);
+    this.syncAvatarDepth(avatarState);
 
     return avatarState;
   }
@@ -539,6 +563,7 @@ export default class LobbyScene extends Phaser.Scene {
     }
 
     this.applyAvatarAppearance(avatarState);
+    this.syncAvatarDepth(avatarState);
   }
 
   emitPlayerContext(force = false) {
@@ -652,21 +677,50 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   drawLobbyBackground() {
-    const background = this.add.graphics();
+    const sky = this.add.graphics();
+    const ground = this.add.graphics();
+    const decor = this.add.graphics();
 
-    background.fillGradientStyle(0x10203a, 0x10203a, 0x0f172a, 0x0f172a, 1);
-    background.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    sky.fillGradientStyle(0x14233b, 0x14233b, 0x08101e, 0x08101e, 1);
+    sky.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    for (let index = 0; index < 18; index += 1) {
+      const x = 48 + ((index * 71) % (WORLD_WIDTH - 96));
+      const y = 32 + ((index * 43) % 148);
+      sky.fillStyle(0xe2e8f0, index % 4 === 0 ? 0.34 : 0.14);
+      sky.fillCircle(x, y, index % 5 === 0 ? 2.2 : 1.4);
+    }
 
-    background.fillStyle(0x132238, 1);
-    background.fillRoundedRect(60, 60, WORLD_WIDTH - 120, WORLD_HEIGHT - 120, 32);
-    background.lineStyle(4, 0x38bdf8, 0.35);
-    background.strokeRoundedRect(60, 60, WORLD_WIDTH - 120, WORLD_HEIGHT - 120, 32);
+    ground.fillStyle(0x10203a, 1);
+    ground.fillRoundedRect(44, 44, WORLD_WIDTH - 88, WORLD_HEIGHT - 88, 40);
+    ground.lineStyle(4, 0x38bdf8, 0.22);
+    ground.strokeRoundedRect(44, 44, WORLD_WIDTH - 88, WORLD_HEIGHT - 88, 40);
+    ground.fillStyle(0x0f172a, 0.38);
+    ground.fillRoundedRect(76, 340, WORLD_WIDTH - 152, 42, 18);
+    ground.fillRoundedRect(WORLD_WIDTH / 2 - 18, 84, 36, WORLD_HEIGHT - 168, 16);
 
     LOBBY_ZONE_DEFINITIONS.forEach((zone) => {
-      background.fillStyle(zone.fillColor, 1);
-      background.fillRoundedRect(zone.x, zone.y, zone.width, zone.height, 28);
-      background.lineStyle(3, zone.borderColor, 0.82);
-      background.strokeRoundedRect(zone.x, zone.y, zone.width, zone.height, 28);
+      const zoneGraphics = this.add.graphics();
+      const accentGlow = shadeColor(zone.borderColor, 22);
+
+      zoneGraphics.fillStyle(zone.fillColor, 0.98);
+      zoneGraphics.fillRoundedRect(zone.x, zone.y, zone.width, zone.height, 30);
+      zoneGraphics.lineStyle(3, zone.borderColor, 0.72);
+      zoneGraphics.strokeRoundedRect(zone.x, zone.y, zone.width, zone.height, 30);
+      zoneGraphics.fillStyle(0xf8fafc, 0.04);
+      zoneGraphics.fillRoundedRect(zone.x + 18, zone.y + 18, zone.width - 36, 28, 14);
+
+      for (let row = 0; row < Math.max(3, Math.floor(zone.height / 72)); row += 1) {
+        for (let column = 0; column < Math.max(4, Math.floor(zone.width / 74)); column += 1) {
+          const tileX = zone.x + 20 + column * 68;
+          const tileY = zone.y + 90 + row * 58;
+          zoneGraphics.fillStyle((row + column) % 2 === 0 ? 0x718197 : 0x607287, 0.2);
+          zoneGraphics.fillRoundedRect(tileX, tileY, 46, 34, 8);
+        }
+      }
+
+      zoneGraphics.fillStyle(zone.borderColor, 0.1);
+      zoneGraphics.fillRoundedRect(zone.center.x - 116, zone.center.y - 14, 232, 28, 14);
+      zoneGraphics.setDepth(0);
 
       this.add
         .text(zone.x + 24, zone.y + 24, zone.label, {
@@ -677,7 +731,17 @@ export default class LobbyScene extends Phaser.Scene {
         .setDepth(1);
 
       this.add
-        .text(zone.x + 24, zone.y + 60, zone.description, {
+        .text(zone.x + 24, zone.y + 84, zone.shortLabel, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '13px',
+          color: '#f8fafc',
+          backgroundColor: Phaser.Display.Color.IntegerToColor(accentGlow).rgba,
+          padding: { x: 10, y: 5 },
+        })
+        .setDepth(1);
+
+      this.add
+        .text(zone.x + 24, zone.y + 118, zone.description, {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
           fontSize: '14px',
           color: '#cbd5e1',
@@ -691,49 +755,113 @@ export default class LobbyScene extends Phaser.Scene {
         return;
       }
 
-      const portalGlow = this.add.ellipse(zone.entry.x, zone.entry.y + 10, 188, 72, 0x020617, 0.38);
+      const portalFacade = this.add.graphics();
+      const portalGlow = this.add.ellipse(
+        zone.entry.x,
+        zone.entry.y + 16,
+        222,
+        92,
+        zone.borderColor,
+        0.18
+      );
+      portalFacade.fillStyle(shadeColor(zone.fillColor, 14), 0.98);
+      portalFacade.fillRoundedRect(
+        zone.entry.x - zone.entry.width / 2 - 26,
+        zone.entry.y - zone.entry.height / 2 - 58,
+        zone.entry.width + 52,
+        zone.entry.height + 88,
+        22
+      );
+      portalFacade.fillStyle(shadeColor(zone.fillColor, 28), 0.98);
+      portalFacade.fillRoundedRect(
+        zone.entry.x - zone.entry.width / 2 - 10,
+        zone.entry.y - zone.entry.height / 2 - 76,
+        zone.entry.width + 20,
+        26,
+        12
+      );
+      portalFacade.lineStyle(3, zone.borderColor, 0.5);
+      portalFacade.strokeRoundedRect(
+        zone.entry.x - zone.entry.width / 2 - 26,
+        zone.entry.y - zone.entry.height / 2 - 58,
+        zone.entry.width + 52,
+        zone.entry.height + 88,
+        22
+      );
       const portalFrame = this.add
         .rectangle(
           zone.entry.x,
           zone.entry.y,
-          zone.entry.width,
-          zone.entry.height,
+          zone.entry.width + 8,
+          zone.entry.height + 8,
           zone.borderColor,
-          0.18
+          0.16
         )
-        .setStrokeStyle(3, zone.borderColor, 0.95);
+        .setStrokeStyle(4, zone.borderColor, 0.92);
       const portalDoor = this.add
         .rectangle(
           zone.entry.x,
-          zone.entry.y - 4,
-          zone.entry.width - 26,
-          zone.entry.height - 20,
+          zone.entry.y + 2,
+          zone.entry.width - 18,
+          zone.entry.height,
           0x0f172a,
           0.92
         )
         .setStrokeStyle(2, zone.accentColor, 0.82);
+      const portalSign = this.add
+        .rectangle(
+          zone.entry.x,
+          zone.entry.y - 54,
+          zone.entry.width - 12,
+          24,
+          shadeColor(zone.fillColor, 24),
+          0.94
+        )
+        .setStrokeStyle(2, zone.borderColor, 0.7);
 
       this.add
-        .text(zone.entry.x, zone.entry.y - 14, 'ENTER', {
+        .text(zone.entry.x, zone.entry.y - 54, zone.shortLabel, {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '16px',
+          fontSize: '12px',
           color: Phaser.Display.Color.IntegerToColor(zone.accentColor).rgba,
+          letterSpacing: 2,
         })
         .setOrigin(0.5)
         .setDepth(2);
 
       this.add
-        .text(zone.entry.x, zone.entry.y + 10, zone.entry.label, {
+        .text(zone.entry.x, zone.entry.y + 4, 'ENTER', {
           fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-          fontSize: '12px',
+          fontSize: '18px',
+          color: '#f8fafc',
+          letterSpacing: 3,
+        })
+        .setOrigin(0.5)
+        .setDepth(2);
+
+      this.add
+        .text(zone.entry.x, zone.entry.y + 28, zone.entry.label, {
+          fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+          fontSize: '11px',
           color: '#cbd5e1',
         })
         .setOrigin(0.5)
         .setDepth(2);
 
       portalGlow.setDepth(1);
+      portalFacade.setDepth(1);
       portalFrame.setDepth(1);
       portalDoor.setDepth(1);
+      portalSign.setDepth(1);
     });
+
+    decor.fillStyle(0x0b1220, 0.72);
+    decor.fillRoundedRect(0, WORLD_HEIGHT - 104, WORLD_WIDTH, 34, 0);
+    for (let x = 28; x < WORLD_WIDTH; x += 56) {
+      decor.fillStyle(0x475569, 0.82);
+      decor.fillRoundedRect(x, WORLD_HEIGHT - 168, 8, 64, 3);
+      decor.fillStyle(0x38bdf8, x % 112 === 0 ? 0.22 : 0.08);
+      decor.fillRoundedRect(x - 2, WORLD_HEIGHT - 136, 12, 4, 2);
+    }
   }
 }
