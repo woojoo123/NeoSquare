@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 export default function AppLayout({
   eyebrow,
   title,
@@ -14,11 +16,16 @@ export default function AppLayout({
     <main className={shellClassNames}>
       <section className={panelClassNames}>
         {!headerHidden ? (
-          <>
-            <p className="app-eyebrow">{eyebrow}</p>
-            <h1>{title}</h1>
-            <p>{description}</p>
-          </>
+          <header className="app-page-header">
+            <div className="app-page-header__copy">
+              <p className="app-eyebrow">{eyebrow}</p>
+              <h1>{title}</h1>
+              <p>{description}</p>
+            </div>
+            <Link className="secondary-button app-home-button" to="/">
+              홈
+            </Link>
+          </header>
         ) : null}
         {children}
       </section>

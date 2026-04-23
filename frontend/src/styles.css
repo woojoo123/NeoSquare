@@ -147,6 +147,23 @@ select {
   color: #4b5563;
 }
 
+.app-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.app-page-header__copy {
+  min-width: 0;
+}
+
+.app-home-button {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
 .app-actions {
   display: flex;
   gap: 12px;

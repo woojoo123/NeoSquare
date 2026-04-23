@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import {
   getAdminDashboard,
@@ -6812,7 +6812,9 @@ export default function HubPage({ screenMode = 'activity' }) {
             <h1>{pageHeader.title}</h1>
             <p>{pageHeader.description}</p>
           </div>
-
+          <Link className="secondary-button app-home-button" to="/">
+            홈
+          </Link>
         </header>
 
         <section className="activity-page__summary">
