@@ -1,0 +1,14 @@
+.git
+.gradle
+.idea
+.run
+build
+backend/build
+frontend/dist
+frontend/node_modules
+node_modules
+*.iml
+*.log
+data
+backend/data
+

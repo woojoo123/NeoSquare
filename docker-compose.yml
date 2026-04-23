@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      JWT_SECRET: ${JWT_SECRET:-neosquare-docker-local-secret-key-needs-at-least-32-bytes}
+      JWT_REFRESH_TOKEN_COOKIE_SECURE: "false"
+    volumes:
+      - backend-data:/app/data
+    expose:
+      - "8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  backend-data:
