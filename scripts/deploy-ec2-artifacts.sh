@@ -35,8 +35,7 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "
   if command -v docker >/dev/null 2>&1; then
     docker ps -aq --filter name=neosquare | xargs -r docker rm -f
   fi
-  pkill -f 'java -jar .*/backend.jar' || true
-  pkill -f 'gradle|bootRun|npm|node|http.server' || true
+  pkill -f '[b]ackend.jar' || true
   if ! command -v java >/dev/null 2>&1; then
     echo 'Java is not installed on EC2. Install it once with: sudo apt update && sudo apt install -y openjdk-17-jre-headless'
     exit 1
