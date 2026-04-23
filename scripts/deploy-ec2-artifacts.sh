@@ -43,8 +43,16 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "
   docker compose down --remove-orphans || true
   docker compose up -d
   docker compose ps
-  curl -fsS http://localhost:5173/api/health
+  for i in \$(seq 1 60); do
+    if curl -fsS http://localhost:5173/api/health; then
+      exit 0
+    fi
+    echo \"Waiting for backend to become ready... \$i/60\"
+    sleep 2
+  done
+  echo 'Backend did not become ready. Recent backend logs:'
+  docker compose logs --tail=120 backend
+  exit 1
 "
 
 echo "Deployment complete: http://$EC2_PUBLIC_IP:5173"
-
