@@ -42,3 +42,22 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+def frontendDistDir = layout.projectDirectory.dir('../frontend/dist')
+
+tasks.register('copyFrontendDist', Copy) {
+    dependsOn tasks.named('processResources')
+    onlyIf {
+        frontendDistDir.file('index.html').asFile.exists()
+    }
+    from frontendDistDir
+    into layout.buildDirectory.dir('resources/main/static')
+}
+
+tasks.named('bootJar') {
+    dependsOn tasks.named('copyFrontendDist')
+}
+
+tasks.named('resolveMainClassName') {
+    dependsOn tasks.named('copyFrontendDist')
+}
