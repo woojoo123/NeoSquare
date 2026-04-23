@@ -1,7 +1,7 @@
 # Docker EC2 배포 가이드
 
-이 방식은 EC2에서 직접 `npm install`, `npm run build`, `./gradlew bootRun`을 실행하지 않습니다.
-EC2에는 Docker만 설치하고, 컨테이너 빌드/실행은 Compose가 처리합니다.
+이 방식은 EC2에서 직접 `npm install`, `npm run build`, `./gradlew bootRun`, `docker compose build`를 실행하지 않습니다.
+로컬 Mac에서 백엔드 jar와 프론트 dist를 만든 뒤 EC2로 업로드하고, EC2는 Docker로 실행만 합니다.
 
 ## 1. EC2 보안 그룹
 
@@ -33,12 +33,34 @@ sudo usermod -aG docker ubuntu
 
 권한 적용을 위해 SSH를 끊고 다시 접속합니다.
 
-## 3. 프로젝트 실행
+## 3. 로컬에서 산출물 빌드
+
+로컬 Mac에서:
+
+```bash
+cd /Users/woojoo/javaTest/b01/NeoSquare
+./gradlew :backend:bootJar
+
+cd frontend
+npm run build
+```
+
+## 4. EC2로 산출물 업로드
+
+`EC2_PUBLIC_IP`를 실제 퍼블릭 IP로 바꿉니다.
+
+```bash
+ssh -i /Users/woojoo/AWS/neosquare-key.pem ubuntu@EC2_PUBLIC_IP "mkdir -p ~/NeoSquare/deploy"
+scp -i /Users/woojoo/AWS/neosquare-key.pem backend/build/libs/backend-0.0.1-SNAPSHOT.jar ubuntu@EC2_PUBLIC_IP:/home/ubuntu/NeoSquare/deploy/backend.jar
+scp -i /Users/woojoo/AWS/neosquare-key.pem -r frontend/dist ubuntu@EC2_PUBLIC_IP:/home/ubuntu/NeoSquare/deploy/frontend-dist
+```
+
+## 5. 프로젝트 실행
 
 ```bash
 git clone https://github.com/woojoo123/NeoSquare.git
 cd NeoSquare
-docker compose up -d --build
+docker compose up -d
 ```
 
 이미 clone한 폴더가 있으면:
@@ -46,10 +68,10 @@ docker compose up -d --build
 ```bash
 cd NeoSquare
 git pull
-docker compose up -d --build
+docker compose up -d
 ```
 
-## 4. 확인
+## 6. 확인
 
 ```bash
 docker compose ps
@@ -69,7 +91,7 @@ http://EC2_PUBLIC_IP:5173
 curl http://localhost:5173/api/health
 ```
 
-## 5. 중지 / 재시작
+## 7. 중지 / 재시작
 
 ```bash
 docker compose down
@@ -81,4 +103,3 @@ docker compose up -d
 ```bash
 docker compose down -v
 ```
-
