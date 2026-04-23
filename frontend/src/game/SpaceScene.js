@@ -39,9 +39,14 @@ const AVATAR_WALK_FRAME_DURATION = 140;
 const CHAT_BUBBLE_DURATION_MS = 3600;
 const EMOJI_BUBBLE_DURATION_MS = 2200;
 const CHAT_BUBBLE_TEXT_WRAP_WIDTH = 136;
-const CHAT_BUBBLE_TEXT_OFFSET_Y = -70 * AVATAR_RENDER_SCALE;
-const CHAT_BUBBLE_EMOJI_OFFSET_Y = -62 * AVATAR_RENDER_SCALE;
+const CHAT_BUBBLE_BASE_OFFSET_Y = -70 * AVATAR_RENDER_SCALE;
 const CHAT_BUBBLE_TEXT_MAX_LENGTH = 40;
+const CHAT_BUBBLE_MIN_WIDTH = 72;
+const CHAT_BUBBLE_MIN_HEIGHT = 44;
+const CHAT_BUBBLE_RADIUS = 14;
+const CHAT_BUBBLE_TAIL_HEIGHT = 9;
+const CHAT_BUBBLE_TAIL_HALF_WIDTH = 8;
+const CHAT_BUBBLE_SHADOW_OFFSET_Y = 3;
 const SCENE_DECOR_DEPTH = 8;
 const AVATAR_DEPTH_BASE = 120;
 const FOREGROUND_DEPTH = 980;
@@ -694,7 +699,8 @@ export default class SpaceScene extends Phaser.Scene {
       palette.accentColorValue,
       1
     );
-    const chatBubbleContainer = this.add.container(0, CHAT_BUBBLE_TEXT_OFFSET_Y).setVisible(false);
+    const chatBubbleContainer = this.add.container(0, CHAT_BUBBLE_BASE_OFFSET_Y).setVisible(false);
+    const chatBubbleShadow = this.add.graphics();
     const chatBubbleBackground = this.add.graphics();
     const chatBubbleText = this.add
       .text(0, 0, '', {
@@ -706,7 +712,7 @@ export default class SpaceScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    chatBubbleContainer.add([chatBubbleBackground, chatBubbleText]);
+    chatBubbleContainer.add([chatBubbleShadow, chatBubbleBackground, chatBubbleText]);
 
     avatar.add([shadow, focusRing, sprite, badge, chatBubbleContainer, nameLabel]);
 
@@ -718,6 +724,7 @@ export default class SpaceScene extends Phaser.Scene {
       badge,
       nameLabel,
       chatBubbleContainer,
+      chatBubbleShadow,
       chatBubbleBackground,
       chatBubbleText,
       chatBubbleExpiresAt: 0,
@@ -827,7 +834,12 @@ export default class SpaceScene extends Phaser.Scene {
   }
 
   showChatBubble(avatarState, chatMessage) {
-    if (!avatarState?.chatBubbleContainer || !avatarState.chatBubbleBackground || !avatarState.chatBubbleText) {
+    if (
+      !avatarState?.chatBubbleContainer ||
+      !avatarState.chatBubbleShadow ||
+      !avatarState.chatBubbleBackground ||
+      !avatarState.chatBubbleText
+    ) {
       return;
     }
 
@@ -842,48 +854,71 @@ export default class SpaceScene extends Phaser.Scene {
     avatarState.chatBubbleText.setText(bubbleText);
     avatarState.chatBubbleText.setStyle({
       fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
-      fontSize: isEmoji ? '26px' : '12px',
+      fontSize: isEmoji ? '24px' : '12px',
       color: isWhisper ? '#f8fafc' : '#0f172a',
       align: 'center',
-      wordWrap: { width: isEmoji ? 64 : CHAT_BUBBLE_TEXT_WRAP_WIDTH },
+      wordWrap: { width: isEmoji ? 72 : CHAT_BUBBLE_TEXT_WRAP_WIDTH },
     });
 
     const textBounds = avatarState.chatBubbleText.getBounds();
-    const paddingX = isEmoji ? 14 : 12;
+    const paddingX = isEmoji ? 16 : 12;
     const paddingY = isEmoji ? 10 : 8;
-    const bubbleWidth = Math.max(textBounds.width + paddingX * 2, isEmoji ? 54 : 68);
-    const bubbleHeight = textBounds.height + paddingY * 2;
+    const bubbleWidth = Math.max(
+      textBounds.width + paddingX * 2,
+      isEmoji ? CHAT_BUBBLE_MIN_HEIGHT + 8 : CHAT_BUBBLE_MIN_WIDTH
+    );
+    const bubbleHeight = Math.max(textBounds.height + paddingY * 2, CHAT_BUBBLE_MIN_HEIGHT);
+    const bubbleLeft = -bubbleWidth / 2;
+    const bubbleTop = -bubbleHeight / 2;
+    const bubbleBottom = bubbleHeight / 2;
+    const bubbleShadow = avatarState.chatBubbleShadow;
     const bubbleBackground = avatarState.chatBubbleBackground;
+
+    bubbleShadow.clear();
+    bubbleShadow.fillStyle(0x0f172a, 0.16);
+    bubbleShadow.fillRoundedRect(
+      bubbleLeft,
+      bubbleTop + CHAT_BUBBLE_SHADOW_OFFSET_Y,
+      bubbleWidth,
+      bubbleHeight,
+      CHAT_BUBBLE_RADIUS
+    );
+    bubbleShadow.fillTriangle(
+      0,
+      bubbleBottom + CHAT_BUBBLE_TAIL_HEIGHT + CHAT_BUBBLE_SHADOW_OFFSET_Y,
+      -CHAT_BUBBLE_TAIL_HALF_WIDTH,
+      bubbleBottom - 1 + CHAT_BUBBLE_SHADOW_OFFSET_Y,
+      CHAT_BUBBLE_TAIL_HALF_WIDTH,
+      bubbleBottom - 1 + CHAT_BUBBLE_SHADOW_OFFSET_Y
+    );
 
     bubbleBackground.clear();
     bubbleBackground.fillStyle(isWhisper ? 0x4338ca : 0xf8fafc, 0.96);
     bubbleBackground.lineStyle(2, isWhisper ? 0xc4b5fd : 0xe2e8f0, 0.92);
     bubbleBackground.fillRoundedRect(
-      -bubbleWidth / 2,
-      -bubbleHeight / 2,
+      bubbleLeft,
+      bubbleTop,
       bubbleWidth,
       bubbleHeight,
-      14
+      CHAT_BUBBLE_RADIUS
     );
     bubbleBackground.strokeRoundedRect(
-      -bubbleWidth / 2,
-      -bubbleHeight / 2,
+      bubbleLeft,
+      bubbleTop,
       bubbleWidth,
       bubbleHeight,
-      14
+      CHAT_BUBBLE_RADIUS
     );
     bubbleBackground.fillTriangle(
       0,
-      bubbleHeight / 2 + 6,
-      -8,
-      bubbleHeight / 2 - 2,
-      8,
-      bubbleHeight / 2 - 2
+      bubbleBottom + CHAT_BUBBLE_TAIL_HEIGHT,
+      -CHAT_BUBBLE_TAIL_HALF_WIDTH,
+      bubbleBottom - 1,
+      CHAT_BUBBLE_TAIL_HALF_WIDTH,
+      bubbleBottom - 1
     );
 
-    avatarState.chatBubbleContainer.y = isEmoji
-      ? CHAT_BUBBLE_EMOJI_OFFSET_Y
-      : CHAT_BUBBLE_TEXT_OFFSET_Y;
+    avatarState.chatBubbleContainer.y = CHAT_BUBBLE_BASE_OFFSET_Y;
     avatarState.chatBubbleContainer.setVisible(true);
     avatarState.chatBubbleExpiresAt =
       this.time.now + (isEmoji ? EMOJI_BUBBLE_DURATION_MS : CHAT_BUBBLE_DURATION_MS);
