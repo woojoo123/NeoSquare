@@ -1,27 +1,56 @@
 # 배포 / 실행 가이드
 
-NeoSquare는 현재 `backend`와 `frontend`를 분리해서 실행하는 구조입니다. 이 문서는 로컬 시연, MariaDB 기반 실행, 프론트 환경변수, 운영 전 체크 포인트를 빠르게 확인하기 위한 문서입니다.
+이 문서는 NeoSquare의 현재 실행 기준 문서입니다. 로컬 개발은 `backend`와 `frontend`를 분리해 실행하고, EC2 배포는 로컬에서 빌드한 단일 `jar`를 업로드한 뒤 EC2에서 `java -jar`만 실행합니다.
 
-## 1. 실행 모드 선택
+## 1. 현재 실행 구조
 
-### 가장 빠른 로컬 시연
-- backend: `local` 프로필
+- 로컬 개발: `backend`와 `frontend`를 따로 실행
+- EC2 배포: `frontend/dist`를 포함한 `backend` 단일 `jar`를 업로드해 실행
+- 기준 스크립트: `scripts/deploy-ec2-artifacts.sh`
+
+`backend/build.gradle`에서 `frontend/dist`를 `bootJar` 전에 `backend/build/resources/main/static`으로 복사하므로, 최종 `jar` 하나에 프론트 정적 파일과 백엔드가 함께 포함됩니다.
+
+## 2. 사전 준비
+
+### 로컬
+
+- Java 17
+- Node.js 18 이상 권장
+- npm
+
+### EC2
+
+- Ubuntu 기준
+- SSH 접속 가능
+- Java 17 런타임 설치
+- `mariadb` 또는 `prod` 프로필을 쓸 경우 MariaDB 준비
+
+권장 인바운드 규칙:
+
+- `22/tcp` for SSH
+- `8080/tcp` for application access
+
+## 3. 로컬 실행
+
+### 가장 빠른 시연
+
+- 프로필: `local`
 - DB: H2 파일 DB
 - 더미 데이터: 자동 주입
-- 용도: 기능 확인, UI 시연, 2계정 테스트
 
 ```bash
 ./gradlew :backend:bootRun
+
 cd frontend
 npm install
 npm run dev
 ```
 
 ### MariaDB 기반 로컬 실행
-- backend: `mariadb` 프로필
+
+- 프로필: `mariadb`
 - DB: MariaDB
 - 더미 데이터: 자동 주입
-- 용도: 브라우저 세션이 아니라 DB 기준으로 상태를 확인하는 시연
 
 ```bash
 export SPRING_PROFILES_ACTIVE=mariadb
@@ -33,11 +62,11 @@ export JWT_SECRET=replace-with-32-bytes-or-more-secret
 ./gradlew :backend:bootRun
 ```
 
-### 운영형에 가까운 실행
-- backend: `prod` 프로필
+### 운영형에 가까운 점검
+
+- 프로필: `prod`
 - DB: MariaDB
 - 더미 데이터: 비활성화
-- 용도: 실제 배포 전 smoke test
 
 ```bash
 export SPRING_PROFILES_ACTIVE=prod
@@ -50,7 +79,9 @@ export JWT_SECRET=replace-with-32-bytes-or-more-secret
 ./gradlew :backend:bootRun
 ```
 
-## 2. MariaDB 준비
+## 4. MariaDB 준비
+
+수동으로 준비하려면 아래를 사용합니다.
 
 ```sql
 CREATE DATABASE neosquare CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -59,13 +90,20 @@ GRANT ALL PRIVILEGES ON neosquare.* TO 'neosquare'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-권장:
+권장 설정:
+
 - 로컬 시연: `JPA_DDL_AUTO=update`
 - 운영 점검: `JPA_DDL_AUTO=validate`
 
-## 3. Frontend 환경변수
+EC2에서 Java 17과 MariaDB를 한 번에 준비하려면 아래 스크립트를 사용할 수 있습니다.
 
-Vite 개발 서버를 프록시 없이 별도 호스트로 붙이거나, WebRTC ICE 서버를 명시적으로 넘기고 싶을 때 사용합니다.
+```bash
+./scripts/setup-ec2-mariadb.sh <EC2_PUBLIC_IP>
+```
+
+## 5. Frontend 환경변수
+
+로컬 개발에서는 `frontend/vite.config.js` 프록시 덕분에 별도 설정 없이도 동작합니다. 프론트와 백엔드를 다른 호스트로 붙이거나 TURN 서버를 명시할 때만 설정하면 됩니다.
 
 ```bash
 cd frontend
@@ -76,7 +114,7 @@ VITE_WS_URL=ws://localhost:8080/ws
 EOF
 ```
 
-TURN 서버를 붙이는 경우 예시:
+TURN 서버 예시:
 
 ```bash
 VITE_WEBRTC_STUN_URLS=stun:stun.l.google.com:19302
@@ -86,33 +124,75 @@ VITE_WEBRTC_TURN_CREDENTIAL=turn-password
 ```
 
 주의:
-- `VITE_WEBRTC_ICE_SERVERS` JSON 방식과 `STUN/TURN 분리 env` 방식 둘 다 지원합니다.
+
+- `VITE_WEBRTC_ICE_SERVERS` JSON 방식과 `STUN/TURN 분리 env` 방식을 둘 다 지원합니다.
 - JSON 방식이 있으면 그 값이 우선입니다.
-- 둘 다 없으면 프론트는 기본 Google STUN으로 fallback 합니다.
+- 둘 다 없으면 기본 Google STUN을 사용합니다.
 
-## 3-1. TURN 실환경 점검
+## 6. EC2 단일 jar 배포
 
-TURN 적용 후에는 아래를 같이 확인하는 편이 안전합니다.
+### 1회 준비
 
-1. 브라우저 두 개를 서로 다른 네트워크에서 접속
-2. 멘토링 또는 예약 세션에 같이 입장
-3. 세션 화면 상단 `ICE` 상태가 `TURN 설정됨`으로 보이는지 확인
-4. 카메라/마이크 준비 후 실제로 상대 영상이 연결되는지 확인
-5. 연결 실패 시:
-   - TURN URL 오타
-   - username / credential 불일치
-   - 3478/5349 포트 방화벽
-   - `turn:` / `turns:` 프로토콜 mismatch
-   를 먼저 점검
+Java 17만 먼저 설치하려면 EC2에서 아래를 실행합니다.
 
-## 4. 접속 주소
+```bash
+sudo apt update
+sudo apt install -y openjdk-17-jre-headless
+```
+
+MariaDB까지 함께 준비할 경우에는 `scripts/setup-ec2-mariadb.sh`를 사용하는 편이 간단합니다.
+
+### 배포 실행
+
+기본값은 `mariadb` 프로필과 로컬 EC2 MariaDB(`localhost:3306`) 기준입니다. 필요하면 환경변수를 먼저 덮어쓴 뒤 배포합니다.
+
+```bash
+export SPRING_PROFILES_ACTIVE=mariadb
+export DB_URL=jdbc:mariadb://localhost:3306/neosquare
+export DB_USERNAME=neosquare
+export DB_PASSWORD=neosquare1234!
+export JPA_DDL_AUTO=update
+export JWT_SECRET=replace-with-32-bytes-or-more-secret
+
+./scripts/deploy-ec2-artifacts.sh <EC2_PUBLIC_IP>
+```
+
+스크립트 동작 순서:
+
+1. 로컬에서 `frontend`를 `npm run build`로 빌드
+2. 로컬에서 `./gradlew :backend:bootJar` 실행
+3. EC2의 `/home/ubuntu/neosquare-app` 디렉터리 준비
+4. `backend.jar`와 `app.env` 업로드
+5. EC2에서 기존 `backend.jar` 프로세스 종료
+6. `nohup java -jar /home/ubuntu/neosquare-app/backend.jar` 실행
+7. `http://localhost:8080/api/health` 응답 확인
+
+배포 후 접속 주소:
+
+- Application: `http://<EC2_PUBLIC_IP>:8080`
+- Health check: `http://<EC2_PUBLIC_IP>:8080/api/health`
+
+### 로그 확인
+
+```bash
+ssh -i /Users/woojoo/AWS/neosquare-key.pem ubuntu@<EC2_PUBLIC_IP>
+tail -f /home/ubuntu/neosquare-app/backend.log
+```
+
+### 알아둘 점
+
+- 프론트 변경 사항도 최종 `jar` 안에 포함되므로, 프론트 수정 후에도 반드시 재배포해야 합니다.
+- 스크립트는 `backend.jar` 프로세스를 재기동하지만 OS 서비스나 `systemd`를 사용하지는 않습니다.
+- 스크립트는 `app.env`에 `JWT_REFRESH_TOKEN_COOKIE_SECURE=false`를 넣습니다. HTTPS 뒤에 리버스 프록시를 둘 때는 운영 환경에 맞게 다시 조정해야 합니다.
+
+## 7. 접속 주소
 
 - Backend API: `http://localhost:8080`
 - Health check: `http://localhost:8080/api/health`
 - Frontend dev server: `http://localhost:5173`
 - WebSocket: `ws://localhost:8080/ws`
 
-## 5. 로컬 더미 계정
+## 8. 로컬 더미 계정
 
 `local` 또는 `mariadb` 프로필에서 더미 데이터가 자동 주입되면 아래 계정으로 바로 시연할 수 있습니다.
 
@@ -121,20 +201,7 @@ TURN 적용 후에는 아래를 같이 확인하는 편이 안전합니다.
 - `hyunwoo@neosquare.local` / `demo1234!`
 - `seoyeon@neosquare.local` / `demo1234!`
 
-## 6. 실행 전 체크
-
-### Backend
-- `JWT_SECRET`가 32바이트 이상인지 확인
-- MariaDB 모드라면 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` 확인
-- `http://localhost:8080/api/health` 응답 확인
-
-### Frontend
-- `npm install` 완료
-- `npm run dev` 또는 `npm run build` 성공 확인
-- `VITE_API_BASE_URL`, `VITE_WS_URL`가 실제 backend 주소와 맞는지 확인
-- WebRTC 시연 전 브라우저 카메라/마이크 권한 허용
-
-## 7. 기본 smoke test
+## 9. 기본 smoke test
 
 1. 계정 A, 계정 B로 각각 로그인
 2. 로비 진입 확인
@@ -143,11 +210,3 @@ TURN 적용 후에는 아래를 같이 확인하는 편이 안전합니다.
 5. 세션 종료 -> 요청/예약 피드백 저장
 6. 알림 패널 조회 및 읽음 처리
 7. 스터디 라운지에서 스터디 세션 생성 -> 참가 -> 채팅
-
-## 8. 현재 운영형으로 더 필요한 것
-
-- TURN 서버 실제 배포 및 자격 증명 관리
-- WebRTC 재접속 정책 고도화
-- WebSocket 멀티 인스턴스 대응
-- MariaDB 백업/마이그레이션 전략
-- 정적 프론트 배포 경로와 backend CORS 분리
