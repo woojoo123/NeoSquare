@@ -18,6 +18,7 @@ DB_USERNAME="${DB_USERNAME:-neosquare}"
 DB_PASSWORD="${DB_PASSWORD:-neosquare1234!}"
 JPA_DDL_AUTO="${JPA_DDL_AUTO:-update}"
 JWT_SECRET="${JWT_SECRET:-neosquare-ec2-mariadb-secret-key-needs-at-least-32-bytes}"
+APP_DOMAIN="${APP_DOMAIN:-}"
 
 echo "Building frontend dist locally..."
 (cd frontend && npm run build)
@@ -42,7 +43,8 @@ DB_USERNAME=$DB_USERNAME
 DB_PASSWORD=$DB_PASSWORD
 JPA_DDL_AUTO=$JPA_DDL_AUTO
 JWT_SECRET=$JWT_SECRET
-JWT_REFRESH_TOKEN_COOKIE_SECURE=false
+JWT_REFRESH_TOKEN_COOKIE_SECURE=true
+SERVER_ADDRESS=127.0.0.1
 EOF
 
 echo "Uploading runtime environment..."
@@ -77,4 +79,8 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "
   exit 1
 "
 
-echo "Deployment complete: http://$EC2_PUBLIC_IP:8080"
+if [ -n "$APP_DOMAIN" ]; then
+  echo "Deployment complete: https://$APP_DOMAIN"
+else
+  echo "Deployment complete. Backend is bound to 127.0.0.1:8080, so expose it through Nginx."
+fi
