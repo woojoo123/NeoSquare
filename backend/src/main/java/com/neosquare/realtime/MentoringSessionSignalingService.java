@@ -29,6 +29,7 @@ public class MentoringSessionSignalingService {
     private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
     private static final String MENTOR_COURSE_SESSION_SCOPE = "mentor_course_session";
     private static final String STUDY_SESSION_SCOPE = "study_session";
+    private static final String SPACE_SESSION_SCOPE = "space_session";
 
     private final MentoringRequestRepository mentoringRequestRepository;
     private final MentoringReservationRepository mentoringReservationRepository;
@@ -90,6 +91,10 @@ public class MentoringSessionSignalingService {
             return routeStudySessionSignal(incomingMessage, payload);
         }
 
+        if (SPACE_SESSION_SCOPE.equals(scope)) {
+            return routeSpaceSessionSignal(incomingMessage, payload);
+        }
+
         throw new IllegalArgumentException("Unsupported signaling scope.");
     }
 
@@ -145,6 +150,38 @@ public class MentoringSessionSignalingService {
 
         if (targetSessions.isEmpty()) {
             throw new IllegalStateException("Target participant is not connected.");
+        }
+
+        return new SignalRouteResult(
+                targetSessions.stream().filter(WebSocketSession::isOpen).collect(Collectors.toSet()),
+                WebSocketMessage.relay(incomingMessage.type(), payload, incomingMessage.senderId())
+        );
+    }
+
+    private SignalRouteResult routeSpaceSessionSignal(WebSocketMessage incomingMessage, JsonNode payload) {
+        Long spaceId = extractLong(payload, "spaceId", "Space session id is required.");
+        Long targetUserId = extractLong(payload, "targetUserId", "Space session targetUserId is required.");
+
+        if (incomingMessage.senderId().equals(targetUserId)) {
+            throw new IllegalArgumentException("Space session signaling targetUserId must be another participant.");
+        }
+
+        Set<WebSocketSession> senderSessions = realtimeSessionRegistry.findOpenSessionsInSpaceByUserId(
+                spaceId,
+                incomingMessage.senderId()
+        );
+
+        if (senderSessions.isEmpty()) {
+            throw new IllegalStateException("Signal sender is not connected to this space.");
+        }
+
+        Set<WebSocketSession> targetSessions = realtimeSessionRegistry.findOpenSessionsInSpaceByUserId(
+                spaceId,
+                targetUserId
+        );
+
+        if (targetSessions.isEmpty()) {
+            throw new IllegalStateException("Signal target is not connected to this space.");
         }
 
         return new SignalRouteResult(

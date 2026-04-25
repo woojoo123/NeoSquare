@@ -16,6 +16,7 @@ import {
 import { getLobbyZoneDefinition } from '../lib/lobbyZones';
 import { useLobbyRealtime } from '../lib/useLobbyRealtime';
 import { useSessionMedia } from '../lib/useSessionMedia';
+import { useSpaceWebRTC } from '../lib/useSpaceWebRTC';
 import { useAuthStore } from '../store/authStore';
 
 const SPACE_NAVIGATION_ORDER = ['MAIN', 'STUDY'];
@@ -24,6 +25,7 @@ const CHAT_SCOPE_WHISPER = 'WHISPER';
 const CHAT_VARIANT_TEXT = 'TEXT';
 const CHAT_VARIANT_EMOJI = 'EMOJI';
 const QUICK_EMOJI_OPTIONS = ['😀', '👍', '🙌', '❤️', '😂'];
+const MAX_SPACE_VIDEO_PARTICIPANTS = 4;
 
 function formatChatTimestamp(value) {
   if (!value) {
@@ -70,6 +72,42 @@ function formatStudyParticipantCount(count) {
   return `${count}명 참여 중`;
 }
 
+function formatLocalVideoStatus({ hasLocalPreview, cameraOn, microphoneOn }) {
+  if (cameraOn && microphoneOn) {
+    return '카메라 · 마이크 켜짐';
+  }
+
+  if (cameraOn) {
+    return '카메라만 켜짐';
+  }
+
+  if (microphoneOn) {
+    return '오디오만 연결됨';
+  }
+
+  if (hasLocalPreview) {
+    return '로컬 미디어 대기 중';
+  }
+
+  return '카메라 또는 마이크를 켜 주세요';
+}
+
+function formatPeerVideoStatus(peerState, hasRemoteStream) {
+  if (hasRemoteStream || peerState === 'connected') {
+    return '연결됨';
+  }
+
+  if (peerState === 'connecting' || peerState === 'signaling') {
+    return '연결 중';
+  }
+
+  if (peerState === 'failed') {
+    return '연결 실패';
+  }
+
+  return '대기 중';
+}
+
 export default function SpacePage() {
   const { spaceId } = useParams();
   const location = useLocation();
@@ -109,9 +147,13 @@ export default function SpacePage() {
   const chatMessagesEndRef = useRef(null);
   const {
     localVideoRef,
+    localStream,
     hasLocalPreview,
+    hasCameraTrack,
+    hasMicrophoneTrack,
     cameraOn,
     microphoneOn,
+    statusMessage: mediaStatusMessage,
     errorMessage: mediaErrorMessage,
     startLocalPreview,
     toggleCamera,
@@ -132,6 +174,47 @@ export default function SpacePage() {
     nickname: currentUser?.nickname,
     spaceId: space?.id ?? null,
     avatarPresetId,
+  });
+  const prioritizedRemoteUsers = useMemo(() => {
+    if (!selectedParticipantId) {
+      return remoteUsers;
+    }
+
+    const selectedUser =
+      remoteUsers.find((user) => String(user.userId) === String(selectedParticipantId)) || null;
+
+    if (!selectedUser) {
+      return remoteUsers;
+    }
+
+    return [
+      selectedUser,
+      ...remoteUsers.filter((user) => String(user.userId) !== String(selectedParticipantId)),
+    ];
+  }, [remoteUsers, selectedParticipantId]);
+  const videoParticipants = useMemo(
+    () => prioritizedRemoteUsers.slice(0, MAX_SPACE_VIDEO_PARTICIPANTS),
+    [prioritizedRemoteUsers]
+  );
+  const videoParticipantIdsKey = useMemo(
+    () => videoParticipants.map((participant) => String(participant.userId)).join(','),
+    [videoParticipants]
+  );
+  const hiddenVideoParticipantCount = Math.max(0, remoteUsers.length - videoParticipants.length);
+  const {
+    statusMessage: videoStatusMessage,
+    errorMessage: spaceVideoErrorMessage,
+    remoteStreams,
+    peerStates,
+    bindRemoteVideo,
+    startConnection,
+    stopConnection,
+  } = useSpaceWebRTC({
+    enabled: !isLoading && !errorMessage && Boolean(currentUser?.id) && Boolean(space?.id),
+    spaceId: space?.id ?? null,
+    userId: currentUser?.id ?? null,
+    participants: videoParticipants,
+    localStream,
   });
 
   const selectedParticipant = useMemo(
@@ -263,6 +346,20 @@ export default function SpacePage() {
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (isLoading || errorMessage || !space?.id || !currentUser?.id) {
+      stopConnection();
+      return;
+    }
+
+    if (!localStream) {
+      stopConnection();
+      return;
+    }
+
+    void startConnection(localStream);
+  }, [currentUser?.id, errorMessage, isLoading, localStream, space?.id, videoParticipantIdsKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -582,15 +679,11 @@ export default function SpacePage() {
   const handleToggleCameraDock = async () => {
     setIsEmojiPaletteOpen(false);
 
-    if (!hasLocalPreview) {
-      const stream = await startLocalPreview();
+    if (!hasCameraTrack) {
+      const stream = await startLocalPreview({ video: true, audio: false });
 
-      if (!stream) {
+      if (!stream?.getVideoTracks?.().length) {
         return;
-      }
-
-      if (stream.getAudioTracks()[0]?.enabled) {
-        toggleMicrophone();
       }
 
       return;
@@ -606,15 +699,11 @@ export default function SpacePage() {
   const handleToggleMicrophoneDock = async () => {
     setIsEmojiPaletteOpen(false);
 
-    if (!hasLocalPreview) {
-      const stream = await startLocalPreview();
+    if (!hasMicrophoneTrack) {
+      const stream = await startLocalPreview({ video: false, audio: true });
 
-      if (!stream) {
+      if (!stream?.getAudioTracks?.().length) {
         return;
-      }
-
-      if (stream.getVideoTracks()[0]?.enabled) {
-        toggleCamera();
       }
 
       return;
@@ -640,6 +729,9 @@ export default function SpacePage() {
           ? '스터디 목록'
           : '현재 공간에서 필요한 도구를 확인합니다.';
   const participantCountLabel = `${remoteUsers.length + 1}명 접속 중`;
+  const videoRailStatusLabel = hasLocalPreview
+    ? videoStatusMessage
+    : '카메라 또는 마이크를 켜면 참가자 영상이 연결됩니다.';
 
   const renderDrawerContent = () => {
     if (activeDrawer === 'chat') {
@@ -822,6 +914,111 @@ export default function SpacePage() {
             {avatarNotice ? <p className="space-toast space-toast--success">{avatarNotice}</p> : null}
             {lastError ? <p className="space-toast space-toast--error">{lastError}</p> : null}
             {mediaErrorMessage ? <p className="space-toast space-toast--error">{mediaErrorMessage}</p> : null}
+            {spaceVideoErrorMessage ? (
+              <p className="space-toast space-toast--error">{spaceVideoErrorMessage}</p>
+            ) : null}
+
+            <aside className="space-video-rail" aria-label="공간 참가자 영상">
+              <div className="space-video-rail__header">
+                <div>
+                  <strong>{participantCountLabel}</strong>
+                  <span>{videoRailStatusLabel || mediaStatusMessage}</span>
+                </div>
+                {hiddenVideoParticipantCount > 0 ? (
+                  <span className="space-video-rail__more">+{hiddenVideoParticipantCount}명</span>
+                ) : null}
+              </div>
+
+              <div className="space-video-rail__stack">
+                <article className="space-video-card space-video-card--self">
+                  <div className="space-video-card__media">
+                    {hasLocalPreview ? (
+                      <video
+                        ref={localVideoRef}
+                        className={`space-video-card__video space-video-card__video--mirror ${
+                          cameraOn ? '' : 'space-video-card__video--hidden'
+                        }`}
+                        autoPlay
+                        muted
+                        playsInline
+                      />
+                    ) : null}
+                    {!cameraOn ? (
+                      <div className="space-video-card__placeholder">
+                        <strong>내 카메라 대기</strong>
+                        <span>카메라를 켜면 다른 참가자에게 즉시 보입니다.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-video-card__meta">
+                    <div className="space-video-card__name-row">
+                      <strong>{currentUser?.nickname || '나'}</strong>
+                      <span>{formatLocalVideoStatus({ hasLocalPreview, cameraOn, microphoneOn })}</span>
+                    </div>
+                    <div className="space-video-card__badges">
+                      <span className="space-video-card__badge">
+                        {cameraOn ? '카메라 켬' : hasCameraTrack ? '카메라 끔' : '카메라 없음'}
+                      </span>
+                      <span className="space-video-card__badge">
+                        {microphoneOn
+                          ? '마이크 켬'
+                          : hasMicrophoneTrack
+                            ? '마이크 음소거'
+                            : '마이크 없음'}
+                      </span>
+                    </div>
+                  </div>
+                </article>
+
+                {videoParticipants.map((participant) => {
+                  const remoteStream = remoteStreams[participant.userId] || null;
+                  const peerState = peerStates[participant.userId] || 'not_connected';
+                  const hasRemoteVideoTrack = Boolean(remoteStream?.getVideoTracks?.().length);
+                  const hasRemoteAudioTrack = Boolean(remoteStream?.getAudioTracks?.().length);
+
+                  return (
+                    <article key={participant.userId} className="space-video-card">
+                      <div className="space-video-card__media">
+                        {remoteStream ? (
+                          <video
+                            ref={(element) => bindRemoteVideo(participant.userId, element)}
+                            className={`space-video-card__video ${
+                              hasRemoteVideoTrack ? '' : 'space-video-card__video--hidden'
+                            }`}
+                            autoPlay
+                            playsInline
+                          />
+                        ) : null}
+                        {!hasRemoteVideoTrack ? (
+                          <div className="space-video-card__placeholder">
+                            <strong>{participant.label}</strong>
+                            <span>
+                              {peerState === 'connected'
+                                ? '카메라를 아직 켜지 않았습니다.'
+                                : '영상 연결을 준비하는 중입니다.'}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="space-video-card__meta">
+                        <div className="space-video-card__name-row">
+                          <strong>{participant.label}</strong>
+                          <span>{formatPeerVideoStatus(peerState, Boolean(remoteStream))}</span>
+                        </div>
+                        <div className="space-video-card__badges">
+                          <span className="space-video-card__badge">
+                            {hasRemoteVideoTrack ? '카메라 연결' : '카메라 대기'}
+                          </span>
+                          <span className="space-video-card__badge">
+                            {hasRemoteAudioTrack ? '오디오 연결' : '오디오 없음'}
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </aside>
 
             {isSupportPanelOpen ? (
               <aside className="space-hud-drawer" aria-label="메타버스 도구 패널">
@@ -921,17 +1118,6 @@ export default function SpacePage() {
                   >
                     스터디
                   </button>
-                ) : null}
-                {hasLocalPreview && cameraOn ? (
-                  <div className="space-bottom-bar__preview">
-                    <video
-                      ref={localVideoRef}
-                      className="space-bottom-bar__video"
-                      autoPlay
-                      muted
-                      playsInline
-                    />
-                  </div>
                 ) : null}
               </div>
             </section>

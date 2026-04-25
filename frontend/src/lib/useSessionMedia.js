@@ -80,6 +80,48 @@ function stopStreamTracks(stream) {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
+function normalizeMediaRequest(options) {
+  if (!options || (options.video == null && options.audio == null)) {
+    return {
+      video: true,
+      audio: true,
+    };
+  }
+
+  return {
+    video: Boolean(options.video),
+    audio: Boolean(options.audio),
+  };
+}
+
+function findTrack(stream, type) {
+  const trackGetter =
+    type === 'video' ? stream?.getVideoTracks?.bind(stream) : stream?.getAudioTracks?.bind(stream);
+  const tracks = trackGetter ? trackGetter() : [];
+  return tracks.find((track) => track.readyState !== 'ended') || tracks[0] || null;
+}
+
+function mergeStreams(baseStream, addedStream) {
+  const tracks = [...(baseStream?.getTracks() || []), ...(addedStream?.getTracks() || [])];
+  return new MediaStream(tracks);
+}
+
+function getRequestStatusMessage(request) {
+  if (request.video && request.audio) {
+    return '카메라와 마이크 권한을 요청하는 중입니다...';
+  }
+
+  if (request.video) {
+    return '카메라 권한을 요청하는 중입니다...';
+  }
+
+  if (request.audio) {
+    return '마이크 권한을 요청하는 중입니다...';
+  }
+
+  return '로컬 미디어 상태를 확인하는 중입니다...';
+}
+
 export function useSessionMedia() {
   const localVideoRef = useRef(null);
   const streamRef = useRef(null);
@@ -119,7 +161,7 @@ export function useSessionMedia() {
     }
   }
 
-  async function startLocalPreview() {
+  async function startLocalPreviewWithOptions(options) {
     if (
       typeof navigator === 'undefined' ||
       !navigator.mediaDevices ||
@@ -131,29 +173,44 @@ export function useSessionMedia() {
       return false;
     }
 
-    if (streamRef.current) {
+    const request = normalizeMediaRequest(options);
+    const currentStream = streamRef.current;
+    const currentVideoTrack = findTrack(currentStream, 'video');
+    const currentAudioTrack = findTrack(currentStream, 'audio');
+    const needsVideoTrack = request.video && !currentVideoTrack;
+    const needsAudioTrack = request.audio && !currentAudioTrack;
+
+    if (!needsVideoTrack && !needsAudioTrack && currentStream) {
       setConnectionStatus('ready');
       setErrorMessage('');
-      setStatusMessage('로컬 미리보기가 이미 준비되어 있습니다.');
-      return streamRef.current;
+      setStatusMessage('로컬 미디어가 이미 준비되어 있습니다.');
+      return currentStream;
+    }
+
+    if (!needsVideoTrack && !needsAudioTrack && !currentStream) {
+      setConnectionStatus('not_connected');
+      setErrorMessage('');
+      setStatusMessage('카메라 또는 마이크를 켜면 로컬 미디어를 준비합니다.');
+      return null;
     }
 
     setConnectionStatus('preparing');
     setErrorMessage('');
-    setStatusMessage('카메라와 마이크 권한을 요청하는 중입니다...');
+    setStatusMessage(getRequestStatusMessage({ video: needsVideoTrack, audio: needsAudioTrack }));
 
     try {
-      const nextStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+      const requestedStream = await navigator.mediaDevices.getUserMedia({
+        video: needsVideoTrack,
+        audio: needsAudioTrack,
       });
 
-      releaseCurrentStream();
+      const nextStream = currentStream ? mergeStreams(currentStream, requestedStream) : requestedStream;
+
       streamRef.current = nextStream;
       setLocalStream(nextStream);
 
-      const videoTrack = nextStream.getVideoTracks()[0] || null;
-      const audioTrack = nextStream.getAudioTracks()[0] || null;
+      const videoTrack = findTrack(nextStream, 'video');
+      const audioTrack = findTrack(nextStream, 'audio');
 
       bindTrackState(videoTrack, 'video');
       bindTrackState(audioTrack, 'audio');
@@ -165,14 +222,22 @@ export function useSessionMedia() {
       setErrorMessage('');
       return nextStream;
     } catch (error) {
-      releaseCurrentStream();
-      setLocalStream(null);
-      setCameraOn(false);
-      setMicrophoneOn(false);
       setConnectionStatus('error');
       setErrorMessage(await getMediaErrorMessage(error));
-      setStatusMessage('로컬 미디어를 준비하지 못했습니다.');
-      return null;
+
+      if (!currentStream) {
+        releaseCurrentStream();
+        setLocalStream(null);
+        setCameraOn(false);
+        setMicrophoneOn(false);
+        setStatusMessage('로컬 미디어를 준비하지 못했습니다.');
+        return null;
+      }
+
+      setCameraOn(Boolean(findTrack(currentStream, 'video')?.enabled));
+      setMicrophoneOn(Boolean(findTrack(currentStream, 'audio')?.enabled));
+      setStatusMessage('일부 장치 권한을 얻지 못했지만 기존 로컬 미디어는 유지되었습니다.');
+      return currentStream;
     }
   }
 
@@ -265,12 +330,14 @@ export function useSessionMedia() {
     localVideoRef,
     localStream,
     hasLocalPreview: Boolean(localStream),
+    hasCameraTrack: Boolean(findTrack(localStream, 'video')),
+    hasMicrophoneTrack: Boolean(findTrack(localStream, 'audio')),
     connectionStatus,
     cameraOn,
     microphoneOn,
     statusMessage,
     errorMessage,
-    startLocalPreview,
+    startLocalPreview: startLocalPreviewWithOptions,
     toggleCamera,
     toggleMicrophone,
     stopLocalPreview,

@@ -135,6 +135,33 @@ class MentoringSessionSignalingServiceTest {
     }
 
     @Test
+    void routeSignalRoutesSpaceSessionSignalToTargetParticipantInSameSpace() {
+        WebSocketSession senderSession = mock(WebSocketSession.class);
+        WebSocketSession targetSession = mock(WebSocketSession.class);
+        when(senderSession.isOpen()).thenReturn(true);
+        when(targetSession.isOpen()).thenReturn(true);
+
+        when(realtimeSessionRegistry.findOpenSessionsInSpaceByUserId(12L, 10L))
+                .thenReturn(Set.of(senderSession));
+        when(realtimeSessionRegistry.findOpenSessionsInSpaceByUserId(12L, 11L))
+                .thenReturn(Set.of(targetSession));
+
+        SignalRouteResult routeResult = mentoringSessionSignalingService.routeSignal(
+                new WebSocketMessage(
+                        WebSocketEventType.WEBRTC_OFFER,
+                        createSpaceSignalPayload(12L, 11L),
+                        10L,
+                        Instant.now()
+                )
+        );
+
+        assertThat(routeResult.targetSessions()).containsExactly(targetSession);
+        assertThat(routeResult.outboundMessage().payload().get("spaceId").asLong()).isEqualTo(12L);
+        assertThat(routeResult.outboundMessage().payload().get("targetUserId").asLong()).isEqualTo(11L);
+        assertThat(routeResult.outboundMessage().payload().get("scope").asText()).isEqualTo("space_session");
+    }
+
+    @Test
     void routeSignalRejectsWhenMentoringRequestIsNotAccepted() {
         User requester = createUser(1L, "requester@neo.square", "Requester");
         User mentor = createUser(2L, "mentor@neo.square", "Mentor");
@@ -231,6 +258,7 @@ class MentoringSessionSignalingServiceTest {
                 "WebRTC signaling 구조 점검"
         );
         studySession.join(member);
+        studySession.start();
         ReflectionTestUtils.setField(studySession, "id", id);
         return studySession;
     }
@@ -262,6 +290,18 @@ class MentoringSessionSignalingServiceTest {
         payload.put("studySessionId", studySessionId);
         payload.put("targetUserId", targetUserId);
         payload.put("scope", "study_session");
+
+        ObjectNode sdp = payload.putObject("sdp");
+        sdp.put("type", "offer");
+        sdp.put("sdp", "sample-offer");
+        return payload;
+    }
+
+    private ObjectNode createSpaceSignalPayload(Long spaceId, Long targetUserId) {
+        ObjectNode payload = JsonNodeFactory.instance.objectNode();
+        payload.put("spaceId", spaceId);
+        payload.put("targetUserId", targetUserId);
+        payload.put("scope", "space_session");
 
         ObjectNode sdp = payload.putObject("sdp");
         sdp.put("type", "offer");

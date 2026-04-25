@@ -1508,6 +1508,31 @@ select {
   .space-top-overlay__meta {
     justify-content: flex-start;
   }
+
+  .space-video-rail {
+    top: 74px;
+    left: 16px;
+    right: 16px;
+    bottom: auto;
+    width: auto;
+    grid-template-rows: auto auto;
+  }
+
+  .space-video-rail__stack {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(170px, 1fr);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+  }
+
+  .space-video-card__media {
+    aspect-ratio: 16 / 10;
+  }
+
+  .space-hud-drawer {
+    top: 268px;
+  }
 }
 
 .space-toast {
@@ -1559,6 +1584,172 @@ select {
 
 .space-top-overlay__menu-button {
   cursor: pointer;
+}
+
+.space-video-rail {
+  position: fixed;
+  z-index: 5;
+  top: 74px;
+  left: 16px;
+  bottom: 112px;
+  width: min(232px, calc(100% - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  pointer-events: none;
+}
+
+.space-video-rail__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(8, 15, 31, 0.88);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.28);
+  backdrop-filter: blur(18px);
+  color: #e2e8f0;
+}
+
+.space-video-rail__header strong {
+  display: block;
+  font-size: 0.96rem;
+  color: #f8fafc;
+}
+
+.space-video-rail__header span {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.space-video-rail__more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.88);
+  color: #bfdbfe;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.space-video-rail__stack {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.space-video-card {
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(9, 14, 24, 0.9);
+  box-shadow: 0 24px 56px rgba(2, 6, 23, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.space-video-card__media {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.28), transparent 58%),
+    linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92));
+}
+
+.space-video-card__video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #020617;
+}
+
+.space-video-card__video--mirror {
+  transform: scaleX(-1);
+}
+
+.space-video-card__video--hidden {
+  opacity: 0;
+}
+
+.space-video-card__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 18px;
+  background:
+    linear-gradient(180deg, rgba(2, 6, 23, 0.14), rgba(2, 6, 23, 0.88)),
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.24), transparent 52%);
+  color: #e2e8f0;
+}
+
+.space-video-card__placeholder strong {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.space-video-card__placeholder span {
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.space-video-card__meta {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.space-video-card__name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.space-video-card__name-row strong {
+  color: #f8fafc;
+  font-size: 0.96rem;
+}
+
+.space-video-card__name-row span {
+  color: #93c5fd;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.space-video-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.space-video-card__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .space-bottom-bar {
