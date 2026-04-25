@@ -107,7 +107,7 @@ export default function LoginPage() {
         throw new Error('Login response did not include an access token.');
       }
 
-      const currentUserResponse = await getMe();
+      const currentUserResponse = await getMe(loginResponse.accessToken);
 
       setAuthenticatedSession({
         accessToken: loginResponse.accessToken,

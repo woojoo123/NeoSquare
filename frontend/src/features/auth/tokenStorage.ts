@@ -1,14 +1,17 @@
 export const ACCESS_TOKEN_STORAGE_KEY = 'neosquare-access-token';
+let accessTokenCache: string | null = null;
+
+if (typeof window !== 'undefined') {
+  accessTokenCache = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+}
 
 export function getStoredAccessToken(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+  return accessTokenCache;
 }
 
 export function setStoredAccessToken(accessToken: string | null | undefined): void {
+  accessTokenCache = accessToken || null;
+
   if (typeof window === 'undefined') {
     return;
   }

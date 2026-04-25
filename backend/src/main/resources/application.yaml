@@ -31,3 +31,5 @@ jwt:
 
 app:
   seed-demo-data: false
+  websocket:
+    allowed-origin-patterns: ${APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*,https://localhost:*,https://127.0.0.1:*,https://*.duckdns.org,http://*.duckdns.org}

@@ -86,8 +86,15 @@ export async function login(payload: LoginRequestPayload): Promise<LoginResponse
   return unwrapResponseData(response);
 }
 
-export async function getMe(): Promise<CurrentUserResponse> {
-  const response = await axiosInstance.get<ApiResponse<CurrentUserResponse>>('/auth/me');
+export async function getMe(accessTokenOverride?: string | null): Promise<CurrentUserResponse> {
+  const response = await axiosInstance.get<ApiResponse<CurrentUserResponse>>('/auth/me', {
+    headers: accessTokenOverride
+      ? {
+          Authorization: `Bearer ${accessTokenOverride}`,
+        }
+      : undefined,
+    skipAuthRefresh: Boolean(accessTokenOverride),
+  });
   return unwrapResponseData(response);
 }
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { clearStoredAccessToken, getStoredAccessToken, setStoredAccessToken } from '../features/auth/tokenStorage';
+import { clearCachedWebSocketTicket } from '../lib/webSocketUrl';
 
 const initialAccessToken = getStoredAccessToken();
 
@@ -9,6 +10,7 @@ export const useAuthStore = create((set) => ({
   currentUser: null,
   authStatus: initialAccessToken ? 'checking' : 'guest',
   setAccessToken: (accessToken) => {
+    clearCachedWebSocketTicket();
     setStoredAccessToken(accessToken);
     set((state) => ({
       accessToken: accessToken || null,
@@ -17,6 +19,7 @@ export const useAuthStore = create((set) => ({
     }));
   },
   setAuthenticatedSession: ({ accessToken, currentUser }) => {
+    clearCachedWebSocketTicket();
     setStoredAccessToken(accessToken);
     set({
       accessToken: accessToken || null,
@@ -36,6 +39,7 @@ export const useAuthStore = create((set) => ({
     }));
   },
   clearAuth: () => {
+    clearCachedWebSocketTicket();
     clearStoredAccessToken();
     set({
       accessToken: null,

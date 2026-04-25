@@ -24,13 +24,18 @@ function resolveBaseWebSocketUrl() {
 let cachedTicket = null;
 let cachedTicketExpiresAt = 0;
 let ticketRequestPromise = null;
+let ticketCacheVersion = 0;
 
-async function issueWebSocketTicket() {
+async function issueWebSocketTicket(expectedVersion) {
   const response = await axiosInstance.post('/auth/ws-ticket');
   const ticket = response.data?.data?.ticket ?? response.data?.ticket;
 
   if (!ticket) {
     throw new Error('WebSocket ticket was not returned.');
+  }
+
+  if (expectedVersion !== ticketCacheVersion) {
+    throw new Error('WebSocket ticket was invalidated.');
   }
 
   cachedTicket = ticket;
@@ -44,8 +49,11 @@ async function getWebSocketTicket() {
   }
 
   if (!ticketRequestPromise) {
-    ticketRequestPromise = issueWebSocketTicket().finally(() => {
-      ticketRequestPromise = null;
+    const requestVersion = ticketCacheVersion;
+    ticketRequestPromise = issueWebSocketTicket(requestVersion).finally(() => {
+      if (requestVersion === ticketCacheVersion) {
+        ticketRequestPromise = null;
+      }
     });
   }
 
@@ -66,6 +74,8 @@ export async function getAuthenticatedWebSocketUrl() {
 }
 
 export function clearCachedWebSocketTicket() {
+  ticketCacheVersion += 1;
   cachedTicket = null;
   cachedTicketExpiresAt = 0;
+  ticketRequestPromise = null;
 }
