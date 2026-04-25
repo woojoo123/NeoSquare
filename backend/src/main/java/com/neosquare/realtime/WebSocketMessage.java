@@ -47,10 +47,17 @@ public record WebSocketMessage(
     }
 
     public static WebSocketMessage error(String message, WebSocketEventType receivedType) {
+        return error(message, receivedType, null);
+    }
+
+    public static WebSocketMessage error(String message, WebSocketEventType receivedType, String clientMessageId) {
         ObjectNode payload = JsonNodeFactory.instance.objectNode();
         payload.put("message", message);
         if (receivedType != null) {
             payload.put("receivedType", receivedType.getValue());
+        }
+        if (clientMessageId != null && !clientMessageId.isBlank()) {
+            payload.put("clientMessageId", clientMessageId);
         }
 
         return new WebSocketMessage(

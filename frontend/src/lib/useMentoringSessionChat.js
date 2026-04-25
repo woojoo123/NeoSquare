@@ -35,6 +35,22 @@ function appendSessionMessage(previousMessages, nextMessage) {
   return [...previousMessages, nextMessage].slice(-SESSION_CHAT_LIMIT);
 }
 
+function extractSessionScope(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (typeof payload.sessionScope === 'string' && payload.sessionScope.trim() !== '') {
+    return payload.sessionScope.trim();
+  }
+
+  if (typeof payload.scope === 'string' && payload.scope.trim() !== '') {
+    return payload.scope.trim();
+  }
+
+  return null;
+}
+
 function normalizeSessionChatMessage(message, currentUserId, sessionScope, sessionIdField, sessionId) {
   if (message?.type !== 'chat_send') {
     return null;
@@ -44,7 +60,7 @@ function normalizeSessionChatMessage(message, currentUserId, sessionScope, sessi
   const scopedSessionId = toNumber(payload[sessionIdField]);
   const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
   const content = typeof payload.content === 'string' ? payload.content.trim() : '';
-  const scope = payload.scope;
+  const scope = extractSessionScope(payload);
 
   if (!senderId || !content || scopedSessionId !== sessionId) {
     return null;
@@ -107,7 +123,7 @@ export function useMentoringSessionChat({
         senderId: userId,
         payload: {
           [sessionIdField]: sessionId,
-          scope: sessionScope,
+          sessionScope,
           content: trimmedContent,
           nickname,
           clientMessageId,

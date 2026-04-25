@@ -26,11 +26,14 @@ import org.springframework.web.socket.WebSocketSession;
 @Service
 public class SessionChatRoutingService {
 
-    private static final String SPACE_SCOPE = "space";
+    private static final String SESSION_SCOPE_FIELD = "sessionScope";
+    private static final String LEGACY_SCOPE_FIELD = "scope";
     private static final String MENTORING_SESSION_SCOPE = "mentoring_session";
     private static final String RESERVATION_SESSION_SCOPE = "reservation_session";
     private static final String MENTOR_COURSE_SESSION_SCOPE = "mentor_course_session";
     private static final String STUDY_SESSION_SCOPE = "study_session";
+    private static final String CHAT_SCOPE_PUBLIC = "PUBLIC";
+    private static final String CHAT_SCOPE_WHISPER = "WHISPER";
 
     private final MentoringRequestRepository mentoringRequestRepository;
     private final MentoringReservationRepository mentoringReservationRepository;
@@ -63,11 +66,7 @@ public class SessionChatRoutingService {
             return false;
         }
 
-        String scope = extractScope(incomingMessage.payload());
-        return MENTORING_SESSION_SCOPE.equals(scope)
-                || RESERVATION_SESSION_SCOPE.equals(scope)
-                || MENTOR_COURSE_SESSION_SCOPE.equals(scope)
-                || STUDY_SESSION_SCOPE.equals(scope);
+        return isSupportedSessionScope(extractRequestedSessionScope(incomingMessage.payload()));
     }
 
     public boolean hasScopedChat(WebSocketMessage incomingMessage) {
@@ -75,8 +74,8 @@ public class SessionChatRoutingService {
             return false;
         }
 
-        String scope = extractScope(incomingMessage.payload());
-        return scope != null && !scope.isBlank() && !SPACE_SCOPE.equals(scope);
+        String requestedSessionScope = extractRequestedSessionScope(incomingMessage.payload());
+        return requestedSessionScope != null && !isSupportedSessionScope(requestedSessionScope);
     }
 
     public SignalRouteResult routeChatMessage(WebSocketMessage incomingMessage) {
@@ -88,7 +87,7 @@ public class SessionChatRoutingService {
             throw new IllegalArgumentException("Chat senderId is required.");
         }
 
-        String scope = extractScope(incomingMessage.payload());
+        String scope = extractRequestedSessionScope(incomingMessage.payload());
 
         if (MENTORING_SESSION_SCOPE.equals(scope)) {
             return routeMentoringSessionChat(incomingMessage);
@@ -223,12 +222,40 @@ public class SessionChatRoutingService {
         return targetSessions;
     }
 
-    private String extractScope(JsonNode payload) {
-        if (payload == null || payload.get("scope") == null || payload.get("scope").isNull()) {
+    private boolean isSupportedSessionScope(String scope) {
+        return MENTORING_SESSION_SCOPE.equals(scope)
+                || RESERVATION_SESSION_SCOPE.equals(scope)
+                || MENTOR_COURSE_SESSION_SCOPE.equals(scope)
+                || STUDY_SESSION_SCOPE.equals(scope);
+    }
+
+    private String extractRequestedSessionScope(JsonNode payload) {
+        String explicitSessionScope = extractText(payload, SESSION_SCOPE_FIELD);
+
+        if (explicitSessionScope != null) {
+            return explicitSessionScope;
+        }
+
+        String legacyScope = extractText(payload, LEGACY_SCOPE_FIELD);
+
+        if (legacyScope == null) {
             return null;
         }
 
-        return payload.get("scope").asText();
+        if (CHAT_SCOPE_PUBLIC.equalsIgnoreCase(legacyScope) || CHAT_SCOPE_WHISPER.equalsIgnoreCase(legacyScope)) {
+            return null;
+        }
+
+        return legacyScope;
+    }
+
+    private String extractText(JsonNode payload, String fieldName) {
+        if (payload == null || payload.get(fieldName) == null || payload.get(fieldName).isNull()) {
+            return null;
+        }
+
+        String value = payload.get(fieldName).asText();
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private Long extractLong(JsonNode payload, String fieldName, String errorMessage) {

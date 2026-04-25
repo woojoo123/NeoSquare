@@ -230,6 +230,7 @@ class SessionChatRoutingServiceTest {
                 "상태 분리와 훅 설계"
         );
         studySession.join(member);
+        studySession.start();
         ReflectionTestUtils.setField(studySession, "id", id);
         return studySession;
     }

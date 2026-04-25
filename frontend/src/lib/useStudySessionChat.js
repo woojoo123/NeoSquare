@@ -35,6 +35,22 @@ function appendSessionMessage(previousMessages, nextMessage) {
   return [...previousMessages, nextMessage].slice(-STUDY_SESSION_CHAT_LIMIT);
 }
 
+function extractSessionScope(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (typeof payload.sessionScope === 'string' && payload.sessionScope.trim() !== '') {
+    return payload.sessionScope.trim();
+  }
+
+  if (typeof payload.scope === 'string' && payload.scope.trim() !== '') {
+    return payload.scope.trim();
+  }
+
+  return null;
+}
+
 function normalizeStudySessionChatMessage(message, currentUserId, studySessionId) {
   if (message?.type !== 'chat_send') {
     return null;
@@ -44,7 +60,7 @@ function normalizeStudySessionChatMessage(message, currentUserId, studySessionId
   const messageStudySessionId = toNumber(payload.studySessionId);
   const senderId = toNumber(message?.senderId) ?? toNumber(payload.userId) ?? toNumber(payload.id);
   const content = typeof payload.content === 'string' ? payload.content.trim() : '';
-  const scope = payload.scope;
+  const scope = extractSessionScope(payload);
 
   if (!senderId || !content || messageStudySessionId !== studySessionId) {
     return null;
@@ -98,7 +114,7 @@ export function useStudySessionChat({ enabled, studySessionId, userId, nickname 
         senderId: userId,
         payload: {
           studySessionId,
-          scope: 'study_session',
+          sessionScope: 'study_session',
           content: trimmedContent,
           nickname,
           clientMessageId,

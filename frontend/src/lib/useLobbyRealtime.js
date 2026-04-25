@@ -120,6 +120,30 @@ function normalizeChatMessage(message, currentUserId, activeSpaceId) {
   };
 }
 
+function normalizeControlMessage(message) {
+  if (message?.type !== 'ws_ack' && message?.type !== 'ws_error') {
+    return null;
+  }
+
+  const payload = message?.payload || {};
+  const receivedType =
+    typeof payload.receivedType === 'string' ? payload.receivedType.trim().toLowerCase() : '';
+
+  if (!receivedType) {
+    return null;
+  }
+
+  return {
+    type: message.type,
+    receivedType,
+    message: typeof payload.message === 'string' ? payload.message.trim() : '',
+    clientMessageId:
+      typeof payload.clientMessageId === 'string' && payload.clientMessageId.trim() !== ''
+        ? payload.clientMessageId.trim()
+        : null,
+  };
+}
+
 function appendChatMessage(previousMessages, nextMessage) {
   const hasDuplicate = previousMessages.some((message) => {
     if (nextMessage.clientMessageId && message.clientMessageId) {
@@ -152,6 +176,19 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
   const currentPositionRef = useRef(null);
   const remoteEventSequenceRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
+
+  function removeChatMessageByClientMessageId(clientMessageId) {
+    if (!clientMessageId) {
+      return;
+    }
+
+    setChatMessages((previousMessages) =>
+      previousMessages.filter((message) => message.clientMessageId !== clientMessageId)
+    );
+    setLatestChatMessage((previousMessage) =>
+      previousMessage?.clientMessageId === clientMessageId ? null : previousMessage
+    );
+  }
 
   function sendUserMove(position) {
     if (!position) {
@@ -382,6 +419,19 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
         setLastMessage(parsedMessage);
         setLastError('');
         console.info('Lobby realtime message received:', parsedMessage);
+
+        const controlMessage = normalizeControlMessage(parsedMessage);
+
+        if (controlMessage?.receivedType === 'chat_send') {
+          if (controlMessage.type === 'ws_ack') {
+            setLastError('');
+          } else {
+            removeChatMessageByClientMessageId(controlMessage.clientMessageId);
+            setLastError(controlMessage.message || '메시지를 전송하지 못했습니다.');
+          }
+        } else if (controlMessage?.type === 'ws_error') {
+          setLastError(controlMessage.message || '실시간 요청을 처리하지 못했습니다.');
+        }
 
         const nextRemoteEvent = normalizeRemoteEvent(
           parsedMessage,

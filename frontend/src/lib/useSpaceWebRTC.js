@@ -7,6 +7,8 @@ import {
 } from './webrtcConfig';
 
 const SIGNAL_EVENT_TYPES = ['webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate'];
+const DEFAULT_STATUS_MESSAGE =
+  '카메라를 켜면 내 영상을 송출하고, 끈 상태에서도 참가자 영상을 받을 수 있습니다.';
 
 function toNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -97,9 +99,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
   const ignoredOfferRef = useRef(new Map());
   const videoElementsRef = useRef(new Map());
   const [connectionStatus, setConnectionStatus] = useState('not_connected');
-  const [statusMessage, setStatusMessage] = useState(
-    '카메라 또는 마이크를 켜면 공간 참가자 영상 연결을 시작할 수 있습니다.'
-  );
+  const [statusMessage, setStatusMessage] = useState(DEFAULT_STATUS_MESSAGE);
   const [errorMessage, setErrorMessage] = useState('');
   const [lastSignalType, setLastSignalType] = useState('');
   const [canRetry, setCanRetry] = useState(false);
@@ -224,6 +224,31 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
 
   function getActiveLocalTracks(stream) {
     return (stream?.getTracks() || []).filter((track) => track.readyState !== 'ended');
+  }
+
+  function ensureReceiveOnlyTransceivers(peer) {
+    if (typeof peer.addTransceiver !== 'function' || typeof peer.getTransceivers !== 'function') {
+      return false;
+    }
+
+    const existingKinds = new Set(
+      peer
+        .getTransceivers()
+        .map((transceiver) => transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind)
+        .filter(Boolean)
+    );
+    let hasTransceiverChanges = false;
+
+    ['audio', 'video'].forEach((kind) => {
+      if (existingKinds.has(kind)) {
+        return;
+      }
+
+      peer.addTransceiver(kind, { direction: 'recvonly' });
+      hasTransceiverChanges = true;
+    });
+
+    return hasTransceiverChanges;
   }
 
   function syncPeerTracks(peer, stream) {
@@ -381,6 +406,13 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     }
 
     if (startRequestedRef.current) {
+      if (participantUserIds.length === 0) {
+        return {
+          status: 'preparing',
+          message: '아직 연결할 다른 공간 참가자가 없습니다.',
+        };
+      }
+
       return {
         status: 'disconnected',
         message: '상대 참가자 연결이 아직 없거나 연결이 끊겼습니다. 다시 시도해 주세요.',
@@ -389,7 +421,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
 
     return {
       status: 'not_connected',
-      message: '카메라 또는 마이크를 켜면 공간 참가자 영상 연결을 시작할 수 있습니다.',
+      message: DEFAULT_STATUS_MESSAGE,
     };
   }
 
@@ -409,14 +441,17 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
 
     const existingPeer = peersRef.current.get(targetUserId);
     const activeStream = streamOverride || localStreamRef.current;
+    const hasActiveLocalTracks = getActiveLocalTracks(activeStream).length > 0;
 
     if (existingPeer) {
-      if (activeStream) {
-        const hasTrackChanges = syncPeerTracks(existingPeer, activeStream);
+      const hasTrackChanges = syncPeerTracks(existingPeer, activeStream);
 
-        if (hasTrackChanges) {
-          markPendingNegotiation(targetUserId);
-        }
+      if (hasTrackChanges) {
+        markPendingNegotiation(targetUserId);
+      }
+
+      if (!hasActiveLocalTracks && ensureReceiveOnlyTransceivers(existingPeer)) {
+        markPendingNegotiation(targetUserId);
       }
 
       return existingPeer;
@@ -424,10 +459,12 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
 
     const peer = new RTCPeerConnection(RTC_CONFIGURATION);
 
-    if (activeStream) {
+    if (hasActiveLocalTracks) {
       getActiveLocalTracks(activeStream).forEach((track) => {
         peer.addTrack(track, activeStream);
       });
+    } else {
+      ensureReceiveOnlyTransceivers(peer);
     }
 
     peer.onicecandidate = (event) => {
@@ -543,12 +580,6 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
   }
 
   async function createAnswer(senderUserId, signal) {
-    if (!localStreamRef.current) {
-      setErrorMessage('공간 영상 연결 전에 카메라 또는 마이크를 먼저 준비해 주세요.');
-      setStatus('error', '연결 제안을 받았지만 로컬 미디어가 아직 준비되지 않았습니다.');
-      return;
-    }
-
     const peer = ensurePeerConnection(senderUserId, localStreamRef.current);
 
     if (!peer) {
@@ -634,7 +665,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
   async function synchronizePeers() {
     const activeStream = localStreamRef.current;
 
-    if (!isSocketReadyRef.current || !activeStream) {
+    if (!isSocketReadyRef.current) {
       return;
     }
 
@@ -666,7 +697,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
         isSocketReadyRef.current = true;
         setErrorMessage('');
 
-        if (startRequestedRef.current && localStreamRef.current) {
+        if (startRequestedRef.current) {
           await synchronizePeers();
         }
 
@@ -785,15 +816,12 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
   }
 
   async function startConnection(streamOverride) {
-    const activeStream = streamOverride || localStreamRef.current;
+    if (streamOverride) {
+      localStreamRef.current = streamOverride;
+    }
+
     startRequestedRef.current = true;
     setErrorMessage('');
-
-    if (!activeStream) {
-      setErrorMessage('공간 영상 연결 전에 카메라 또는 마이크가 필요합니다.');
-      setStatus('error', '공간 영상 연결 전에 카메라 또는 마이크를 준비해 주세요.');
-      return false;
-    }
 
     if (participantUserIds.length === 0) {
       setStatus('preparing', '아직 연결할 다른 공간 참가자가 없습니다.');
@@ -838,7 +866,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       closeAllPeers();
       setErrorMessage('');
       setLastSignalType('');
-      setStatus('not_connected', '카메라 또는 마이크를 켜면 공간 참가자 영상 연결을 시작할 수 있습니다.');
+      setStatus('not_connected', DEFAULT_STATUS_MESSAGE);
       return undefined;
     }
 
@@ -849,7 +877,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       closeAllPeers();
       setLastSignalType('');
       setErrorMessage('');
-      setStatus('not_connected', '카메라 또는 마이크를 켜면 공간 참가자 영상 연결을 시작할 수 있습니다.');
+      setStatus('not_connected', DEFAULT_STATUS_MESSAGE);
     };
   }, [enabled, spaceId, userId]);
 

@@ -118,6 +118,7 @@ export default function SpacePage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [avatarNotice, setAvatarNotice] = useState('');
   const [selectedAvatarId, setSelectedAvatarId] = useState(AVATAR_PRESETS[0].id);
+  const [avatarSelectionUserId, setAvatarSelectionUserId] = useState(null);
   const [showAvatarOnboarding, setShowAvatarOnboarding] = useState(false);
   const [hasCompletedAvatarSetup, setHasCompletedAvatarSetup] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
@@ -134,6 +135,7 @@ export default function SpacePage() {
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const avatarPresetId = selectedAvatarId;
+  const isAvatarSelectionReady = Boolean(currentUser?.id) && avatarSelectionUserId === currentUser.id;
   const spawnFromSpaceType =
     typeof location.state?.entryFromSpaceType === 'string'
       ? location.state.entryFromSpaceType
@@ -169,7 +171,12 @@ export default function SpacePage() {
     sendChatMessage,
     sendUserMove,
   } = useLobbyRealtime({
-    enabled: !isLoading && !errorMessage && Boolean(currentUser) && Boolean(space),
+    enabled:
+      !isLoading &&
+      !errorMessage &&
+      Boolean(currentUser) &&
+      Boolean(space) &&
+      isAvatarSelectionReady,
     userId: currentUser?.id,
     nickname: currentUser?.nickname,
     spaceId: space?.id ?? null,
@@ -210,7 +217,12 @@ export default function SpacePage() {
     startConnection,
     stopConnection,
   } = useSpaceWebRTC({
-    enabled: !isLoading && !errorMessage && Boolean(currentUser?.id) && Boolean(space?.id),
+    enabled:
+      !isLoading &&
+      !errorMessage &&
+      Boolean(currentUser?.id) &&
+      Boolean(space?.id) &&
+      isAvatarSelectionReady,
     spaceId: space?.id ?? null,
     userId: currentUser?.id ?? null,
     participants: videoParticipants,
@@ -252,15 +264,18 @@ export default function SpacePage() {
   useEffect(() => {
     if (!currentUser?.id) {
       setSelectedAvatarId(AVATAR_PRESETS[0].id);
+      setAvatarSelectionUserId(null);
       setHasCompletedAvatarSetup(false);
       setShowAvatarOnboarding(false);
       return;
     }
 
+    setAvatarSelectionUserId(null);
     const didCompleteAvatarSetup = hasCompletedAvatarOnboarding(currentUser.id);
 
     setSelectedAvatarId(getSelectedAvatarPresetId(currentUser.id));
     setHasCompletedAvatarSetup(didCompleteAvatarSetup);
+    setAvatarSelectionUserId(currentUser.id);
 
     if (didCompleteAvatarSetup) {
       setShowAvatarOnboarding(false);
@@ -348,18 +363,21 @@ export default function SpacePage() {
   }, [chatMessages]);
 
   useEffect(() => {
-    if (isLoading || errorMessage || !space?.id || !currentUser?.id) {
-      stopConnection();
-      return;
-    }
-
-    if (!localStream) {
+    if (isLoading || errorMessage || !space?.id || !currentUser?.id || !isAvatarSelectionReady) {
       stopConnection();
       return;
     }
 
     void startConnection(localStream);
-  }, [currentUser?.id, errorMessage, isLoading, localStream, space?.id, videoParticipantIdsKey]);
+  }, [
+    currentUser?.id,
+    errorMessage,
+    isAvatarSelectionReady,
+    isLoading,
+    localStream,
+    space?.id,
+    videoParticipantIdsKey,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -521,7 +539,7 @@ export default function SpacePage() {
     }
 
     setSelectedParticipantId(participant.userId);
-    handleActivateWhisper(participant);
+    focusChatComposer();
   };
 
   const handleSetPublicChat = () => {
@@ -729,9 +747,11 @@ export default function SpacePage() {
           ? '스터디 목록'
           : '현재 공간에서 필요한 도구를 확인합니다.';
   const participantCountLabel = `${remoteUsers.length + 1}명 접속 중`;
-  const videoRailStatusLabel = hasLocalPreview
-    ? videoStatusMessage
-    : '카메라 또는 마이크를 켜면 참가자 영상이 연결됩니다.';
+  const videoRailStatusLabel =
+    videoStatusMessage ||
+    (hasLocalPreview
+      ? mediaStatusMessage
+      : '카메라를 켜면 내 영상을 송출하고, 끈 상태에서도 참가자 영상을 받을 수 있습니다.');
 
   const renderDrawerContent = () => {
     if (activeDrawer === 'chat') {

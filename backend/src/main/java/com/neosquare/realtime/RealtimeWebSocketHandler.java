@@ -87,6 +87,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         WebSocketEventType incomingType = null;
+        WebSocketMessage normalizedMessage = null;
 
         try {
             WebSocketMessage incomingMessage = objectMapper.readValue(message.getPayload(), WebSocketMessage.class);
@@ -96,7 +97,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             }
 
             incomingType = incomingMessage.type();
-            WebSocketMessage normalizedMessage = normalizeIncomingMessage(session, incomingMessage);
+            normalizedMessage = normalizeIncomingMessage(session, incomingMessage);
 
             log.info(
                     "WebSocket message received. sessionId={}, type={}, senderId={}",
@@ -138,7 +139,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             if (incomingType == null) {
                 sendMessage(session, WebSocketMessage.error("Invalid WebSocket message."));
             } else {
-                sendMessage(session, WebSocketMessage.error(exception.getMessage(), incomingType));
+                sendMessage(
+                        session,
+                        WebSocketMessage.error(
+                                exception.getMessage(),
+                                incomingType,
+                                extractClientMessageId(normalizedMessage)
+                        )
+                );
             }
         }
     }
@@ -414,6 +422,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
 
         throw new IllegalArgumentException("Unsupported chat scope.");
+    }
+
+    private String extractClientMessageId(WebSocketMessage message) {
+        if (message == null) {
+            return null;
+        }
+
+        return extractStringPayloadValue(message.payload(), "clientMessageId");
     }
 
     private void sendMessage(WebSocketSession session, WebSocketMessage message) throws Exception {
