@@ -51,6 +51,21 @@ const SCENE_DECOR_DEPTH = 8;
 const AVATAR_DEPTH_BASE = 120;
 const FOREGROUND_DEPTH = 980;
 const PLAYER_COLLISION_RADIUS = 22;
+const PERSONAL_SPAWN_OFFSETS = [
+  { x: 0, y: 0 },
+  { x: -48, y: 0 },
+  { x: 48, y: 0 },
+  { x: 0, y: -48 },
+  { x: 0, y: 48 },
+  { x: -36, y: -36 },
+  { x: 36, y: -36 },
+  { x: -36, y: 36 },
+  { x: 36, y: 36 },
+  { x: -72, y: 0 },
+  { x: 72, y: 0 },
+  { x: 0, y: -72 },
+  { x: 0, y: 72 },
+];
 
 const SPACE_PORTAL_LAYOUTS = {
   MAIN: [],
@@ -408,7 +423,40 @@ export default class SpaceScene extends Phaser.Scene {
       }
     }
 
-    return this.worldConfig.spawn || DEFAULT_SPAWN_POSITIONS[this.spaceType] || DEFAULT_SPAWN_POSITIONS.MAIN;
+    const baseSpawn =
+      this.worldConfig.spawn || DEFAULT_SPAWN_POSITIONS[this.spaceType] || DEFAULT_SPAWN_POSITIONS.MAIN;
+
+    return this.resolvePersonalSpawnPosition(baseSpawn);
+  }
+
+  resolvePersonalSpawnPosition(baseSpawn) {
+    if (!baseSpawn) {
+      return DEFAULT_SPAWN_POSITIONS.MAIN;
+    }
+
+    const numericUserId = Number(this.currentUserId);
+
+    if (!Number.isFinite(numericUserId)) {
+      return baseSpawn;
+    }
+
+    const normalizedSeed = Math.abs(Math.trunc(numericUserId));
+    const startOffsetIndex = normalizedSeed % PERSONAL_SPAWN_OFFSETS.length;
+
+    for (let step = 0; step < PERSONAL_SPAWN_OFFSETS.length; step += 1) {
+      const offset = PERSONAL_SPAWN_OFFSETS[(startOffsetIndex + step) % PERSONAL_SPAWN_OFFSETS.length];
+      const candidateX = baseSpawn.x + offset.x;
+      const candidateY = baseSpawn.y + offset.y;
+
+      if (!this.isPositionBlocked(candidateX, candidateY)) {
+        return {
+          x: Phaser.Math.Clamp(candidateX, WORLD_PADDING, WORLD_WIDTH - WORLD_PADDING),
+          y: Phaser.Math.Clamp(candidateY, WORLD_PADDING, WORLD_HEIGHT - WORLD_PADDING),
+        };
+      }
+    }
+
+    return baseSpawn;
   }
 
   addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
