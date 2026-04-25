@@ -8,6 +8,7 @@ export default function AppLayout({
   panelClassName = '',
   shellClassName = '',
   headerHidden = false,
+  showHomeButton = true,
 }) {
   const shellClassNames = ['app-shell', shellClassName].filter(Boolean).join(' ');
   const panelClassNames = ['app-panel', panelClassName].filter(Boolean).join(' ');
@@ -22,9 +23,11 @@ export default function AppLayout({
               <h1>{title}</h1>
               <p>{description}</p>
             </div>
-            <Link className="secondary-button app-home-button" to="/">
-              홈
-            </Link>
+            {showHomeButton ? (
+              <Link className="secondary-button app-home-button" to="/">
+                홈
+              </Link>
+            ) : null}
           </header>
         ) : null}
         {children}

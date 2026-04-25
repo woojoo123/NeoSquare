@@ -112,6 +112,7 @@ export default function SignupPage() {
       title="NeoSquare 계정 만들기"
       description="기본 정보를 입력하면 바로 로그인해서 NeoSquare를 이용할 수 있습니다."
       panelClassName="auth-panel auth-panel--compact"
+      showHomeButton={false}
     >
       {formErrorMessage ? (
         <p className="form-feedback auth-form-error" role="alert">

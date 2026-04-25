@@ -136,6 +136,7 @@ export default function LoginPage() {
       title="NeoSquare에 로그인"
       description="이메일과 비밀번호를 입력하면 바로 서비스를 이어서 이용할 수 있습니다."
       panelClassName="auth-panel auth-panel--compact"
+      showHomeButton={false}
     >
       {successMessage ? <p className="form-feedback form-feedback--success">{successMessage}</p> : null}
       {infoMessage ? <p className="auth-info-banner">{infoMessage}</p> : null}
