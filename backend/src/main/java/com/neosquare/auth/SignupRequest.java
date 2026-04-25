@@ -2,7 +2,6 @@ package com.neosquare.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record SignupRequest(
@@ -11,11 +10,7 @@ public record SignupRequest(
         String email,
 
         @NotBlank(message = "비밀번호를 입력해 주세요.")
-        @Size(min = 8, max = 64, message = "비밀번호는 8자 이상 64자 이하로 입력해 주세요.")
-        @Pattern(
-                regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$",
-                message = "비밀번호는 영문과 숫자를 함께 포함해야 합니다."
-        )
+        @Size(max = 64, message = "비밀번호는 64자 이하로 입력해 주세요.")
         String password,
 
         @NotBlank(message = "닉네임을 입력해 주세요.")

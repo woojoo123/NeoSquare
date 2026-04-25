@@ -7,8 +7,6 @@ import type {
 } from './types';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_COMPLEXITY_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).+$/;
-const MIN_PASSWORD_LENGTH = 8;
 
 export function validateEmail(email: string): string | undefined {
   const normalizedEmail = email.trim().toLowerCase();
@@ -56,10 +54,6 @@ export function validateSignupForm(values: SignupFormValues): FieldErrors<Signup
 
   if (!password.trim()) {
     errors.password = '비밀번호를 입력해 주세요.';
-  } else if (password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`;
-  } else if (!PASSWORD_COMPLEXITY_PATTERN.test(password)) {
-    errors.password = '비밀번호는 영문과 숫자를 함께 포함해야 합니다.';
   }
 
   if (!passwordConfirm.trim()) {

@@ -92,6 +92,9 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
   const localStreamRef = useRef(localStream);
   const peersRef = useRef(new Map());
   const pendingCandidatesRef = useRef(new Map());
+  const pendingNegotiationRef = useRef(new Map());
+  const makingOfferRef = useRef(new Map());
+  const ignoredOfferRef = useRef(new Map());
   const videoElementsRef = useRef(new Map());
   const [connectionStatus, setConnectionStatus] = useState('not_connected');
   const [statusMessage, setStatusMessage] = useState(
@@ -185,6 +188,77 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     pendingCandidatesRef.current.delete(targetUserId);
   }
 
+  function removePendingNegotiation(targetUserId) {
+    pendingNegotiationRef.current.delete(targetUserId);
+  }
+
+  function markPendingNegotiation(targetUserId) {
+    pendingNegotiationRef.current.set(targetUserId, true);
+  }
+
+  function isMakingOffer(targetUserId) {
+    return makingOfferRef.current.get(targetUserId) === true;
+  }
+
+  function setMakingOffer(targetUserId, isActive) {
+    if (!isActive) {
+      makingOfferRef.current.delete(targetUserId);
+      return;
+    }
+
+    makingOfferRef.current.set(targetUserId, true);
+  }
+
+  function shouldIgnoreOffer(targetUserId) {
+    return ignoredOfferRef.current.get(targetUserId) === true;
+  }
+
+  function setIgnoredOffer(targetUserId, shouldIgnore) {
+    if (!shouldIgnore) {
+      ignoredOfferRef.current.delete(targetUserId);
+      return;
+    }
+
+    ignoredOfferRef.current.set(targetUserId, true);
+  }
+
+  function getActiveLocalTracks(stream) {
+    return (stream?.getTracks() || []).filter((track) => track.readyState !== 'ended');
+  }
+
+  function syncPeerTracks(peer, stream) {
+    const activeTracks = getActiveLocalTracks(stream);
+    const activeTrackIds = new Set(activeTracks.map((track) => track.id));
+    let hasTrackChanges = false;
+
+    peer.getSenders().forEach((sender) => {
+      if (!sender.track) {
+        return;
+      }
+
+      if (!activeTrackIds.has(sender.track.id)) {
+        peer.removeTrack(sender);
+        hasTrackChanges = true;
+      }
+    });
+
+    const senderTrackIds = new Set(
+      peer
+        .getSenders()
+        .map((sender) => sender.track?.id)
+        .filter(Boolean)
+    );
+
+    activeTracks.forEach((track) => {
+      if (!senderTrackIds.has(track.id)) {
+        peer.addTrack(track, stream);
+        hasTrackChanges = true;
+      }
+    });
+
+    return hasTrackChanges;
+  }
+
   async function flushPendingCandidates(targetUserId, peer) {
     const candidates = pendingCandidatesRef.current.get(targetUserId) || [];
     removePendingCandidates(targetUserId);
@@ -211,6 +285,9 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       clearRemoteStream(targetUserId);
       setPeerState(targetUserId, 'not_connected');
       removePendingCandidates(targetUserId);
+      removePendingNegotiation(targetUserId);
+      setIgnoredOffer(targetUserId, false);
+      setMakingOffer(targetUserId, false);
       return;
     }
 
@@ -218,11 +295,15 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     peer.ontrack = null;
     peer.onconnectionstatechange = null;
     peer.oniceconnectionstatechange = null;
+    peer.onsignalingstatechange = null;
     peer.close();
     peersRef.current.delete(targetUserId);
     clearRemoteStream(targetUserId);
     setPeerState(targetUserId, 'not_connected');
     removePendingCandidates(targetUserId);
+    removePendingNegotiation(targetUserId);
+    setIgnoredOffer(targetUserId, false);
+    setMakingOffer(targetUserId, false);
   }
 
   function closeAllPeers() {
@@ -331,15 +412,11 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
 
     if (existingPeer) {
       if (activeStream) {
-        const existingTrackIds = new Set(
-          existingPeer.getSenders().map((sender) => sender.track?.id).filter(Boolean)
-        );
+        const hasTrackChanges = syncPeerTracks(existingPeer, activeStream);
 
-        activeStream.getTracks().forEach((track) => {
-          if (!existingTrackIds.has(track.id)) {
-            existingPeer.addTrack(track, activeStream);
-          }
-        });
+        if (hasTrackChanges) {
+          markPendingNegotiation(targetUserId);
+        }
       }
 
       return existingPeer;
@@ -348,7 +425,7 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     const peer = new RTCPeerConnection(RTC_CONFIGURATION);
 
     if (activeStream) {
-      activeStream.getTracks().forEach((track) => {
+      getActiveLocalTracks(activeStream).forEach((track) => {
         peer.addTrack(track, activeStream);
       });
     }
@@ -401,6 +478,17 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       }
     };
 
+    peer.onsignalingstatechange = () => {
+      if (
+        peer.signalingState === 'stable' &&
+        pendingNegotiationRef.current.get(targetUserId) &&
+        startRequestedRef.current &&
+        localStreamRef.current
+      ) {
+        void createOffer(targetUserId, localStreamRef.current);
+      }
+    };
+
     peersRef.current.set(targetUserId, peer);
     setPeerState(targetUserId, 'signaling');
     return peer;
@@ -413,19 +501,35 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       return false;
     }
 
-    if (peer.localDescription) {
+    const needsNegotiation =
+      pendingNegotiationRef.current.get(targetUserId) === true || !peer.localDescription;
+
+    if (!needsNegotiation) {
       return true;
     }
 
     if (!isSocketReadyRef.current) {
+      markPendingNegotiation(targetUserId);
       setStatus('signaling', '시그널링 소켓 연결을 기다리는 중입니다...');
       return false;
     }
 
+    if (isMakingOffer(targetUserId)) {
+      markPendingNegotiation(targetUserId);
+      return false;
+    }
+
+    if (peer.signalingState !== 'stable') {
+      markPendingNegotiation(targetUserId);
+      return false;
+    }
+
     try {
+      setMakingOffer(targetUserId, true);
       setPeerState(targetUserId, 'signaling');
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
+      removePendingNegotiation(targetUserId);
       sendSignal('webrtc_offer', targetUserId, { sdp: offer });
       syncOverallStatus();
       return true;
@@ -433,6 +537,8 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       setErrorMessage(getConnectionErrorMessage(error));
       setStatus('error', '공간 연결 제안을 만들지 못했습니다.', { canRetry: true });
       return false;
+    } finally {
+      setMakingOffer(targetUserId, false);
     }
   }
 
@@ -450,6 +556,20 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     }
 
     try {
+      const offerCollision = isMakingOffer(senderUserId) || peer.signalingState !== 'stable';
+      const isPolitePeer = Number(userId) > Number(senderUserId);
+
+      if (offerCollision && !isPolitePeer) {
+        setIgnoredOffer(senderUserId, true);
+        return;
+      }
+
+      setIgnoredOffer(senderUserId, false);
+
+      if (offerCollision && peer.signalingState !== 'stable') {
+        await peer.setLocalDescription({ type: 'rollback' });
+      }
+
       setPeerState(senderUserId, 'signaling');
       await peer.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
       await flushPendingCandidates(senderUserId, peer);
@@ -493,6 +613,10 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
       return;
     }
 
+    if (shouldIgnoreOffer(senderUserId)) {
+      return;
+    }
+
     const peer = peersRef.current.get(senderUserId);
 
     if (!peer || !peer.remoteDescription) {
@@ -515,11 +639,18 @@ export function useSpaceWebRTC({ enabled, spaceId, userId, participants, localSt
     }
 
     participantUserIds.forEach((participantUserId) => {
-      ensurePeerConnection(participantUserId, activeStream);
+      const peer = ensurePeerConnection(participantUserId, activeStream);
 
-      if (isPairInitiator(userId, participantUserId)) {
+      if (!peer) {
+        return;
+      }
+
+      const needsRenegotiation = pendingNegotiationRef.current.get(participantUserId) === true;
+      const shouldCreateInitialOffer = !peer.localDescription && isPairInitiator(userId, participantUserId);
+
+      if (shouldCreateInitialOffer || needsRenegotiation) {
         createOffer(participantUserId, activeStream);
-      } else {
+      } else if (!peer.localDescription) {
         setPeerState(participantUserId, 'signaling');
       }
     });
