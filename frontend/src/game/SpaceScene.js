@@ -194,6 +194,7 @@ export default class SpaceScene extends Phaser.Scene {
     this.cursors = null;
     this.interactionKey = null;
     this.remotePlayers = new Map();
+    this.pendingChatMessages = new Map();
     this.theme = getSpaceTheme(spaceType);
     this.worldConfig = getSpaceWorldConfig(spaceType);
     this.portals = [];
@@ -257,6 +258,72 @@ export default class SpaceScene extends Phaser.Scene {
     this.refreshInteractionState();
     this.onPlayerMove?.({ x: this.player.x, y: this.player.y });
     this.onSceneReady?.(this);
+  }
+
+  normalizeRemotePlayerKey(userId) {
+    if (userId == null) {
+      return null;
+    }
+
+    return String(userId);
+  }
+
+  getRemotePlayer(userId) {
+    const remotePlayerKey = this.normalizeRemotePlayerKey(userId);
+
+    if (!remotePlayerKey) {
+      return null;
+    }
+
+    return this.remotePlayers.get(remotePlayerKey) || null;
+  }
+
+  setRemotePlayer(userId, remotePlayer) {
+    const remotePlayerKey = this.normalizeRemotePlayerKey(userId);
+
+    if (!remotePlayerKey) {
+      return;
+    }
+
+    this.remotePlayers.set(remotePlayerKey, remotePlayer);
+  }
+
+  removeRemotePlayerEntry(userId) {
+    const remotePlayerKey = this.normalizeRemotePlayerKey(userId);
+
+    if (!remotePlayerKey) {
+      return;
+    }
+
+    this.remotePlayers.delete(remotePlayerKey);
+    this.pendingChatMessages.delete(remotePlayerKey);
+  }
+
+  queuePendingChatMessage(chatMessage) {
+    const remotePlayerKey = this.normalizeRemotePlayerKey(chatMessage?.senderId);
+
+    if (!remotePlayerKey) {
+      return;
+    }
+
+    this.pendingChatMessages.set(remotePlayerKey, chatMessage);
+  }
+
+  flushPendingChatMessage(userId, remotePlayer) {
+    const remotePlayerKey = this.normalizeRemotePlayerKey(userId);
+
+    if (!remotePlayerKey || !remotePlayer) {
+      return;
+    }
+
+    const pendingChatMessage = this.pendingChatMessages.get(remotePlayerKey);
+
+    if (!pendingChatMessage) {
+      return;
+    }
+
+    this.pendingChatMessages.delete(remotePlayerKey);
+    this.showChatBubble(remotePlayer, pendingChatMessage);
   }
 
   update(_, delta) {
@@ -341,12 +408,12 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     if (event.type === 'user_move') {
-      if (!this.remotePlayers.has(event.userId)) {
+      if (!this.getRemotePlayer(event.userId)) {
         this.addRemotePlayer(event.userId, event.x, event.y, event.label, event.avatarPresetId);
         return;
       }
 
-      this.updateRemotePlayerLabel(this.remotePlayers.get(event.userId)?.nameLabel, event.label);
+      this.updateRemotePlayerLabel(this.getRemotePlayer(event.userId)?.nameLabel, event.label);
       this.updateRemotePlayerAvatar(event.userId, event.avatarPresetId);
       this.moveRemotePlayer(event.userId, event.x, event.y);
       return;
@@ -363,11 +430,12 @@ export default class SpaceScene extends Phaser.Scene {
     }
 
     const targetAvatar =
-      chatMessage.senderId === this.currentUserId
+      String(chatMessage.senderId) === String(this.currentUserId)
         ? this.playerAvatar
-        : this.remotePlayers.get(chatMessage.senderId) || null;
+        : this.getRemotePlayer(chatMessage.senderId);
 
     if (!targetAvatar) {
+      this.queuePendingChatMessage(chatMessage);
       return;
     }
 
@@ -391,7 +459,7 @@ export default class SpaceScene extends Phaser.Scene {
       return;
     }
 
-    const remotePlayer = this.remotePlayers.get(this.activeParticipantUserId);
+    const remotePlayer = this.getRemotePlayer(this.activeParticipantUserId);
 
     if (!remotePlayer) {
       return;
@@ -460,12 +528,13 @@ export default class SpaceScene extends Phaser.Scene {
   }
 
   addRemotePlayer(userId, x, y, label = '게스트', avatarPresetId = null) {
-    const existingRemotePlayer = this.remotePlayers.get(userId);
+    const existingRemotePlayer = this.getRemotePlayer(userId);
 
     if (existingRemotePlayer) {
       this.updateRemotePlayerLabel(existingRemotePlayer.nameLabel, label);
       this.updateRemotePlayerAvatar(userId, avatarPresetId);
       this.moveRemotePlayer(userId, x, y);
+      this.flushPendingChatMessage(userId, existingRemotePlayer);
       return;
     }
 
@@ -489,7 +558,7 @@ export default class SpaceScene extends Phaser.Scene {
       this.setAvatarHoverState(remotePlayer, false);
     });
     remotePlayer.container.on('pointerdown', () => {
-      const latestRemotePlayer = this.remotePlayers.get(userId);
+      const latestRemotePlayer = this.getRemotePlayer(userId);
 
       this.onParticipantSelect?.({
         userId,
@@ -499,11 +568,12 @@ export default class SpaceScene extends Phaser.Scene {
       });
     });
 
-    this.remotePlayers.set(userId, remotePlayer);
+    this.setRemotePlayer(userId, remotePlayer);
+    this.flushPendingChatMessage(userId, remotePlayer);
   }
 
   moveRemotePlayer(userId, x, y) {
-    const remotePlayer = this.remotePlayers.get(userId);
+    const remotePlayer = this.getRemotePlayer(userId);
 
     if (!remotePlayer) {
       this.addRemotePlayer(userId, x, y);
@@ -530,14 +600,14 @@ export default class SpaceScene extends Phaser.Scene {
   }
 
   removeRemotePlayer(userId) {
-    const remotePlayer = this.remotePlayers.get(userId);
+    const remotePlayer = this.getRemotePlayer(userId);
 
     if (!remotePlayer) {
       return;
     }
 
     remotePlayer.container.destroy(true);
-    this.remotePlayers.delete(userId);
+    this.removeRemotePlayerEntry(userId);
   }
 
   updateRemotePlayerLabel(nameLabel, label) {
@@ -553,7 +623,7 @@ export default class SpaceScene extends Phaser.Scene {
       return;
     }
 
-    const remotePlayer = this.remotePlayers.get(userId);
+    const remotePlayer = this.getRemotePlayer(userId);
 
     if (!remotePlayer?.sprite) {
       return;
