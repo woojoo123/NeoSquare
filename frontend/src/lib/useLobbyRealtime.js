@@ -55,11 +55,11 @@ function normalizeRemoteEvent(message, currentUserId, activeSpaceId, sequence) {
     avatarPresetId:
       typeof payload.avatarPresetId === 'string' ? payload.avatarPresetId.trim() || null : null,
     label:
-      payload.nickname ||
-      payload.label ||
-      payload.userNickname ||
-      payload.userName ||
-      `사용자 ${remoteUserId}`,
+      (typeof payload.nickname === 'string' && payload.nickname.trim()) ||
+      (typeof payload.label === 'string' && payload.label.trim()) ||
+      (typeof payload.userNickname === 'string' && payload.userNickname.trim()) ||
+      (typeof payload.userName === 'string' && payload.userName.trim()) ||
+      null,
   };
 }
 
@@ -410,13 +410,20 @@ export function useLobbyRealtime({ enabled, userId, nickname, spaceId, avatarPre
             );
 
             if (existingUserIndex === -1) {
-              return [...previousUsers, nextUser];
+              return [
+                ...previousUsers,
+                {
+                  ...nextUser,
+                  label: nextUser.label || `사용자 ${nextUser.userId}`,
+                },
+              ];
             }
 
             const updatedUsers = [...previousUsers];
             updatedUsers[existingUserIndex] = {
               ...updatedUsers[existingUserIndex],
               ...nextUser,
+              label: nextRemoteEvent.label || updatedUsers[existingUserIndex].label,
             };
             return updatedUsers;
           });

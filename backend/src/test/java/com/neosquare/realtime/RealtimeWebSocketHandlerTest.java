@@ -168,6 +168,43 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    void handleTextMessageWithUserMoveIncludesNicknameForSameSpacePeers() throws Exception {
+        WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
+        WebSocketSession sameSpaceSession = createSession("session-peer", 11L, "Jisu");
+
+        realtimeSessionRegistry.bindSession(sourceSession, 7L);
+        realtimeSessionRegistry.updateSessionPresence(sourceSession, 3L, 180.0, 260.0, "sky-runner");
+        realtimeSessionRegistry.bindSession(sameSpaceSession, 11L);
+        realtimeSessionRegistry.updateSessionPresence(sameSpaceSession, 3L, 200.0, 280.0, "forest-maker");
+
+        realtimeWebSocketHandler.handleTextMessage(
+                sourceSession,
+                new TextMessage("""
+                        {
+                          "type": "user_move",
+                          "senderId": 999,
+                          "payload": {
+                            "spaceId": 3,
+                            "x": 220,
+                            "y": 320,
+                            "avatarPresetId": "sky-runner"
+                          }
+                        }
+                        """)
+        );
+
+        List<JsonNode> sourceResponses = captureResponses(sourceSession, 1);
+        List<JsonNode> peerResponses = captureResponses(sameSpaceSession, 1);
+
+        assertThat(sourceResponses.get(0).get("type").asText()).isEqualTo("ws_ack");
+        assertThat(peerResponses.get(0).get("type").asText()).isEqualTo("user_move");
+        assertThat(peerResponses.get(0).get("senderId").asLong()).isEqualTo(7L);
+        assertThat(peerResponses.get(0).get("payload").get("nickname").asText()).isEqualTo("Alice");
+        assertThat(peerResponses.get(0).get("payload").get("x").asDouble()).isEqualTo(220.0);
+        assertThat(peerResponses.get(0).get("payload").get("y").asDouble()).isEqualTo(320.0);
+    }
+
+    @Test
     void handleTextMessageWithWebrtcOfferRoutesSignalToTargetSession() throws Exception {
         WebSocketSession sourceSession = createSession("session-source", 7L, "Alice");
         WebSocketSession targetSession = createSession("session-target", 11L, "Jisu");

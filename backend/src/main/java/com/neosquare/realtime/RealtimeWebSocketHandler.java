@@ -457,7 +457,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 normalizedPayload.put("userId", authenticatedUserId);
                 String nickname = extractAuthenticatedNickname(session);
 
-                if (nickname != null && (eventType == WebSocketEventType.USER_ENTER || eventType == WebSocketEventType.CHAT_SEND)) {
+                if (nickname != null
+                        && (eventType == WebSocketEventType.USER_ENTER
+                        || eventType == WebSocketEventType.USER_MOVE
+                        || eventType == WebSocketEventType.CHAT_SEND)) {
                     normalizedPayload.put("nickname", nickname);
                 }
             }
